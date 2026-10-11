@@ -5,10 +5,10 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # fetch-gp.yml dispatches this after a data push (`gh workflow run deploy.yml --ref main`): pushes made
+  # with GITHUB_TOKEN start no workflow. Never workflow_call: a called workflow builds the caller's commit,
+  # the one before the data push (DECISIONS, Deploy H1).
   workflow_dispatch:
-  # M3's fetch-gp.yml calls this after committing data: pushes made with GITHUB_TOKEN
-  # never trigger other workflows, so new GP data would otherwise never deploy.
-  workflow_call:
 
 permissions:
   contents: read

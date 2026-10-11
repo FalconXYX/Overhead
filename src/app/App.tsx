@@ -1,8 +1,9 @@
-// src/app/App.tsx — the shell: three named panes, each inside its own error boundary, and the credits.
-// Placement is visual design, settled from screenshots.
+// src/app/App.tsx — the shell: three named panes and the Inspector (M3), each inside its own error boundary, and the
+// credits. Placement is visual design, settled from screenshots.
 import type { ReactNode } from "react";
 import { Credits } from "../ui/Credits";
 import { GroundView } from "../ui/GroundView";
+import { Inspector } from "../ui/Inspector";
 import { LayerToggles } from "../ui/LayerToggles";
 import { SkyView } from "../ui/SkyView";
 import { Timeline } from "../ui/Timeline";
@@ -32,6 +33,10 @@ export function App() {
         <Pane name="Timeline">
           <Timeline />
         </Pane>
+        {/* Not a Pane: the Inspector is its own region named "Inspector", and a Pane would name a second one. */}
+        <ErrorBoundary pane="Inspector">
+          <Inspector />
+        </ErrorBoundary>
       </main>
       <Credits />
     </>

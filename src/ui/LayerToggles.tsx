@@ -1,10 +1,13 @@
-// src/ui/LayerToggles.tsx — the Layers button and panel (M1 step 15). Each toggle lands with its layer.
+// src/ui/LayerToggles.tsx — the Layers button and panel (M1 step 15). Each toggle lands with its layer: the
+// satellite toggles in M3 (step 15.3).
+import { useId, useSyncExternalStore } from "react";
 import { TRUE_COLOR_INSTRUMENT } from "../app/credits";
 import { useActions, useAppState } from "../state/hooks";
 import { selectTrueColorDate } from "../state/selectors";
 import { skyCache, starCountForLimit } from "../state/skyCache";
 import type { LayerToggle, LoadStatus } from "../state/types";
 import { gibsStatusText } from "./gibsStatus";
+import { groupStatusText } from "./objectText";
 
 /** The sky view's toggles (M2), in panel order. */
 const SKY_TOGGLES: readonly { key: LayerToggle; label: string }[] = [
@@ -23,6 +26,48 @@ function starLimitText(limit: number, stars: LoadStatus): string {
   return `V ≤ ${limit} (loading star catalogue)`;
 }
 
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void): () => void {
+  const query = window.matchMedia(REDUCED_MOTION);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+const getReducedMotion = (): boolean => window.matchMedia(REDUCED_MOTION).matches;
+
+/**
+ * One satellite toggle and, for a data layer, its load status (status undefined: none). The status sits outside the
+ * label, so the checkbox's name stays fixed, and is a status region that exists before its text changes, so
+ * "Loading…" and the result are each announced once.
+ */
+function SatelliteToggle(props: { layer: LayerToggle; label: string; status?: string | null }) {
+  const actions = useActions();
+  const on = useAppState((s) => s.layers[props.layer]);
+  const statusId = useId();
+  const hasStatus = props.status !== undefined;
+  return (
+    <p>
+      <label>
+        <input
+          type="checkbox"
+          checked={on}
+          aria-describedby={hasStatus ? statusId : undefined}
+          onChange={() => actions.toggleLayer(props.layer)}
+        />
+        {props.label}
+      </label>
+      {hasStatus ? (
+        <>
+          {" "}
+          <span id={statusId} role="status">
+            {props.status}
+          </span>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
 export function LayerToggles() {
   const actions = useActions();
   const open = useAppState((s) => s.ui.panel === "layers");
@@ -37,6 +82,12 @@ export function LayerToggles() {
   const date = useAppState(selectTrueColorDate);
   const gibsText = gibsStatusText(gibs);
   const disabled = gibs !== "ready";
+  // GroupData objects are replaced only by setGroupData: existing references, safe in useAppState.
+  const stations = useAppState((s) => s.data.gp.stations);
+  const visual = useAppState((s) => s.data.gp.visual);
+  const starlink = useAppState((s) => s.data.gp.starlink);
+  // Trails are not drawn while reduced motion is on (README Accessibility rule 2); the setting itself is kept.
+  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, () => false);
 
   return (
     <div>
@@ -101,6 +152,20 @@ export function LayerToggles() {
           />{" "}
           <output htmlFor="star-mag-limit">{limitText}</output>
         </p>
+        <SatelliteToggle
+          layer="satellites"
+          label="Satellites (ISS and brightest)"
+          status={groupStatusText([stations, visual])}
+        />
+        <SatelliteToggle
+          layer="starlink"
+          label="Starlink (about 11,100; loads 4.7 MB)"
+          status={groupStatusText([starlink])}
+        />
+        <SatelliteToggle
+          layer="trails"
+          label={reducedMotion ? "Trails (off: reduced motion)" : "Trails"}
+        />
       </section>
     </div>
   );

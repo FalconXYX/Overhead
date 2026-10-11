@@ -1,5 +1,5 @@
 // src/domain/time/index.ts — epoch-ms arithmetic. No Date objects leave this module.
-// M0–M2 subset; the rest of the README section 6 API lands with its first user.
+// M0–M3 subset; the rest of the README section 6 API lands with its first user.
 
 export type ClockRate = 1 | 10 | 60 | 600;
 /** Closed interval of available imagery steps, epoch ms: [firstStepMs, lastStepMs]. */
@@ -8,6 +8,40 @@ export type TimeInterval = readonly [startMs: number, endMs: number];
 export const MAX_WALL_DELTA_MS = 250; // [M0]
 export const SCRUB_HALF_RANGE_MS = 43_200_000; // [M0]
 export const SKY_RECOMPUTE_MS = 2_000; // [M2]
+export const BASE_SAMPLE_STEP_MS = 100; // [M3]
+export const TRACK_STEP_MS = 20_000; // [M3]
+
+/** [M3] Propagation grid spacing D = 100 ms × rate (live mode passes rate 1). */
+export function sampleStepMs(rate: ClockRate): number {
+  return BASE_SAMPLE_STEP_MS * rate;
+}
+
+/** [M3] Math.floor(timeMs / stepMs) × stepMs. */
+export function floorToStepMs(timeMs: number, stepMs: number): number {
+  return Math.floor(timeMs / stepMs) * stepMs;
+}
+
+/** OMM EPOCH: "YYYY-MM-DDThh:mm:ss" with optional fractional seconds and an optional trailing Z. */
+const OMM_EPOCH_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z?$/;
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+
+/**
+ * [M3] CelesTrak EPOCH has no zone suffix: append "Z" before parsing. Sub-millisecond digits are truncated, like the
+ * `new Date(EPOCH + "Z")` inside satellite.js json2satrec. NaN for anything else, including impossible calendar dates
+ * (Date.parse would roll 2026-02-30 over to March).
+ */
+export function parseOmmEpochMs(epoch: string): number {
+  const m = OMM_EPOCH_RE.exec(epoch);
+  if (m === null) return Number.NaN;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const monthDays = month === 2 && leap ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0);
+  if (day < 1 || day > monthDays || Number(m[4]) > 23 || Number(m[5]) > 59 || Number(m[6]) > 59)
+    return Number.NaN;
+  return Date.parse(epoch.endsWith("Z") ? epoch : `${epoch}Z`);
+}
 
 /** [M0] Replay without video: simTimeMs + min(max(wallDeltaMs, 0), 250) × rate. */
 export function advanceReplayMs(simTimeMs: number, wallDeltaMs: number, rate: ClockRate): number {

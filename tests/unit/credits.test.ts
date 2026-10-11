@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BSC5_CREDIT,
+  CELESTRAK_CREDIT,
   dataCredits,
   GIBS_CREDIT,
   IAU_WGSN_CREDIT,
@@ -8,6 +9,9 @@ import {
   starCredits,
   TRUE_COLOR_INSTRUMENT,
 } from "../../src/app/credits";
+
+/** Both satellite layers off: the M1 cases. */
+const NO_SATELLITES = { satellites: false, starlink: false } as const;
 
 describe("credits", () => {
   it("the GIBS acknowledgement and the OSM / Natural Earth line, verbatim", () => {
@@ -27,24 +31,61 @@ describe("credits", () => {
   });
 
   it("dataCredits follows the layers once GIBS is ready", () => {
-    expect(dataCredits({ trueColor: true, coastlines: true }, true)).toEqual([
+    expect(dataCredits({ ...NO_SATELLITES, trueColor: true, coastlines: true }, true)).toEqual([
       GIBS_CREDIT,
       OSM_NE_CREDIT,
     ]);
-    expect(dataCredits({ trueColor: true, coastlines: false }, true)).toEqual([GIBS_CREDIT]);
-    expect(dataCredits({ trueColor: false, coastlines: true }, true)).toEqual([
+    expect(dataCredits({ ...NO_SATELLITES, trueColor: true, coastlines: false }, true)).toEqual([
+      GIBS_CREDIT,
+    ]);
+    expect(dataCredits({ ...NO_SATELLITES, trueColor: false, coastlines: true }, true)).toEqual([
       GIBS_CREDIT,
       OSM_NE_CREDIT,
     ]);
-    expect(dataCredits({ trueColor: false, coastlines: false }, true)).toEqual([]);
+    expect(dataCredits({ ...NO_SATELLITES, trueColor: false, coastlines: false }, true)).toEqual(
+      [],
+    );
   });
 
-  it("dataCredits is empty while GIBS is not ready", () => {
+  it("dataCredits has no GIBS credit while GIBS is not ready", () => {
     for (const trueColor of [true, false]) {
       for (const coastlines of [true, false]) {
-        expect(dataCredits({ trueColor, coastlines }, false)).toEqual([]);
+        expect(dataCredits({ ...NO_SATELLITES, trueColor, coastlines }, false)).toEqual([]);
       }
     }
+  });
+
+  it("the CelesTrak credit, verbatim", () => {
+    expect(CELESTRAK_CREDIT).toEqual({
+      text: "Orbital elements: CelesTrak",
+      href: "https://celestrak.org",
+      licence: null,
+      licenceHref: null,
+    });
+  });
+
+  it("dataCredits appends CELESTRAK_CREDIT while satellites or starlink is on, whatever gibsReady is", () => {
+    for (const gibsReady of [true, false]) {
+      for (const [satellites, starlink] of [
+        [true, false],
+        [false, true],
+        [true, true],
+      ] as const) {
+        const none = { trueColor: false, coastlines: false, satellites, starlink };
+        expect(dataCredits(none, gibsReady), `${gibsReady} ${satellites} ${starlink}`).toEqual([
+          CELESTRAK_CREDIT,
+        ]);
+      }
+    }
+    // Last, after the GIBS lines; once only with both satellite layers on.
+    const all = { trueColor: true, coastlines: true, satellites: true, starlink: true };
+    expect(dataCredits(all, true)).toEqual([GIBS_CREDIT, OSM_NE_CREDIT, CELESTRAK_CREDIT]);
+    expect(dataCredits(all, true)[2]).toBe(CELESTRAK_CREDIT);
+    expect(dataCredits(all, false)).toEqual([CELESTRAK_CREDIT]);
+    expect(dataCredits({ ...all, satellites: false, starlink: false }, true)).toEqual([
+      GIBS_CREDIT,
+      OSM_NE_CREDIT,
+    ]);
   });
 
   it("the star catalogue and star-name credits, verbatim", () => {

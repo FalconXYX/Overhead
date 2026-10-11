@@ -3,6 +3,9 @@ import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
 import {
   selectActiveCamera,
   selectCalibration,
+  selectGroupMask,
+  selectGroupStatus,
+  selectSampleStepMs,
   selectSite,
   selectStarMagLimit,
   selectTrueColorDate,
@@ -112,5 +115,65 @@ describe("M2 selectors", () => {
   it("selectCalibration is undefined with an empty registry", () => {
     const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
     expect(selectCalibration(store.getState())).toBeUndefined();
+  });
+});
+
+describe("M3 selectors", () => {
+  it("selectGroupMask: stations and visual always (3), Starlink while its toggle is on (7)", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    expect(selectGroupMask(store.getState())).toBe(3);
+    actions.setLayer("starlink", true);
+    expect(selectGroupMask(store.getState())).toBe(7);
+    // The satellites toggle hides the layer only: the Inspector stays live, so the mask keeps both groups.
+    actions.setLayer("satellites", false);
+    expect(selectGroupMask(store.getState())).toBe(7);
+    actions.setLayer("starlink", false);
+    expect(selectGroupMask(store.getState())).toBe(3);
+  });
+
+  it("selectSampleStepMs is 100 ms × rate in replay and 100 ms in live", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    expect(selectSampleStepMs(store.getState())).toBe(100);
+    const steps: number[] = [];
+    for (const rate of [10, 60, 600] as const) {
+      actions.setRate(rate);
+      steps.push(selectSampleStepMs(store.getState()));
+    }
+    expect(steps).toEqual([1_000, 6_000, 60_000]);
+    // A live state keeps its stored rate until setMode resets it; the grid uses rate 1 regardless.
+    store.setState((s) => ({ clock: { ...s.clock, mode: "live" } }));
+    expect(store.getState().clock.rate).toBe(600);
+    expect(selectSampleStepMs(store.getState())).toBe(100);
+  });
+
+  it("selectGroupStatus reads one group's load status", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    const stations = selectGroupStatus("stations");
+    const starlink = selectGroupStatus("starlink");
+    expect(stations(store.getState())).toBe("idle");
+    actions.setGroupData("stations", { status: "loading" });
+    expect(stations(store.getState())).toBe("loading");
+    expect(starlink(store.getState())).toBe("idle");
+    actions.setGroupData("starlink", { status: "error" });
+    expect(starlink(store.getState())).toBe("error");
+    expect(selectGroupStatus("visual")(store.getState())).toBe("idle");
+  });
+
+  it("each M3 selector returns a primitive that does not change on ticks", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const fired: string[] = [];
+    const unsubscribes = [
+      store.subscribe(selectGroupMask, () => fired.push("mask")),
+      store.subscribe(selectSampleStepMs, () => fired.push("step")),
+      store.subscribe(selectGroupStatus("stations"), () => fired.push("status")),
+    ];
+    for (let i = 1; i <= 100; i += 1) {
+      store.getState().actions.tick(Date.parse("2026-10-11T15:09:50Z") + i * 16);
+    }
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    expect(fired).toEqual([]);
   });
 });

@@ -1,16 +1,19 @@
 // src/main.tsx — boot: URL state, keyboard, the clock loop, render, then cameras.json and the GIBS snapshot (M1 step 16),
-// and the star catalogue (M2 step 7).
+// the star catalogue (M2 step 7), and the satellite ephemeris and test hooks (M3 steps 11 and 16).
 import "ol/ol.css"; // OpenLayers' own control styles: without it the hidden rotate button shows
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { enabledCameras, parseCameraRegistry } from "./app/cameras";
 import { installKeyboard } from "./app/keyboard";
+import { createTestHooks, installTestHooks } from "./app/testHooks";
 import { parseUrlState, startUrlSync } from "./app/url";
 import { loadGibsCapabilities } from "./map/ground/layers/gibs";
+import { registry } from "./map/registry";
 import { startClockLoop } from "./state/clockLoop";
+import { indexOfObjectId, startEphemeris, updateEphemerisFrame } from "./state/ephemeris";
 import { DEFAULT_CAMERA_ID } from "./state/initialState";
-import { loadStars } from "./state/skyCache";
+import { loadStars, skyCache } from "./state/skyCache";
 import { store } from "./state/store";
 
 const rootElement = document.getElementById("root");
@@ -20,19 +23,42 @@ const { actions } = store.getState();
 
 // 1. URL state, before the first render. ?t= opens paused replay there; without it the app starts live.
 const url = parseUrlState(window.location.search);
+const urlParams = new URLSearchParams(window.location.search);
 if (url.tMs !== null) {
   actions.recenter(url.tMs);
 } else {
-  if (new URLSearchParams(window.location.search).has("t")) {
+  if (urlParams.has("t")) {
     console.warn(
       "Ignoring ?t=: it must be an ISO 8601 UTC time ending in Z, e.g. 2026-10-10T03:30:00Z",
     );
   }
   actions.setMode("live");
 }
+// ?sel= may name a satellite whose group has not loaded yet: the Inspector says so until it has.
+if (url.sel !== null) {
+  actions.select(url.sel);
+} else if (urlParams.has("sel")) {
+  console.warn(
+    "Ignoring ?sel=: it must be an object id such as sat:25544, planet:Jupiter, star:424, moon or sun",
+  );
+}
 
 // 2. Module scope, never inside an effect: StrictMode runs effects twice in development.
 installKeyboard(store);
+// The worker client waits for the first site (cameras.json) itself, and registers updateEphemerisFrame here, before
+// every map's frame updater (each also calls it first; it computes once per frame).
+startEphemeris(store);
+// Playwright's headless Chromium sets navigator.webdriver; real visitors never get window.__overhead.
+if (navigator.webdriver) {
+  const { hooks } = createTestHooks({
+    store,
+    updateSatFrame: updateEphemerisFrame,
+    indexOfObjectId,
+    sky: skyCache,
+    maps: registry,
+  });
+  installTestHooks(hooks);
+}
 startClockLoop(store);
 
 createRoot(rootElement).render(

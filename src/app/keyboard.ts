@@ -1,4 +1,5 @@
-// src/app/keyboard.ts — the one keydown handler (M1 step 7; README Keyboard). Every key has an on-screen control.
+// src/app/keyboard.ts — the one keydown handler (M1 step 7; README Keyboard); Esc in M3. Every key has an on-screen
+// control (Esc: the Inspector's "Clear selection").
 import type { AppStore } from "../state/store";
 import type { ClockRate } from "../state/types";
 
@@ -48,16 +49,18 @@ function nextRate(rate: ClockRate, step: 1 | -1): ClockRate {
 }
 
 /**
- * true when handled. Ignores inputs, a focused map, defaultPrevented events, Alt/Ctrl/Meta chords and Space on a
- * button.
+ * true when handled. Ignores inputs, a focused map (except Esc), defaultPrevented events, Alt/Ctrl/Meta chords and
+ * Space on a button.
  */
 export function handleKeyDown(store: AppStore, e: KeyLike): boolean {
   const { tagName, isContentEditable, inMap } = targetInfo(e.target);
   // Sliders, selects and text fields keep their own keys.
   if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return false;
   if (isContentEditable === true) return false;
-  // A focused map keeps every key: KeyboardPan's noModifierKeys condition lets Shift+arrows through unprevented.
-  if (inMap) return false;
+  // A focused map keeps its keys: KeyboardPan's noModifierKeys condition lets Shift+arrows through unprevented.
+  // Escape is not one of them (no OpenLayers interaction reads it), and a click on the ground map both selects and
+  // focuses the map, so Esc must still clear that selection there.
+  if (inMap && e.key !== "Escape") return false;
   // OpenLayers KeyboardPan on a focused map calls preventDefault() before the event reaches window.
   if (e.defaultPrevented) return false;
   // Cmd+[ is browser Back.
@@ -86,6 +89,11 @@ export function handleKeyDown(store: AppStore, e: KeyLike): boolean {
     case "l":
     case "L":
       actions.togglePanel("layers");
+      return true;
+    case "Escape":
+      // First match only (README Keyboard): stopDemo while the tour runs (M9), cancelImagePoint while a calibration
+      // point is pending (M4), else clear the selection.
+      actions.select(null);
       return true;
     default:
       return false;

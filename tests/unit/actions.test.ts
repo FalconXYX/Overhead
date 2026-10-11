@@ -198,3 +198,164 @@ describe("M2 layer actions", () => {
     expect(store.getState()).toBe(after);
   });
 });
+
+describe("M3 selection and data actions", () => {
+  it("select sets the id and keeps follow; select(null) clears both", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    actions.setFollow(true);
+    expect(store.getState().selection).toEqual({
+      selectedId: "sat:25544",
+      hoverId: null,
+      follow: true,
+    });
+    actions.select("sat:48274"); // only null turns follow off
+    expect(store.getState().selection.follow).toBe(true);
+    actions.select("planet:Jupiter");
+    expect(store.getState().selection).toEqual({
+      selectedId: "planet:Jupiter",
+      hoverId: null,
+      follow: true,
+    });
+    actions.select(null);
+    expect(store.getState().selection).toEqual({ selectedId: null, hoverId: null, follow: false });
+  });
+
+  it("select with the current id and follow unchanged is not a state change", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    const idle = store.getState();
+    actions.select(null);
+    expect(store.getState()).toBe(idle);
+    actions.select("star:424");
+    const selected = store.getState();
+    actions.select("star:424");
+    expect(store.getState()).toBe(selected);
+    // The same id with follow on stays as it is; null still clears follow.
+    actions.setFollow(true);
+    const following = store.getState();
+    actions.select("star:424");
+    expect(store.getState()).toBe(following);
+    actions.select(null);
+    expect(store.getState().selection.follow).toBe(false);
+  });
+
+  it("hover leaves the state alone when the id is unchanged", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    const before = store.getState();
+    actions.hover(null);
+    expect(store.getState()).toBe(before);
+    actions.hover("moon");
+    const hovering = store.getState();
+    expect(hovering.selection).toEqual({ selectedId: null, hoverId: "moon", follow: false });
+    actions.hover("moon");
+    expect(store.getState()).toBe(hovering);
+    actions.hover(null);
+    expect(store.getState().selection.hoverId).toBeNull();
+  });
+
+  it("hover never touches the selection or follow", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    actions.setFollow(true);
+    actions.hover("sun");
+    actions.hover(null);
+    expect(store.getState().selection).toEqual({
+      selectedId: "sat:25544",
+      hoverId: null,
+      follow: true,
+    });
+  });
+
+  it("setFollow writes follow; an unchanged value is not a state change", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    const before = store.getState();
+    actions.setFollow(false);
+    expect(store.getState()).toBe(before);
+    actions.setFollow(true);
+    expect(store.getState().selection.follow).toBe(true);
+    const on = store.getState();
+    actions.setFollow(true);
+    expect(store.getState()).toBe(on);
+    actions.setFollow(false);
+    expect(store.getState().selection.follow).toBe(false);
+  });
+
+  it("selection listeners fire once per change and never for a no-op", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    const seen: unknown[] = [];
+    const unsubscribe = store.subscribe(
+      (s) => s.selection,
+      (selection) => seen.push(selection.selectedId),
+    );
+    actions.select("sat:25544");
+    actions.select("sat:25544");
+    actions.hover(null);
+    actions.setFollow(false);
+    actions.select(null);
+    actions.select(null);
+    unsubscribe();
+    expect(seen).toEqual(["sat:25544", null]);
+  });
+
+  it("setGroupData merges the patch into one group", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    const { visual, starlink } = store.getState().data.gp;
+    actions.setGroupData("stations", { status: "loading" });
+    expect(store.getState().data.gp.stations).toEqual({
+      status: "loading",
+      fetchedAtMs: null,
+      count: 0,
+    });
+    actions.setGroupData("stations", { status: "ready", fetchedAtMs: 1791690621000, count: 12 });
+    expect(store.getState().data.gp.stations).toEqual({
+      status: "ready",
+      fetchedAtMs: 1791690621000,
+      count: 12,
+    });
+    // The other groups keep their objects; the rest of data is untouched.
+    expect(store.getState().data.gp.visual).toBe(visual);
+    expect(store.getState().data.gp.starlink).toBe(starlink);
+    expect(store.getState().data.stars).toBe("idle");
+    actions.setGroupData("starlink", { status: "error" });
+    expect(store.getState().data.gp.starlink).toEqual({
+      status: "error",
+      fetchedAtMs: null,
+      count: 0,
+    });
+    expect(store.getState().data.gp.stations.status).toBe("ready");
+  });
+
+  it("setGroupData with nothing new is not a state change", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    actions.setGroupData("visual", { status: "ready", fetchedAtMs: 1791690621000, count: 153 });
+    const before = store.getState();
+    actions.setGroupData("visual", { status: "ready" });
+    actions.setGroupData("visual", { count: 153, fetchedAtMs: 1791690621000 });
+    actions.setGroupData("visual", {});
+    expect(store.getState()).toBe(before);
+  });
+
+  it("setGroupData ignores keys whose value is undefined", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    actions.setGroupData("stations", { status: "ready", fetchedAtMs: 1791690621000, count: 12 });
+    const before = store.getState();
+    // Partial<GroupData> admits explicit undefined; it must never erase a field.
+    actions.setGroupData("stations", { status: undefined, count: undefined });
+    expect(store.getState()).toBe(before);
+    actions.setGroupData("stations", { status: "loading", fetchedAtMs: undefined });
+    expect(store.getState().data.gp.stations).toEqual({
+      status: "loading",
+      fetchedAtMs: 1791690621000,
+      count: 12,
+    });
+  });
+});

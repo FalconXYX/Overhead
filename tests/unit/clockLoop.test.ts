@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registry } from "../../src/map/registry";
 import {
   type FrameScheduler,
+  frameCount,
   registerFrameUpdater,
   startClockLoop,
 } from "../../src/state/clockLoop";
@@ -232,5 +233,57 @@ describe("clockLoop, M1", () => {
     store.getState().actions.stepBy(1_000); // a step while paused: one render on the next frame
     for (let i = 20; i < 25; i += 1) scheduler.frame(16 * i);
     expect(renders).toBe(11);
+  });
+});
+
+describe("clockLoop, M3", () => {
+  it("frameCount() counts frame callbacks, incremented before the tick and the updaters", () => {
+    const store = playingStore(1);
+    const scheduler = new ManualScheduler();
+    const start0 = frameCount();
+    const seenByUpdater: number[] = [];
+    const seenByTick: number[] = [];
+    register(() => seenByUpdater.push(frameCount() - start0));
+    cleanups.push(
+      store.subscribe(
+        (s) => s.clock.simTimeMs,
+        () => seenByTick.push(frameCount() - start0),
+      ),
+    );
+    start(store, scheduler);
+    expect(frameCount()).toBe(start0); // nothing before the first frame callback
+    scheduler.frame(0);
+    scheduler.frame(16);
+    scheduler.frame(32);
+    expect(frameCount() - start0).toBe(3);
+    expect(seenByUpdater).toEqual([1, 2, 3]);
+    expect(seenByTick).toEqual([2, 3]); // the first frame has delta 0: no tick
+  });
+
+  it("frameCount() also counts paused frames and frames whose updater threw", () => {
+    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const scheduler = new ManualScheduler();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    register(() => {
+      throw new Error("updater failed");
+    });
+    const start0 = frameCount();
+    start(store, scheduler);
+    for (let i = 0; i < 5; i += 1) scheduler.frame(16 * i);
+    expect(frameCount() - start0).toBe(5);
+  });
+
+  it("frameCount() never goes back when a loop stops and a new one starts", () => {
+    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const first = new ManualScheduler();
+    const stopFirst = startClockLoop(store, first);
+    cleanups.push(stopFirst);
+    first.frame(0);
+    const afterFirst = frameCount();
+    stopFirst();
+    const second = new ManualScheduler();
+    start(store, second);
+    second.frame(0);
+    expect(frameCount()).toBe(afterFirst + 1);
   });
 });

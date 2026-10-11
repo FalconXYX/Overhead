@@ -27,6 +27,11 @@ const LANDED_ACTIONS = [
   "togglePanel",
   // M2
   "setStarMagLimit",
+  // M3
+  "select",
+  "hover",
+  "setFollow",
+  "setGroupData",
 ] as const;
 
 // Every action whose milestone has not landed, with that milestone (README section 4, actions).
@@ -38,12 +43,8 @@ const UNLANDED: Readonly<Partial<Record<keyof Actions, string>>> = {
   setStreamDelayMs: "M5",
   resetCalibration: "M4",
   importCalibration: "M4",
-  select: "M3",
-  hover: "M3",
-  setFollow: "M3",
   setFootprintHeightKm: "M8",
   setVideoLayer: "M5",
-  setGroupData: "M3",
   setHorizon: "M6",
   setGoesDomain: "M7",
   setGoesStatus: "M7",
@@ -117,12 +118,12 @@ describe("store", () => {
   it("every later action throws and names its milestone", () => {
     const { actions } = newStore().getState();
     const unlanded = Object.entries(UNLANDED);
-    expect(unlanded).toHaveLength(27); // 45 actions: 4 landed in M0, 13 in M1, 1 in M2
+    expect(unlanded).toHaveLength(23); // 45 actions: 4 landed in M0, 13 in M1, 1 in M2, 4 in M3
     expect(Object.keys(actions).sort()).toEqual(
       [...LANDED_ACTIONS, ...unlanded.map(([name]) => name)].sort(),
     );
     for (const [name, milestone] of unlanded) {
-      expect(milestone).toMatch(/^M[3-9]$/);
+      expect(milestone).toMatch(/^M[4-9]$/);
       const action = actions[name as keyof Actions];
       expect(() => Reflect.apply(action, actions, [])).toThrow(
         new RegExp(`^actions\\.${name} lands in ${milestone}$`),

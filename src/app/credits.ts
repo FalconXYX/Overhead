@@ -36,17 +36,28 @@ export const IAU_WGSN_CREDIT: Credit = {
   licenceHref: null,
 };
 
+/** [M3] The OMM element sets behind every satellite (public/data/gp, fetched by scripts/fetch-gp.ts). */
+export const CELESTRAK_CREDIT: Credit = {
+  text: "Orbital elements: CelesTrak",
+  href: "https://celestrak.org",
+  licence: null,
+  licenceHref: null,
+};
+
 /**
- * GIBS_CREDIT when gibsReady and any GIBS layer is on; OSM_NE_CREDIT when gibsReady and coastlines is on.
- * M3 adds satellites and starlink, M7 goesIr. Returns a new array: call it during render, never in useAppState.
+ * GIBS_CREDIT when gibsReady and any GIBS layer is on; OSM_NE_CREDIT when gibsReady and coastlines is on;
+ * CELESTRAK_CREDIT while satellites or starlink is on, whatever gibsReady is. M7 adds goesIr. Returns a new array:
+ * call it during render, never in useAppState.
  */
 export function dataCredits(
-  layers: Pick<LayersState, "trueColor" | "coastlines">,
+  layers: Pick<LayersState, "trueColor" | "coastlines" | "satellites" | "starlink">,
   gibsReady: boolean,
 ): Credit[] {
   const credits: Credit[] = [];
   if (gibsReady && (layers.trueColor || layers.coastlines)) credits.push(GIBS_CREDIT);
   if (gibsReady && layers.coastlines) credits.push(OSM_NE_CREDIT);
+  // Not behind gibsReady: satellites draw on the sky view and the ground map without imagery.
+  if (layers.satellites || layers.starlink) credits.push(CELESTRAK_CREDIT);
   return credits;
 }
 

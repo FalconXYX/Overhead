@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   advanceReplayMs,
+  BASE_SAMPLE_STEP_MS,
   clampToScrubRangeMs,
+  floorToStepMs,
   formatUtcHhMm,
   formatZonedDateTime,
   isoDateUtc,
   isoUtcSeconds,
   MAX_WALL_DELTA_MS,
+  parseOmmEpochMs,
   SCRUB_HALF_RANGE_MS,
   SKY_RECOMPUTE_MS,
+  sampleStepMs,
+  TRACK_STEP_MS,
   trueColorDateUtc,
 } from "../../src/domain/time";
 import { mulberry32 } from "../helpers/random";
@@ -172,5 +177,76 @@ describe("formatUtcHhMm", () => {
     const t = Date.parse("2026-10-11T04:24:59.999Z");
     expect(formatUtcHhMm(t)).toBe("04:24");
     expect(formatZonedDateTime(t, "Pacific/Honolulu").slice(11, 16)).toBe("18:24");
+  });
+});
+
+describe("parseOmmEpochMs", () => {
+  it("reads CelesTrak's zone-less EPOCH as UTC", () => {
+    // ISS 25544 in the committed snapshot; sub-millisecond digits are truncated, as json2satrec's Date does.
+    expect(parseOmmEpochMs("2026-10-09T22:48:38.797056")).toBe(
+      Date.UTC(2026, 9, 9, 22, 48, 38, 797),
+    );
+    expect(parseOmmEpochMs("2026-10-11T03:50:21")).toBe(1791690621000);
+  });
+
+  it("does not depend on the machine's time zone (the Z is appended, never assumed local)", () => {
+    expect(parseOmmEpochMs("2026-01-01T00:00:00.000000")).toBe(Date.UTC(2026, 0, 1));
+    expect(parseOmmEpochMs("2026-07-01T12:00:00")).toBe(Date.UTC(2026, 6, 1, 12));
+  });
+
+  it("accepts an EPOCH that already ends in Z", () => {
+    expect(parseOmmEpochMs("2026-10-09T22:48:38.797056Z")).toBe(
+      parseOmmEpochMs("2026-10-09T22:48:38.797056"),
+    );
+  });
+
+  it("gives NaN for anything that is not an ISO date-time", () => {
+    for (const bad of [
+      "",
+      "No GP data found",
+      "2026-10-09",
+      "2026-10-09 22:48:38",
+      "2026-283T22:48:38",
+      "2026-10-09T22:48:38+02:00",
+      "2026-13-09T22:48:38",
+      "2026-10-09T25:48:38",
+      "2026-10-09T24:00:00",
+      "2026-02-30T00:00:00", // Date.parse would roll this over to 2026-03-02
+      "2027-02-29T00:00:00",
+      " 2026-10-09T22:48:38",
+    ]) {
+      expect(parseOmmEpochMs(bad), bad).toBeNaN();
+    }
+    expect(parseOmmEpochMs("2028-02-29T00:00:00")).toBe(Date.UTC(2028, 1, 29));
+  });
+});
+
+describe("sampleStepMs", () => {
+  it("is 100 ms × rate", () => {
+    expect(BASE_SAMPLE_STEP_MS).toBe(100);
+    expect(sampleStepMs(1)).toBe(100);
+    expect(sampleStepMs(10)).toBe(1_000);
+    expect(sampleStepMs(60)).toBe(6_000);
+    expect(sampleStepMs(600)).toBe(60_000);
+  });
+});
+
+describe("floorToStepMs", () => {
+  it("snaps down to a multiple of the step", () => {
+    expect(TRACK_STEP_MS).toBe(20_000);
+    const t = Date.parse("2026-10-11T03:50:21Z");
+    expect(floorToStepMs(t, TRACK_STEP_MS)).toBe(Date.parse("2026-10-11T03:50:20Z"));
+    expect(floorToStepMs(Date.parse("2026-10-11T03:50:20Z"), TRACK_STEP_MS)).toBe(
+      Date.parse("2026-10-11T03:50:20Z"),
+    );
+    expect(floorToStepMs(Date.parse("2026-10-11T03:50:39.999Z"), TRACK_STEP_MS)).toBe(
+      Date.parse("2026-10-11T03:50:20Z"),
+    );
+    expect(floorToStepMs(t + 123, 100)).toBe(t + 100);
+  });
+
+  it("floors (never truncates) before 1970", () => {
+    expect(floorToStepMs(-1, 20_000)).toBe(-20_000);
+    expect(floorToStepMs(-20_000, 20_000)).toBe(-20_000);
   });
 });

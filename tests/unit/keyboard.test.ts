@@ -121,3 +121,62 @@ describe("handleKeyDown", () => {
     expect(handleKeyDown(store, key("ArrowUp"))).toBe(false);
   });
 });
+
+describe("Esc (M3)", () => {
+  it("clears the selection and turns follow off", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    actions.setFollow(true);
+    actions.hover("moon");
+    expect(handleKeyDown(store, key("Escape"))).toBe(true);
+    expect(store.getState().selection).toEqual({
+      selectedId: null,
+      hoverId: "moon",
+      follow: false,
+    });
+  });
+
+  it("with nothing selected is handled and changes nothing", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const before = store.getState();
+    expect(handleKeyDown(store, key("Escape"))).toBe(true);
+    expect(store.getState()).toBe(before);
+  });
+
+  it("is ignored like every key in inputs, on prevented events and with Alt/Ctrl/Meta", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    store.getState().actions.select("sat:25544");
+    const before = store.getState();
+    for (const e of [
+      key("Escape", { target: { tagName: "INPUT", isContentEditable: false } }),
+      key("Escape", { target: { tagName: "SELECT", isContentEditable: false } }),
+      key("Escape", { target: { tagName: "DIV", isContentEditable: true } }),
+      key("Escape", { defaultPrevented: true }),
+      key("Escape", { metaKey: true }),
+      key("Escape", { altKey: true }),
+    ]) {
+      expect(handleKeyDown(store, e)).toBe(false);
+    }
+    expect(store.getState()).toBe(before);
+  });
+
+  it("works on a focused button and on a focused map, where a click selects and focuses", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    expect(handleKeyDown(store, key("Escape", { target: { tagName: "BUTTON" } }))).toBe(true);
+    expect(store.getState().selection.selectedId).toBeNull();
+    // OpenLayers' keyboard interactions never use Escape, so the map rule (M1) does not hold it back.
+    const mapTarget = {
+      tagName: "DIV",
+      isContentEditable: false,
+      closest: (selector: string) => (selector === MAP_SELECTOR ? mapTarget : null),
+    };
+    actions.select("sat:25544");
+    expect(handleKeyDown(store, key("Escape", { target: mapTarget }))).toBe(true);
+    expect(store.getState().selection.selectedId).toBeNull();
+    // Every other key on the map stays the map's.
+    expect(handleKeyDown(store, key("ArrowRight", { target: mapTarget }))).toBe(false);
+  });
+});

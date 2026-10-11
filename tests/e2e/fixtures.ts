@@ -17,6 +17,11 @@ const GIBS_TILE_JPG = fileURLToPath(new URL("../fixtures/gibs/tile.jpg", import.
 const GIBS_TILE_PNG = fileURLToPath(new URL("../fixtures/gibs/tile.png", import.meta.url));
 const GIBS_REST_LABELS =
   /^\/wmts\/epsg3857\/best\/Reference_Labels\/default\/(default\/)?GoogleMapsCompatible_Level9\/\d+\/\d+\/\d+\.png$/;
+// The committed CelesTrak snapshot (M3 step 1), served for the app's own data/gp/*.json so satellite positions do not
+// change when fetch-gp.yml commits new data to public/data/gp/.
+const GP_FIXTURE_FILES = new Set(["stations.json", "visual.json", "starlink.json", "meta.json"]);
+const gpFixture = (file: string): string =>
+  fileURLToPath(new URL(`../fixtures/gp/${file}`, import.meta.url));
 
 export const test = base.extend<{ guard: Guard; routes: undefined }>({
   guard: [
@@ -59,6 +64,20 @@ export const test = base.extend<{ guard: Guard; routes: undefined }>({
           path: jpeg ? GIBS_TILE_JPG : GIBS_TILE_PNG,
           contentType: jpeg ? "image/jpeg" : "image/png",
           headers: { "access-control-allow-origin": "*" },
+        });
+      });
+      // Same origin (M3). context.route also covers the propagation worker's fetches.
+      await context.route("**/data/gp/*.json", (route: Route) => {
+        const url = new URL(route.request().url());
+        const file = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+        if (url.origin !== APP_ORIGIN || !GP_FIXTURE_FILES.has(file)) {
+          guard.blockedRequests.push(url.href);
+          return route.abort("blockedbyclient");
+        }
+        return route.fulfill({
+          status: 200,
+          path: gpFixture(file),
+          contentType: "application/json",
         });
       });
       await use(undefined);

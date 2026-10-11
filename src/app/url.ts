@@ -1,12 +1,14 @@
-// src/app/url.ts — ?cam= and ?t= (M1 step 6; README URL and persistence). M3 adds sel, M9 demo.
+// src/app/url.ts — ?cam= and ?t= (M1 step 6; README URL and persistence), ?sel= (M3 step 12). M9 adds demo.
 import { shallow } from "zustand/vanilla/shallow";
 import { isoUtcSeconds } from "../domain/time";
+import { parseObjectId } from "../state/objectId";
 import type { AppStore } from "../state/store";
-import type { AppState } from "../state/types";
+import type { AppState, ObjectId } from "../state/types";
 
 export interface UrlState {
   cam: string | null;
   tMs: number | null; // only an ISO 8601 UTC value ending in Z; anything else is null
+  sel: ObjectId | null; // [M3] parsed by parseObjectId; anything else is null
 }
 
 /** Zone-less values are rejected, never guessed: Date.parse reads them as local time (Gotcha 11). */
@@ -28,22 +30,29 @@ export function parseUrlState(search: string): UrlState {
   const params = new URLSearchParams(search); // decodes %3A
   const cam = params.get("cam");
   const t = params.get("t");
+  const sel = params.get("sel");
   const tMs = t === null ? Number.NaN : parseIsoUtc(t);
   return {
     cam: cam === null || cam === "" ? null : cam,
     tMs: Number.isFinite(tMs) ? tMs : null,
+    sel: sel === null ? null : parseObjectId(sel),
   };
 }
 
-/** "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay; colons written raw (URLSearchParams would encode them). */
+/**
+ * "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay and "&sel=<id>" while something is selected. Colons are written
+ * raw (URLSearchParams would encode them); every ObjectId is otherwise letters and digits.
+ */
 export function writeUrlState(state: AppState): string {
   const cam = `?cam=${encodeURIComponent(state.camera.activeId)}`;
-  return state.clock.mode === "replay" ? `${cam}&t=${isoUtcSeconds(state.clock.simTimeMs)}` : cam;
+  const t = state.clock.mode === "replay" ? `&t=${isoUtcSeconds(state.clock.simTimeMs)}` : "";
+  const { selectedId } = state.selection;
+  return `${cam}${t}${selectedId === null ? "" : `&sel=${selectedId}`}`;
 }
 
 /**
  * Writes once now, then delayMs after the last discrete change (trailing debounce): camera, mode, pause,
- * and every seek or step while paused. Never per tick while playing.
+ * every seek or step while paused, and the selection. Never per tick while playing, never on hover.
  */
 export function startUrlSync(
   store: AppStore,
@@ -53,7 +62,12 @@ export function startUrlSync(
   let timer: ReturnType<typeof setTimeout> | null = null;
   write(writeUrlState(store.getState()));
   const unsubscribe = store.subscribe(
-    (s) => [s.camera.activeId, s.clock.mode, s.clock.playing ? null : s.clock.simTimeMs],
+    (s) => [
+      s.camera.activeId,
+      s.clock.mode,
+      s.clock.playing ? null : s.clock.simTimeMs,
+      s.selection.selectedId,
+    ],
     () => {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {

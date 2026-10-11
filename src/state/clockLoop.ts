@@ -1,5 +1,5 @@
 // src/state/clockLoop.ts — the one requestAnimationFrame loop (README section 7, Time). M0: replay without video.
-// Live sources land in M1 (synthetic), M4 (still image) and M5 (YouTube, local video).
+// Live sources land in M1 (synthetic), M4 (still image) and M5 (YouTube, local video); frameCount in M3.
 import { advanceReplayMs, clampToScrubRangeMs, SCRUB_HALF_RANGE_MS } from "../domain/time";
 import { renderSyncAll } from "../map/registry";
 import { selectActiveCamera } from "./selectors";
@@ -21,6 +21,13 @@ const browserScheduler: FrameScheduler = {
 
 const updaters = new Set<FrameUpdater>();
 let running = false;
+/** Frame callbacks since the app started, across loop restarts: it never goes back. */
+let frames = 0;
+
+/** [M3] Frames since start, incremented at the start of each frame callback. */
+export function frameCount(): number {
+  return frames;
+}
 
 /** Runs fn once per frame, after the tick, in registration order. Returns the unregister function. */
 export function registerFrameUpdater(fn: FrameUpdater): () => void {
@@ -63,6 +70,7 @@ export function startClockLoop(
   let stopped = false;
 
   const frame = (wallMs: number): void => {
+    frames += 1; // first: the tick's listeners and every updater see this frame's number
     try {
       const wallDeltaMs = lastWallMs === null ? 0 : wallMs - lastWallMs;
       lastWallMs = wallMs;

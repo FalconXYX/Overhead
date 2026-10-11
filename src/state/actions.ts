@@ -2,7 +2,7 @@
 // not landed throws; each milestone replaces its own placeholders, test first.
 import type { StoreApi } from "zustand/vanilla";
 import { clampToScrubRangeMs } from "../domain/time";
-import type { Actions, AppState, ClockState } from "./types";
+import type { Actions, AppState, ClockState, GroupData } from "./types";
 
 /** setStarMagLimit's range: 6.5 is the cut of stars.json (M2 step 2). */
 const STAR_MAG_LIMIT_MIN = 1;
@@ -64,9 +64,18 @@ export function createActions(set: SetState, get: GetState): Actions {
     setStreamDelayMs: notYet("setStreamDelayMs", "M5"),
     resetCalibration: notYet("resetCalibration", "M4"),
     importCalibration: notYet("importCalibration", "M4"),
-    select: notYet("select", "M3"),
-    hover: notYet("hover", "M3"),
-    setFollow: notYet("setFollow", "M3"),
+    // Each returns the same state for a no-op, so subscribers never fire for one (as setLayer).
+    select: (id) =>
+      set((s) => {
+        const follow = id === null ? false : s.selection.follow; // null also turns follow off
+        return s.selection.selectedId === id && s.selection.follow === follow
+          ? s
+          : { selection: { ...s.selection, selectedId: id, follow } };
+      }),
+    hover: (id) =>
+      set((s) => (s.selection.hoverId === id ? s : { selection: { ...s.selection, hoverId: id } })),
+    setFollow: (on) =>
+      set((s) => (s.selection.follow === on ? s : { selection: { ...s.selection, follow: on } })),
     setLayer: (key, on) =>
       set((s) => (s.layers[key] === on ? s : { layers: { ...s.layers, [key]: on } })),
     toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
@@ -80,7 +89,26 @@ export function createActions(set: SetState, get: GetState): Actions {
     },
     setVideoLayer: notYet("setVideoLayer", "M5"),
     setLoadStatus: (key, status) => set((s) => ({ data: { ...s.data, [key]: status } })),
-    setGroupData: notYet("setGroupData", "M3"),
+    setGroupData: (group, patch) =>
+      set((s) => {
+        const prev = s.data.gp[group];
+        const next: GroupData = { ...prev };
+        let changed = false;
+        // Key by key: Partial<GroupData> admits an explicit undefined, which must never erase a field.
+        if (patch.status !== undefined && patch.status !== prev.status) {
+          next.status = patch.status;
+          changed = true;
+        }
+        if (patch.fetchedAtMs !== undefined && patch.fetchedAtMs !== prev.fetchedAtMs) {
+          next.fetchedAtMs = patch.fetchedAtMs;
+          changed = true;
+        }
+        if (patch.count !== undefined && patch.count !== prev.count) {
+          next.count = patch.count;
+          changed = true;
+        }
+        return changed ? { data: { ...s.data, gp: { ...s.data.gp, [group]: next } } } : s;
+      }),
     setHorizon: notYet("setHorizon", "M6"),
     setGoesDomain: notYet("setGoesDomain", "M7"),
     setGoesStatus: notYet("setGoesStatus", "M7"),
