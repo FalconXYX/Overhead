@@ -1,7 +1,10 @@
-// src/state/clockLoop.ts — the one requestAnimationFrame loop. M0: replay without video.
+// src/state/clockLoop.ts — the one requestAnimationFrame loop (README section 7, Time). M0: replay without video.
 // Live sources land in M1 (synthetic), M4 (still image) and M5 (YouTube, local video).
-import { advanceReplayMs, clampToScrubRangeMs } from "../domain/time";
+import { advanceReplayMs, clampToScrubRangeMs, SCRUB_HALF_RANGE_MS } from "../domain/time";
+import { renderSyncAll } from "../map/registry";
+import { selectActiveCamera } from "./selectors";
 import type { AppStore } from "./store";
+import type { AppState } from "./types";
 
 export type FrameUpdater = (simTimeMs: number) => void;
 
@@ -38,6 +41,14 @@ function runUpdaters(simTimeMs: number): void {
   }
 }
 
+/** The live sim time, or null when this camera kind has no live source yet (M4 and M5 add theirs). */
+function liveTimeMs(state: AppState): number | null {
+  const camera = selectActiveCamera(state);
+  // Synthetic cameras, or the registry not loaded yet: the sky shows now.
+  if (camera === undefined || camera.kind === "synthetic") return Date.now();
+  return null;
+}
+
 /** Starts the loop. Returns an idempotent stop(). A second start while one runs throws. */
 export function startClockLoop(
   store: AppStore,
@@ -46,6 +57,8 @@ export function startClockLoop(
   if (running) throw new Error("clockLoop is already running");
   running = true;
   let lastWallMs: number | null = null;
+  // The sim time the maps last rendered: a user's seek or step while paused also counts as a change.
+  let lastRenderedMs = store.getState().clock.simTimeMs;
   let handle = 0;
   let stopped = false;
 
@@ -53,18 +66,32 @@ export function startClockLoop(
     try {
       const wallDeltaMs = lastWallMs === null ? 0 : wallMs - lastWallMs;
       lastWallMs = wallMs;
-      const { clock, actions } = store.getState();
+      const state = store.getState();
+      const { clock, actions } = state;
       let simTimeMs = clock.simTimeMs;
       let hitEdge = false;
-      if (clock.mode === "replay" && clock.playing) {
+      if (clock.mode === "live") {
+        const nowMs = liveTimeMs(state);
+        if (nowMs !== null && Math.abs(nowMs - clock.rangeCenterMs) > SCRUB_HALF_RANGE_MS) {
+          actions.jumpToNow(); // long live sessions keep the scrubber around now
+          simTimeMs = store.getState().clock.simTimeMs;
+        } else if (nowMs !== null) {
+          simTimeMs = nowMs;
+        }
+      } else if (clock.playing) {
         const advanced = advanceReplayMs(clock.simTimeMs, wallDeltaMs, clock.rate);
         simTimeMs = clampToScrubRangeMs(advanced, clock.rangeCenterMs);
         hitEdge = simTimeMs !== advanced;
       }
-      if (simTimeMs !== clock.simTimeMs) actions.tick(simTimeMs);
+      if (simTimeMs !== store.getState().clock.simTimeMs) actions.tick(simTimeMs);
       if (hitEdge) actions.pause();
       runUpdaters(simTimeMs);
-      // M1: renderSyncAll() here, on frames where the sim time changed (README section 7).
+      // Only on frames where the sim time changed: OpenLayers schedules its own renders for interaction,
+      // tile loads and changed(), so a paused map makes 0 renders per idle second.
+      if (simTimeMs !== lastRenderedMs) {
+        lastRenderedMs = simTimeMs;
+        renderSyncAll();
+      }
     } finally {
       if (!stopped) handle = scheduler.request(frame);
     }

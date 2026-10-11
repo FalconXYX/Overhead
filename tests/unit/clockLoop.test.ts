@@ -1,4 +1,6 @@
+import type OlMap from "ol/Map";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { registry } from "../../src/map/registry";
 import {
   type FrameScheduler,
   registerFrameUpdater,
@@ -7,6 +9,7 @@ import {
 import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { ClockRate } from "../../src/state/types";
+import { storeAt } from "../helpers/store";
 
 const T0 = Date.UTC(2026, 9, 11, 3, 20, 0); // 2026-10-11T03:20:00Z
 
@@ -45,6 +48,8 @@ const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
+  registry.clear();
 });
 
 function start(store: AppStore, scheduler: FrameScheduler): void {
@@ -171,5 +176,61 @@ describe("clockLoop", () => {
     expect(() => startClockLoop(store, new ManualScheduler())).toThrow(
       "clockLoop is already running",
     );
+  });
+});
+
+describe("clockLoop, M1", () => {
+  it("live on a synthetic camera follows Date.now() and recentres past ±12 h", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0);
+    const store = storeAt(new Date(T0).toISOString());
+    store.getState().actions.setMode("live");
+    const scheduler = new ManualScheduler();
+    start(store, scheduler);
+    vi.setSystemTime(T0 + 1_234);
+    scheduler.frame(0);
+    expect(store.getState().clock.simTimeMs).toBe(Date.now());
+    vi.setSystemTime(T0 + 43_200_000);
+    scheduler.frame(16);
+    expect(store.getState().clock.simTimeMs).toBe(T0 + 43_200_000);
+    expect(store.getState().clock.rangeCenterMs).toBe(T0);
+    vi.setSystemTime(T0 + 43_200_001);
+    scheduler.frame(32);
+    const { clock } = store.getState();
+    expect(clock.simTimeMs).toBe(T0 + 43_200_001);
+    expect(clock.rangeCenterMs).toBe(T0 + 43_200_001);
+    expect(clock.mode).toBe("live");
+  });
+
+  it("live before the registry loads also follows Date.now()", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + 5_000);
+    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    store.getState().actions.setMode("live");
+    const scheduler = new ManualScheduler();
+    start(store, scheduler);
+    scheduler.frame(0);
+    expect(store.getState().clock.simTimeMs).toBe(T0 + 5_000);
+  });
+
+  it("renderSyncAll runs only on frames where the sim time changed", () => {
+    let renders = 0;
+    registry.set("ground", {
+      renderSync: () => {
+        renders += 1;
+      },
+    } as unknown as OlMap);
+    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const scheduler = new ManualScheduler();
+    start(store, scheduler);
+    for (let i = 0; i < 10; i += 1) scheduler.frame(16 * i);
+    expect(renders).toBe(0);
+    store.getState().actions.play();
+    for (let i = 10; i < 20; i += 1) scheduler.frame(16 * i);
+    expect(renders).toBe(10);
+    store.getState().actions.pause();
+    store.getState().actions.stepBy(1_000); // a step while paused: one render on the next frame
+    for (let i = 20; i < 25; i += 1) scheduler.frame(16 * i);
+    expect(renders).toBe(11);
   });
 });

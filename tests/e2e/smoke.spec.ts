@@ -14,8 +14,8 @@ test("the shell loads with every pane", async ({ page }) => {
 });
 
 test("Play advances the replay clock and Pause stops it", async ({ page }) => {
-  // M1 starts live when the URL has no `t`, so M1 changes this to ./?t=2026-10-10T03:30:00Z.
-  await page.goto("./");
+  // Without `t` the app starts live and playing (M1), so start in paused replay.
+  await page.goto("./?t=2026-10-10T03:30:00Z");
   const timeline = page.getByRole("region", { name: "Timeline" });
   const readout = timeline.locator("time");
   await expect(readout).toHaveText(ISO_UTC_SECONDS);

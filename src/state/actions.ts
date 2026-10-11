@@ -1,7 +1,8 @@
 // src/state/actions.ts — all 45 actions from M0 (README section 4, actions). An action whose milestone has
 // not landed throws; each milestone replaces its own placeholders, test first.
 import type { StoreApi } from "zustand/vanilla";
-import type { Actions, AppState } from "./types";
+import { clampToScrubRangeMs } from "../domain/time";
+import type { Actions, AppState, ClockState } from "./types";
 
 type SetState = StoreApi<AppState>["setState"];
 type GetState = StoreApi<AppState>["getState"];
@@ -14,19 +15,45 @@ function notYet(name: keyof Actions, milestone: `M${number}`): () => never {
 }
 
 export function createActions(set: SetState, get: GetState): Actions {
+  /** stepBy and seek: switch to replay, keep `playing`, clamp to ± 12 h of rangeCenterMs. */
+  const moveTo = (clock: ClockState, timeMs: number): ClockState => ({
+    ...clock,
+    mode: "replay",
+    simTimeMs: clampToScrubRangeMs(timeMs, clock.rangeCenterMs),
+  });
+
   return {
     tick: (simTimeMs) => set((s) => ({ clock: { ...s.clock, simTimeMs } })),
     play: () => set((s) => ({ clock: { ...s.clock, playing: true } })),
     pause: () => set((s) => ({ clock: { ...s.clock, playing: false, mode: "replay" } })),
     togglePlay: () => (get().clock.playing ? get().actions.pause() : get().actions.play()),
-    setMode: notYet("setMode", "M1"),
-    setRate: notYet("setRate", "M1"),
-    stepBy: notYet("stepBy", "M1"),
-    seek: notYet("seek", "M1"),
-    jumpToNow: notYet("jumpToNow", "M1"),
-    recenter: notYet("recenter", "M1"),
-    setRegistry: notYet("setRegistry", "M1"),
-    setActiveCamera: notYet("setActiveCamera", "M1"),
+    setMode: (mode) =>
+      set((s) => ({
+        clock:
+          mode === "live"
+            ? { ...s.clock, mode, rate: 1, playing: true }
+            : { ...s.clock, mode: "replay" },
+      })),
+    setRate: (rate) => set((s) => ({ clock: { ...s.clock, mode: "replay", rate } })),
+    stepBy: (deltaMs) => set((s) => ({ clock: moveTo(s.clock, s.clock.simTimeMs + deltaMs) })),
+    seek: (timeMs) => set((s) => ({ clock: moveTo(s.clock, timeMs) })),
+    jumpToNow: () => {
+      const now = Date.now();
+      set((s) => ({ clock: { ...s.clock, simTimeMs: now, rangeCenterMs: now } }));
+    },
+    recenter: (timeMs) =>
+      set((s) => ({
+        clock: {
+          ...s.clock,
+          mode: "replay",
+          playing: false,
+          simTimeMs: timeMs,
+          rangeCenterMs: timeMs,
+        },
+      })),
+    setRegistry: (registry) => set((s) => ({ camera: { ...s.camera, registry } })),
+    setActiveCamera: (id) =>
+      set((s) => ({ camera: { ...s.camera, activeId: id, frameTimeMs: null } })),
     setCameraStatus: notYet("setCameraStatus", "M4"),
     setFrameTimeMs: notYet("setFrameTimeMs", "M4"),
     updateCalibration: notYet("updateCalibration", "M4"),
@@ -36,12 +63,13 @@ export function createActions(set: SetState, get: GetState): Actions {
     select: notYet("select", "M3"),
     hover: notYet("hover", "M3"),
     setFollow: notYet("setFollow", "M3"),
-    setLayer: notYet("setLayer", "M1"),
-    toggleLayer: notYet("toggleLayer", "M1"),
+    setLayer: (key, on) =>
+      set((s) => (s.layers[key] === on ? s : { layers: { ...s.layers, [key]: on } })),
+    toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
     setFootprintHeightKm: notYet("setFootprintHeightKm", "M8"),
     setStarMagLimit: notYet("setStarMagLimit", "M2"),
     setVideoLayer: notYet("setVideoLayer", "M5"),
-    setLoadStatus: notYet("setLoadStatus", "M1"),
+    setLoadStatus: (key, status) => set((s) => ({ data: { ...s.data, [key]: status } })),
     setGroupData: notYet("setGroupData", "M3"),
     setHorizon: notYet("setHorizon", "M6"),
     setGoesDomain: notYet("setGoesDomain", "M7"),
@@ -54,8 +82,9 @@ export function createActions(set: SetState, get: GetState): Actions {
     cancelImagePoint: notYet("cancelImagePoint", "M4"),
     applyFit: notYet("applyFit", "M4"),
     setVideoStatus: notYet("setVideoStatus", "M5"),
-    openPanel: notYet("openPanel", "M1"),
-    togglePanel: notYet("togglePanel", "M1"),
+    openPanel: (panel) => set((s) => ({ ui: { ...s.ui, panel } })),
+    togglePanel: (panel) =>
+      set((s) => ({ ui: { ...s.ui, panel: s.ui.panel === panel ? null : panel } })),
     startDemo: notYet("startDemo", "M9"),
     setDemoStep: notYet("setDemoStep", "M9"),
     stopDemo: notYet("stopDemo", "M9"),

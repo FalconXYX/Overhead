@@ -1,8 +1,10 @@
-// src/app/App.tsx — the shell: three named panes, each inside its own error boundary.
+// src/app/App.tsx — the shell: three named panes, each inside its own error boundary, and the credits.
+// Placement is visual design, settled from screenshots.
 import type { ReactNode } from "react";
-import { isoUtcSeconds } from "../domain/time";
-import { useActions, useClockControls, useTick4Hz } from "../state/hooks";
-import { store } from "../state/store";
+import { Credits } from "../ui/Credits";
+import { GroundView } from "../ui/GroundView";
+import { LayerToggles } from "../ui/LayerToggles";
+import { Timeline } from "../ui/Timeline";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 function Pane({ name, children }: { name: string; children: ReactNode }) {
@@ -14,37 +16,23 @@ function Pane({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
-/** M0 placeholder for the Timeline; M1's Timeline.tsx replaces it. */
-function ClockStatus() {
-  useTick4Hz(); // re-renders at 4 Hz; the time is read during render (React rule 5)
-  const { playing, rate, mode } = useClockControls();
-  const { togglePlay } = useActions();
-  const iso = isoUtcSeconds(store.getState().clock.simTimeMs);
-  return (
-    <div>
-      <button type="button" onClick={togglePlay}>
-        {playing ? "Pause" : "Play"}
-      </button>
-      <p>
-        {mode === "live" ? "Live" : "Replay"}, {rate}×, UTC <time dateTime={iso}>{iso}</time>
-      </p>
-    </div>
-  );
-}
-
 export function App() {
   return (
-    <main>
-      <h1>Overhead</h1>
-      <Pane name="Sky view">
-        <p>The computed sky arrives in M2.</p>
-      </Pane>
-      <Pane name="Ground map">
-        <p>The ground map arrives in M1.</p>
-      </Pane>
-      <Pane name="Timeline">
-        <ClockStatus />
-      </Pane>
-    </main>
+    <>
+      <main>
+        <h1>Overhead</h1>
+        <Pane name="Sky view">
+          <p>The computed sky arrives in M2.</p>
+        </Pane>
+        <Pane name="Ground map">
+          <LayerToggles />
+          <GroundView />
+        </Pane>
+        <Pane name="Timeline">
+          <Timeline />
+        </Pane>
+      </main>
+      <Credits />
+    </>
   );
 }

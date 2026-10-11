@@ -5,19 +5,31 @@ import type { Actions } from "../../src/state/types";
 
 const T0 = Date.UTC(2026, 9, 11, 3, 20, 0); // 2026-10-11T03:20:00Z
 
-const M0_ACTIONS = ["tick", "play", "pause", "togglePlay"] as const;
+const LANDED_ACTIONS = [
+  // M0
+  "tick",
+  "play",
+  "pause",
+  "togglePlay",
+  // M1
+  "setMode",
+  "setRate",
+  "stepBy",
+  "seek",
+  "jumpToNow",
+  "recenter",
+  "setRegistry",
+  "setActiveCamera",
+  "setLayer",
+  "toggleLayer",
+  "setLoadStatus",
+  "openPanel",
+  "togglePanel",
+] as const;
 
 // Every action whose milestone has not landed, with that milestone (README section 4, actions).
 // Each milestone removes its own names, test first.
 const UNLANDED: Readonly<Partial<Record<keyof Actions, string>>> = {
-  setMode: "M1",
-  setRate: "M1",
-  stepBy: "M1",
-  seek: "M1",
-  jumpToNow: "M1",
-  recenter: "M1",
-  setRegistry: "M1",
-  setActiveCamera: "M1",
   setCameraStatus: "M4",
   setFrameTimeMs: "M4",
   updateCalibration: "M4",
@@ -27,12 +39,9 @@ const UNLANDED: Readonly<Partial<Record<keyof Actions, string>>> = {
   select: "M3",
   hover: "M3",
   setFollow: "M3",
-  setLayer: "M1",
-  toggleLayer: "M1",
   setFootprintHeightKm: "M8",
   setStarMagLimit: "M2",
   setVideoLayer: "M5",
-  setLoadStatus: "M1",
   setGroupData: "M3",
   setHorizon: "M6",
   setGoesDomain: "M7",
@@ -45,8 +54,6 @@ const UNLANDED: Readonly<Partial<Record<keyof Actions, string>>> = {
   cancelImagePoint: "M4",
   applyFit: "M4",
   setVideoStatus: "M5",
-  openPanel: "M1",
-  togglePanel: "M1",
   startDemo: "M9",
   setDemoStep: "M9",
   stopDemo: "M9",
@@ -109,12 +116,12 @@ describe("store", () => {
   it("every later action throws and names its milestone", () => {
     const { actions } = newStore().getState();
     const unlanded = Object.entries(UNLANDED);
-    expect(unlanded).toHaveLength(41);
+    expect(unlanded).toHaveLength(28); // 45 actions: 4 landed in M0, 13 in M1
     expect(Object.keys(actions).sort()).toEqual(
-      [...M0_ACTIONS, ...unlanded.map(([name]) => name)].sort(),
+      [...LANDED_ACTIONS, ...unlanded.map(([name]) => name)].sort(),
     );
     for (const [name, milestone] of unlanded) {
-      expect(milestone).toMatch(/^M[1-9]$/);
+      expect(milestone).toMatch(/^M[2-9]$/);
       const action = actions[name as keyof Actions];
       expect(() => Reflect.apply(action, actions, [])).toThrow(
         new RegExp(`^actions\\.${name} lands in ${milestone}$`),
