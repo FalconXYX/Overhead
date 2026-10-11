@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# env and local config
+.env
+.env.*
+!.env.example
+*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# verification evidence records stay local (Parth, 2026-10-11)
+docs/verification/
+# editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# cached data fetched at dev time (generated GP data is committed by the scheduled job)
+public/data/terrain/
+
+# local recordings of camera streams (large media; never committed)
+recordings/

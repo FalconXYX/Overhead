@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+    "lib": ["ES2023", "ESNext.Disposable", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/workers", "src/domain"],
+  "exclude": []
+}

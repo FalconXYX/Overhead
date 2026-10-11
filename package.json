@@ -1,0 +1,46 @@
+{
+  "name": "overhead",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "perf": "PERF=1 playwright test",
+    "lint": "biome ci --error-on-warnings .",
+    "format": "biome check --write ."
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "astronomy-engine": "2.1.19",
+    "ol": "10.11.0",
+    "proj4": "2.22.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "satellite.js": "7.1.0",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  },
+  "allowScripts": {
+    "esbuild": false,
+    "fsevents": false
+  }
+}
