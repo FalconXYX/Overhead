@@ -300,3 +300,49 @@ Appended on 2026-10-11 by the M1 review pass. These lines belong under "M1 · Gr
 - `src/ui/gibsStatus.ts` [M1] exports `gibsStatusText(gibs)`, which `GroundView` and `LayerToggles` share. Reason: a component file that also exports a plain function is not a React Fast Refresh boundary. README section 3 should list the file under `src/ui/`.
 - `tests/unit/gibs.test.ts` checks `gibsWmtsOptions` and `createOverlayLayers` against a hand-built parse of the committed snapshot. Reason: Vitest's Node environment has no `DOMParser`.
 - After M1, 28 placeholder actions remain (45 actions in all). M1 step 4.4 and the section 5 `store.test.ts` row still say 27 and 44.
+
+## M2 · Synthetic sky
+
+Appended on 2026-10-11 by M2 (`implementation/M2-synthetic-sky.md` section 8, then the integration pass). The continuous pixel convention is already under "Contract changes from the implementation docs". These lines belong under the Time and astronomy, Rendering, Camera model and Data sources headings above. They sit here because this file is append-only while other edits are in flight.
+
+### Time and astronomy
+
+- The twilight reference is Skyfield 1.55 + DE421 (to the second). USNO's API (to the minute) is a cross-check only. Reason: USNO rounding would use half of the ± 60 s tolerance.
+- The Horizons fixture is one JSON file keyed by `BODY_IDS`, with rows `[isoUtc, azDeg, elDeg]`, 73 per body, and the test needs at least 30 above-horizon rows per body. `fetch-horizons-fixture.ts` also fails when a body returns anything other than 73 rows or the API answer has an `error` key. Reason: an empty or truncated table must not pass vacuously.
+- `formatUtcHhMm` truncates to the minute (as M7 also specifies), and the marker's local time is `formatZonedDateTime(...).slice(11, 16)`, which truncates too. Reason: the UTC and local labels on a marker must agree.
+- `twilightMarkersMs` restarts each search 1 h after a hit. Reason: same-direction crossings are about 24 h apart, and a restart at the hit itself can find it again.
+- `skyCache.bodies` starts as NaN. Reason: zeros would read as eight bodies on the horizon at az 0 before the first pass.
+- Sky passes are measured as `overhead:sky` and cleared at once; tests count them with a `PerformanceObserver`. Reason: user-timing entries would otherwise accumulate at 60 per second.
+
+### Star catalogue
+
+- `stars.json` rows are sorted by `vmag`, then HR. Reason: a magnitude limit is then a prefix, and `rotateStarsAzAltDeg`'s `count` skips the rest (904 of 8,404 at the default limit).
+- Star names come from the IAU-CSN ASCII column, then the Bayer designation (Greek letter, index digit, constellation), then Flamsteed, else `""` shown as "HR n". Reason: BSC5 has no proper names, and ASCII avoids encoding issues (only 15 rows differ, none with an HR number).
+- The star magnitude limit runs from 1 to 6.5 in steps of 0.5. `setStarMagLimit` clamps and ignores non-finite values, and returns the same state when the clamped value is unchanged. Reason: 6.5 is the catalogue's cut, and subscribers must not fire for a no-op (as `setLayer`).
+- `build-stars.ts` warns and still writes when an input's size or sha256 differs from the recorded values. It throws on a duplicate HR in either input, an unknown Bayer abbreviation, a malformed field or a misaligned IAU-CSN row. Its summary line adds the Bayer and Flamsteed counts and both sha256s after the expected text, and an optional `--out <path>` sets the output. Reason: a new upstream file should be inspected rather than block the run, while a parse error must never produce a quietly wrong catalogue.
+
+### Sky view
+
+- Stars are drawn as one `MultiPoint` with a custom `Style.renderer` reading per-star visibility and radius from typed arrays. Reason: magnitude bins cost 5–8 ms per render at 8,404 stars, against 0.7–0.9 ms.
+- The synthetic sky view has no interactions or controls and refits on resize. Its `View` sets `maxResolution` to max(W, H). Reason: the frame must match the camera image (M4 calibration, and from M5 the video under the map, O1), and OpenLayers' default cap of max(W, H)/256 stops the frame from fitting a container shorter than 256 px. M4 adds pan and zoom for still images.
+- Culled stars are written at the frame centre with `visible` 0, never off-frame. When `setCameraModel` changes the frame size, it also calls `setStarCount`, which parks every point at the frame corner (0, 0), hidden, until the pass that the same call forces. Reason: OpenLayers drops off-extent `MultiPoint` coordinates before the custom renderer runs, which shifts the per-star arrays, and old-frame coordinates can lie outside a new, smaller frame.
+- `createCameraModel` throws for anything other than a zenith equidistant fisheye until M4. Reason: M2 has no other camera; a silent fallback would hide a wrong `cameras.json`.
+- The grid has altitude circles 0–80° every 10° and azimuth lines every 10° from alt 0° to 80°, sampled every 1° through the camera model. Letters N, E, S and W sit at alt 5°. Reason: the code is lens-independent, and the letters stay inside the frame.
+- The sky region carries an "Above the horizon" text list as its text alternative, and is `aria-busy` until the star catalogue is `ready` or `error`. Reason: canvas content is invisible to screen readers; the list and the busy flag double as e2e hooks.
+- The list's name comes from an `h3` through `aria-labelledby`. The "No Sun, Moon or planets above the horizon" fallback is a `<p>` after the list. The `role="status"` element is always rendered and is empty while idle or ready. Reason: the fallback is not a body, and a live region must exist before its text changes to be announced.
+- The new Moon's marker is hollow rather than a different colour. Each body feature's id is its `BODY_IDS` string. Reason: the de-emphasis must not rely on colour (README Accessibility), and M3's picking can map a feature straight to an `ObjectId`.
+
+### Timeline and Layers panel
+
+- A twilight marker's visible text is "Dusk" or "Dawn". Its full name, "Civil dusk 04:24 UTC (18:24 local)", is the `aria-label` and the `title`. Reason: on Chromium's default 129 px scrubber the two Maunakea markers are about 62 px apart, so the full labels would overlap. The accessible name contains the visible word, and e2e locates markers by `/Civil dusk/`.
+- Before the catalogue is ready, the magnitude-limit text reads "V ≤ 4.5 (loading star catalogue)" or "V ≤ 4.5 (star catalogue failed to load)" instead of "(0 stars)". A count of 1 says "star". The same text is the slider's `aria-valuetext`. Reason: "0 stars" would misreport a catalogue that has not arrived.
+
+### Files and tests
+
+- `LensModel` and `Calibration` are defined in `src/domain/camera/lens.ts`, and `index.ts` re-exports them. The public import path and shapes are unchanged. Reason: `lens.ts` needs both types, and defining them in `index.ts` would create a `lens.ts` → `index.ts` → `lens.ts` cycle.
+- Exports beyond the README section 6 table: `MAX_STAR_ROWS` (`skyCache.ts`, imported by `createSkyMap.ts` as the stars layer's capacity); `starRadiusPx` and `setStarRadii` (`layers/stars.ts`); `BodyId`, `bodyRadiusPx`, `BodiesLayer`, `createBodiesLayer` and `writeBodies` (`layers/bodies.ts`); the parse helpers of both scripts (`main` runs only when executed directly, as in `fetch-gibs-caps.ts`). README section 6 should list them. Reason: they are shared between the layer, the sky map and the tests.
+- `projectBatch` leaves a culled pair's `outUvPx` entries untouched and writes only `outVisible[i] = 0`. Reason: the caller decides what a culled point holds (the sky map writes the frame centre, gotcha 20).
+- `selectStarMagLimit` lands without its `[M5]` over-video branch; M5 adds that line with `selectSkyOverVideo`. Reason: selectors land with their first user.
+- `sky.spec.ts` adds two cases to M2 section 5: the catalogue's loading and failure states (the grid and bodies still draw), and keyboard access to the sky toggles, the limit slider and the twilight markers (acceptance criterion 8). Reason: both are acceptance requirements that no other test covers.
+- `src/app/cameras.ts` checks each field through a `Fields<T>` table (one Check per key of Calibration, CameraSite and Credit, and per source kind), so a field added to a type must be validated; the messages and their order are unchanged. Reason: the hand-written checks could miss a new field silently.
+- After M2, 27 placeholder actions remain (45 actions in all).

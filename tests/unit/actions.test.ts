@@ -156,3 +156,45 @@ describe("M1 camera, layer, data and panel actions", () => {
     expect(store.getState().ui.panel).toBeNull();
   });
 });
+
+describe("M2 layer actions", () => {
+  it("setStarMagLimit clamps to [1, 6.5]", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    expect(store.getState().layers.starMagLimit).toBe(4.5);
+    actions.setStarMagLimit(7);
+    expect(store.getState().layers.starMagLimit).toBe(6.5);
+    actions.setStarMagLimit(0);
+    expect(store.getState().layers.starMagLimit).toBe(1);
+    actions.setStarMagLimit(-3);
+    expect(store.getState().layers.starMagLimit).toBe(1);
+    actions.setStarMagLimit(5);
+    expect(store.getState().layers.starMagLimit).toBe(5);
+    actions.setStarMagLimit(6.5);
+    expect(store.getState().layers.starMagLimit).toBe(6.5);
+  });
+
+  it("setStarMagLimit ignores non-finite values and leaves the state alone", () => {
+    const store = newStore();
+    const { actions } = store.getState();
+    actions.setStarMagLimit(3);
+    const before = store.getState();
+    for (const vmag of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      actions.setStarMagLimit(vmag);
+      expect(store.getState()).toBe(before);
+    }
+    expect(store.getState().layers.starMagLimit).toBe(3);
+  });
+
+  it("setStarMagLimit to the current value changes nothing", () => {
+    const store = newStore();
+    const before = store.getState();
+    before.actions.setStarMagLimit(4.5);
+    expect(store.getState()).toBe(before);
+    before.actions.setStarMagLimit(9); // clamps to 6.5: a change
+    const after = store.getState();
+    expect(after.layers.starMagLimit).toBe(6.5);
+    after.actions.setStarMagLimit(8); // clamps to 6.5 again: no change
+    expect(store.getState()).toBe(after);
+  });
+});

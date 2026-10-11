@@ -18,7 +18,7 @@ Overhead draws satellites, the ISS, the Moon, planets and bright stars onto live
 | `npm run typecheck` | `tsc -b` over the four project references |
 | `npm test` | Vitest unit tests (`tests/unit`) |
 | `npm run e2e` | Playwright end-to-end tests (`tests/e2e`), headless Chromium against `vite preview`. It serves the last `npm run build`, so build first. |
-| `npm run perf` | Playwright performance specs (`tests/perf`); exits 1 with "No tests found" until M2 |
+| `npm run perf` | Playwright performance specs (`tests/perf`), run by hand, never in CI. Like `npm run e2e` it serves the last `npm run build`, so build first. `sky.perf.ts` prints the `overhead:sky` pass p95 at V ≤ 6.5 and 600× (budget ≤ 2 ms). |
 | `npm run lint` | `biome ci --error-on-warnings .` |
 | `npm run format` | `biome check --write .` |
 
@@ -78,8 +78,31 @@ curl -fo tests/fixtures/gibs/tile.jpg "$B&layer=VIIRS_NOAA20_CorrectedReflectanc
 curl -fo tests/fixtures/gibs/tile.png "$B&layer=Reference_Labels&Format=image%2Fpng"
 ```
 
+## M2 · Synthetic sky
+
+- The Sky view draws the sky over the active camera's site at the clock's sim time, as a zenith fisheye (equidistant, horizon on the frame edge) seen from below: north up, east left. It shows stars from the Bright Star Catalogue sized by magnitude, the Sun, Moon and planets (Mercury to Uranus) with labels, and an alt/az grid (altitude circles every 10°, azimuth lines every 10°) with N, E, S and W at 5° altitude. A new Moon (illuminated fraction below 0.02) is labelled "Moon (new)" with a hollow marker. The view always shows the whole frame and has no pan or zoom.
+- The sky is recomputed whenever the sim time has moved ≥ 2 s either way since the last pass (every frame at 600×), and at once after a camera, calibration or star-limit change.
+- Below the map, an "Above the horizon" list names each body above the horizon with its azimuth and altitude in whole degrees, for example "Saturn, az 120°, alt 58°". It is the view's text alternative. While the star catalogue loads the view says "Loading star catalogue". If it fails, it says "Star catalogue failed to load", and the grid, Sun, Moon and planets still draw.
+- The Timeline shows a Dusk and a Dawn button for each civil twilight (Sun 6° below the horizon) inside the ±12 h scrubber range. Each button is named in full, for example "Civil dusk 04:24 UTC (18:24 local)", and jumps the clock there.
+- The Layers panel adds "Stars", "Sun, Moon and planets" and "Alt/az grid" toggles, and a "Star magnitude limit" slider (V 1 to 6.5 in steps of 0.5, default 4.5) that shows the star count, for example "V ≤ 4.5 (904 stars)".
+
+`public/data/stars.json` (8,404 stars at V ≤ 6.5, brightest first) is built by hand from CDS V/50 and the IAU-CSN name list. Commit only the output. The script prints its summary line with both inputs' sha256s:
+
+```sh
+npx tsx scripts/build-stars.ts                                         # downloads both inputs
+npx tsx scripts/build-stars.ts --catalog <catalog.gz> --csn <IAU-CSN.txt>   # local copies
+```
+
+The planet test fixture `tests/fixtures/horizons-airless-maunakea-2026-10-10.json` holds JPL Horizons AIRLESS az/el tables for the Sun, Moon and six planets at Maunakea on 2026-10-10. It is fetched once with the script below, which makes eight requests to the Horizons API, 500 ms apart. Unit tests and CI only read the committed file.
+
+```sh
+npx tsx scripts/fetch-horizons-fixture.ts
+```
+
 ## Credits
 
 - Imagery: "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)." ([GIBS](https://nasa-gibs.github.io/gibs-api-docs/)). True colour: NOAA-20 / VIIRS.
 - Coastlines and place labels: © OpenStreetMap contributors, Natural Earth ([copyright](https://www.openstreetmap.org/copyright); [ODbL-1.0](https://opendatacommons.org/licenses/odbl/)).
 - Cameras: each camera's credit and terms come from `public/data/cameras.json` and are shown while it is active.
+- Stars (shown while the Stars layer is on): Bright Star Catalogue, 5th Revised Ed. (Hoffleit & Warren 1991), via CDS VizieR ([doi:10.26093/cds/vizier](https://doi.org/10.26093/cds/vizier)).
+- Star names (shown while the Stars layer is on): IAU WGSN ([IAU-CSN](https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt); CC BY).

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  BSC5_CREDIT,
   dataCredits,
   GIBS_CREDIT,
+  IAU_WGSN_CREDIT,
   OSM_NE_CREDIT,
+  starCredits,
   TRUE_COLOR_INSTRUMENT,
 } from "../../src/app/credits";
 
@@ -42,5 +45,29 @@ describe("credits", () => {
         expect(dataCredits({ trueColor, coastlines }, false)).toEqual([]);
       }
     }
+  });
+
+  it("the star catalogue and star-name credits, verbatim", () => {
+    expect(BSC5_CREDIT).toEqual({
+      text: "Bright Star Catalogue, 5th Revised Ed. (Hoffleit & Warren 1991), via CDS VizieR",
+      href: "https://doi.org/10.26093/cds/vizier",
+      licence: null,
+      licenceHref: null,
+    });
+    expect(IAU_WGSN_CREDIT).toEqual({
+      text: "Star names: IAU WGSN",
+      href: "https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt",
+      licence: "CC BY",
+      licenceHref: null,
+    });
+  });
+
+  it("starCredits gives both star credits while stars are on, else none", () => {
+    expect(starCredits(true)).toEqual([BSC5_CREDIT, IAU_WGSN_CREDIT]);
+    expect(starCredits(true)[0]).toBe(BSC5_CREDIT);
+    expect(starCredits(true)[1]).toBe(IAU_WGSN_CREDIT);
+    expect(starCredits(false)).toEqual([]);
+    // A new array per call: call it during render, never inside useAppState (React rule 6).
+    expect(starCredits(true)).not.toBe(starCredits(true));
   });
 });

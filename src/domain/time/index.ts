@@ -1,5 +1,5 @@
 // src/domain/time/index.ts — epoch-ms arithmetic. No Date objects leave this module.
-// M0 and M1 subset; the rest of the README section 6 API lands with its first user.
+// M0–M2 subset; the rest of the README section 6 API lands with its first user.
 
 export type ClockRate = 1 | 10 | 60 | 600;
 /** Closed interval of available imagery steps, epoch ms: [firstStepMs, lastStepMs]. */
@@ -7,6 +7,7 @@ export type TimeInterval = readonly [startMs: number, endMs: number];
 
 export const MAX_WALL_DELTA_MS = 250; // [M0]
 export const SCRUB_HALF_RANGE_MS = 43_200_000; // [M0]
+export const SKY_RECOMPUTE_MS = 2_000; // [M2]
 
 /** [M0] Replay without video: simTimeMs + min(max(wallDeltaMs, 0), 250) × rate. */
 export function advanceReplayMs(simTimeMs: number, wallDeltaMs: number, rate: ClockRate): number {
@@ -26,6 +27,11 @@ export function isoUtcSeconds(timeMs: number): string {
 /** [M1] "2026-10-11". */
 export function isoDateUtc(timeMs: number): string {
   return new Date(timeMs).toISOString().slice(0, 10);
+}
+
+/** [M2] "03:20" for twilight markers and the "Imagery as of HH:MM UTC" label; truncates to the minute. */
+export function formatUtcHhMm(timeMs: number): string {
+  return new Date(timeMs).toISOString().slice(11, 16);
 }
 
 const HOUR_MS = 3_600_000;

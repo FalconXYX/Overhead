@@ -1,4 +1,5 @@
-// src/main.tsx — boot: URL state, keyboard, the clock loop, render, then cameras.json and the GIBS snapshot (M1 step 16).
+// src/main.tsx — boot: URL state, keyboard, the clock loop, render, then cameras.json and the GIBS snapshot (M1 step 16),
+// and the star catalogue (M2 step 7).
 import "ol/ol.css"; // OpenLayers' own control styles: without it the hidden rotate button shows
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,6 +10,7 @@ import { parseUrlState, startUrlSync } from "./app/url";
 import { loadGibsCapabilities } from "./map/ground/layers/gibs";
 import { startClockLoop } from "./state/clockLoop";
 import { DEFAULT_CAMERA_ID } from "./state/initialState";
+import { loadStars } from "./state/skyCache";
 import { store } from "./state/store";
 
 const rootElement = document.getElementById("root");
@@ -91,3 +93,5 @@ async function loadGibs(): Promise<void> {
 
 void loadCameras();
 void loadGibs();
+// 5. In parallel: the star catalogue. loadStars sets data.stars and logs its own failure; no retry.
+void loadStars(store);

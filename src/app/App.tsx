@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Credits } from "../ui/Credits";
 import { GroundView } from "../ui/GroundView";
 import { LayerToggles } from "../ui/LayerToggles";
+import { SkyView } from "../ui/SkyView";
 import { Timeline } from "../ui/Timeline";
 import { ErrorBoundary } from "./ErrorBoundary";
 
@@ -22,7 +23,7 @@ export function App() {
       <main>
         <h1>Overhead</h1>
         <Pane name="Sky view">
-          <p>The computed sky arrives in M2.</p>
+          <SkyView />
         </Pane>
         <Pane name="Ground map">
           <LayerToggles />

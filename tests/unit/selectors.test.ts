@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
-import { selectActiveCamera, selectSite, selectTrueColorDate } from "../../src/state/selectors";
+import {
+  selectActiveCamera,
+  selectCalibration,
+  selectSite,
+  selectStarMagLimit,
+  selectTrueColorDate,
+} from "../../src/state/selectors";
 import { createAppStore } from "../../src/state/store";
+import type { AppState, Calibration } from "../../src/state/types";
 import { storeAt } from "../helpers/store";
 
 afterEach(() => {
@@ -55,5 +62,55 @@ describe("M1 selectors", () => {
       expect(selectSite(store.getState())).toBe(site);
       expect(selectActiveCamera(store.getState())).toBe(camera);
     }
+  });
+});
+
+describe("M2 selectors", () => {
+  const T = Date.parse("2026-10-10T08:00:00Z");
+  const stateWith = (starMagLimit: number, panel: AppState["ui"]["panel"]): AppState => {
+    const s = createAppStore(initialState(T, DEFAULT_CAMERA_ID)).getState();
+    // The Calibration panel lands in M4: build the state directly.
+    return { ...s, layers: { ...s.layers, starMagLimit }, ui: { ...s.ui, panel } };
+  };
+
+  it("selectStarMagLimit caps the layer setting at V ≤ 4 while the Calibration panel is open", () => {
+    expect(selectStarMagLimit(stateWith(4.5, "calibration"))).toBe(4);
+    expect(selectStarMagLimit(stateWith(4.5, null))).toBe(4.5);
+    expect(selectStarMagLimit(stateWith(4.5, "layers"))).toBe(4.5);
+    expect(selectStarMagLimit(stateWith(3, "calibration"))).toBe(3);
+    expect(selectStarMagLimit(stateWith(6.5, null))).toBe(6.5);
+  });
+
+  it("selectStarMagLimit follows setStarMagLimit", () => {
+    const store = storeAt("2026-10-10T08:00:00Z");
+    expect(selectStarMagLimit(store.getState())).toBe(4.5);
+    store.getState().actions.setStarMagLimit(6);
+    expect(selectStarMagLimit(store.getState())).toBe(6);
+  });
+
+  it("selectCalibration is the registry defaults object itself until the camera has its own", () => {
+    const store = storeAt("2026-10-10T08:00:00Z");
+    const defaults = store.getState().camera.registry["synthetic-maunakea"]?.defaults;
+    expect(defaults).toBeDefined();
+    expect(selectCalibration(store.getState())).toBe(defaults);
+    store.getState().actions.tick(T + 16);
+    expect(selectCalibration(store.getState())).toBe(defaults);
+
+    // updateCalibration lands in M4: write camera.calibration directly.
+    const stored: Calibration = { ...(defaults as Calibration), rollDeg: 179, updatedAtMs: T };
+    store.setState((s) => ({
+      camera: {
+        ...s.camera,
+        calibration: { ...s.camera.calibration, "synthetic-maunakea": stored },
+      },
+    }));
+    expect(selectCalibration(store.getState())).toBe(stored);
+    store.getState().actions.tick(T + 32);
+    expect(selectCalibration(store.getState())).toBe(stored);
+  });
+
+  it("selectCalibration is undefined with an empty registry", () => {
+    const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    expect(selectCalibration(store.getState())).toBeUndefined();
   });
 });

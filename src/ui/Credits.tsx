@@ -1,6 +1,6 @@
 // src/ui/Credits.tsx — every credit, on screen at all times, outside every pane and panel (README Credits).
 // (<footer aria-label> fails Biome's useAriaPropsSupportedByRole, so this is a labelled section.)
-import { dataCredits, TRUE_COLOR_INSTRUMENT } from "../app/credits";
+import { dataCredits, starCredits, TRUE_COLOR_INSTRUMENT } from "../app/credits";
 import { useAppState } from "../state/hooks";
 import { selectActiveCamera, selectTrueColorDate } from "../state/selectors";
 import type { Credit } from "../state/types";
@@ -41,8 +41,9 @@ export function Credits() {
   const layers = useAppState((s) => s.layers);
   const gibsReady = useAppState((s) => s.data.gibs === "ready");
   const date = useAppState(selectTrueColorDate);
-  // dataCredits returns a new array: called during render, never inside useAppState (React rule 6).
+  // dataCredits and starCredits return new arrays: called during render, never inside useAppState (React rule 6).
   const credits = dataCredits(layers, gibsReady);
+  const stars = starCredits(layers.stars);
 
   return (
     <section aria-label="Credits">
@@ -62,6 +63,11 @@ export function Credits() {
         {gibsReady && layers.trueColor && date !== null ? (
           <li>{`Imagery: ${TRUE_COLOR_INSTRUMENT}, ${date}`}</li>
         ) : null}
+        {stars.map((credit) => (
+          <li key={credit.text}>
+            <CreditLine credit={credit} />
+          </li>
+        ))}
       </ul>
     </section>
   );

@@ -4,6 +4,10 @@ import type { StoreApi } from "zustand/vanilla";
 import { clampToScrubRangeMs } from "../domain/time";
 import type { Actions, AppState, ClockState } from "./types";
 
+/** setStarMagLimit's range: 6.5 is the cut of stars.json (M2 step 2). */
+const STAR_MAG_LIMIT_MIN = 1;
+const STAR_MAG_LIMIT_MAX = 6.5;
+
 type SetState = StoreApi<AppState>["setState"];
 type GetState = StoreApi<AppState>["getState"];
 
@@ -67,7 +71,13 @@ export function createActions(set: SetState, get: GetState): Actions {
       set((s) => (s.layers[key] === on ? s : { layers: { ...s.layers, [key]: on } })),
     toggleLayer: (key) => set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
     setFootprintHeightKm: notYet("setFootprintHeightKm", "M8"),
-    setStarMagLimit: notYet("setStarMagLimit", "M2"),
+    setStarMagLimit: (vmag) => {
+      if (!Number.isFinite(vmag)) return;
+      const limit = Math.min(Math.max(vmag, STAR_MAG_LIMIT_MIN), STAR_MAG_LIMIT_MAX);
+      set((s) =>
+        s.layers.starMagLimit === limit ? s : { layers: { ...s.layers, starMagLimit: limit } },
+      );
+    },
     setVideoLayer: notYet("setVideoLayer", "M5"),
     setLoadStatus: (key, status) => set((s) => ({ data: { ...s.data, [key]: status } })),
     setGroupData: notYet("setGroupData", "M3"),

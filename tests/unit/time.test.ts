@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   advanceReplayMs,
   clampToScrubRangeMs,
+  formatUtcHhMm,
   formatZonedDateTime,
   isoDateUtc,
   isoUtcSeconds,
   MAX_WALL_DELTA_MS,
   SCRUB_HALF_RANGE_MS,
+  SKY_RECOMPUTE_MS,
   trueColorDateUtc,
 } from "../../src/domain/time";
 import { mulberry32 } from "../helpers/random";
@@ -143,5 +145,32 @@ describe("formatZonedDateTime", () => {
     expect(formatZonedDateTime(at("2026-10-10T22:00:00Z"), "Europe/Zurich")).toBe(
       "2026-10-11 00:00:00",
     );
+  });
+});
+
+describe("SKY_RECOMPUTE_MS", () => {
+  it("is 2 s of sim time", () => {
+    expect(SKY_RECOMPUTE_MS).toBe(2_000);
+  });
+});
+
+describe("formatUtcHhMm", () => {
+  it("hours and minutes in UTC", () => {
+    expect(formatUtcHhMm(T0)).toBe("03:20");
+    expect(formatUtcHhMm(Date.parse("2026-10-10T00:00:00Z"))).toBe("00:00");
+    expect(formatUtcHhMm(Date.parse("2026-10-10T15:53:03Z"))).toBe("15:53");
+  });
+
+  it("truncates to the minute, never rounds", () => {
+    expect(formatUtcHhMm(T0 + 59_999)).toBe("03:20");
+    // The civil dusk marker at 2026-10-10T04:24:58.9Z reads 04:24, not 04:25.
+    expect(formatUtcHhMm(Date.parse("2026-10-10T04:24:58.900Z"))).toBe("04:24");
+    expect(formatUtcHhMm(Date.parse("2026-12-31T23:59:59.999Z"))).toBe("23:59");
+  });
+
+  it("agrees with the local label, which also truncates", () => {
+    const t = Date.parse("2026-10-11T04:24:59.999Z");
+    expect(formatUtcHhMm(t)).toBe("04:24");
+    expect(formatZonedDateTime(t, "Pacific/Honolulu").slice(11, 16)).toBe("18:24");
   });
 });
