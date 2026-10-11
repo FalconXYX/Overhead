@@ -1,5 +1,5 @@
-# Publishes main to GitHub Pages at https://parthjain.ca/overhead/ (DECISIONS H1).
-# parthjain.ca is the FalconXYX.github.io user site, so this project site is served under /overhead/.
+# Publishes main to GitHub Pages at https://parthjain.ca/Overhead/ (DECISIONS H1).
+# parthjain.ca is the FalconXYX.github.io user site, so this project site is served under /Overhead/ (Pages paths are case-sensitive).
 name: Deploy
 
 on:

@@ -24,11 +24,11 @@ Overhead draws satellites, the ISS, the Moon, planets and bright stars onto live
 
 ## Deploy
 
-GitHub Pages, deployed from GitHub Actions (public repository `FalconXYX/overhead`). `.github/workflows/deploy.yml` builds with `npm run build` into `dist/`, using Node from `.nvmrc`, and publishes on every push to `main`. Vite's `base` is `/overhead/`.
+GitHub Pages, deployed from GitHub Actions (public repository `FalconXYX/Overhead`). `.github/workflows/deploy.yml` builds with `npm run build` into `dist/`, using Node from `.nvmrc`, and publishes on every push to `main`. Vite's `base` is `/Overhead/` (Pages paths are case-sensitive and follow the repo name).
 
-- Production: `https://parthjain.ca/overhead/`. `parthjain.ca` is the `FalconXYX.github.io` user site, so project sites appear under it.
-- No per-branch previews: CI checks every pull request, and `npm run build && npm run preview` shows a build locally at `http://localhost:4173/overhead/`.
-- One-time setup: repository Settings → Pages → Source: **GitHub Actions**.
+- Production: `https://parthjain.ca/Overhead/`. `parthjain.ca` is the `FalconXYX.github.io` user site, so project sites appear under it.
+- No per-branch previews: CI checks every pull request, and `npm run build && npm run preview` shows a build locally at `http://localhost:4173/Overhead/`.
+- Pages is enabled with Source: **GitHub Actions** (done 2026-10-11).
 
 ## Documentation
 

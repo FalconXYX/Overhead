@@ -11,7 +11,7 @@ export default defineConfig({
   workers: ci ? 1 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://localhost:4173/overhead/",
+    baseURL: "http://localhost:4173/Overhead/",
     trace: "retain-on-failure",
   },
   projects: [
@@ -22,7 +22,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npx vite preview --port 4173 --strictPort",
-    url: "http://localhost:4173/overhead/",
+    url: "http://localhost:4173/Overhead/",
     reuseExistingServer: !ci,
     timeout: 30_000,
   },

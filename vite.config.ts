@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  base: "/overhead/",
+  base: "/Overhead/",
   plugins: [react()],
   // Required: Vite 8 defaults to "iife" workers, and the build then fails as soon as anything
   // imports satellite.js (top-level await in its WASM loader). See docs/DECISIONS.md, Tooling.
