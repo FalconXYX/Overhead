@@ -2,11 +2,11 @@
 
 Stage file for milestone M0. Read [`README.md`](README.md) sections 1–3, 7 and 8 first; this file uses their paths, types and names and does not repeat them. Precedence: [`../DECISIONS.md`](../DECISIONS.md), then the README, then this file.
 
-Every config file and code block below was run on 2026-10-11 in a throwaway copy of the scaffold, with Node 26.11.1 arm64 (npm 11.20.0), the pinned packages and Playwright Chromium 1248, headless. The configs were copied out of this file's code blocks. `npm ci`, `npm install` (lockfile unchanged), lint, typecheck, the 21 unit tests, the build, both e2e tests, every step 14 negative control and `npm run perf` (gotcha 8) behaved as described. The same steps then ran in order on Ubuntu 24.04.5 (linux/arm64, Docker) with Node 26.11.1, and every one exited 0 once `libatomic1` was installed in the container (gotcha 18); GitHub's own runner has not run them yet. Before the Node 26 switch, a reviewer had rebuilt the scaffold from this text alone in a second scratch copy, and all five gates, the negative controls and the guard checks behaved as described.
+Every config file and code block below was run on 2026-10-11 in a throwaway copy of the scaffold, with Node 26.11.1 arm64 (npm 11.20.0), the pinned packages and Playwright Chromium 1248, headless. The configs were copied out of this file's code blocks. `npm ci`, `npm install` (lockfile unchanged), lint, typecheck, the 21 unit tests, the build, both e2e tests, every step 14 negative control and `npm run perf` (gotcha 8) behaved as described. The same steps then ran in order on Ubuntu 24.04.5 (linux/arm64, Docker) with Node 26.11.1, and every one exited 0 once `libatomic1` was installed in the container (gotcha 18). After the switch to GitHub Pages under the `/Overhead/` base (DECISIONS H1), lint, typecheck, the unit tests, the build, both e2e tests (also with `CI=true`) and the base control in step 14 ran again on a copy of the repository's files, and `deploy.yml` passed actionlint 1.7.12. On GitHub, `FalconXYX/Overhead` ran the same files on 2026-10-11: CI run 38157417613 passed every step on the hosted `ubuntu-24.04` runner with Node 26.11.1, and Deploy run 38157417680 published `https://parthjain.ca/Overhead/`, which loaded the three panes in headless Chromium with no console error. Before the Node 26 switch, a reviewer had rebuilt the scaffold from this text alone in a second scratch copy, and all five gates, the negative controls and the guard checks behaved as described.
 
 ## 1. Goal
 
-Every quality gate runs on an empty app. `npm run lint`, `typecheck`, `test`, `build` and `e2e` exit 0 in CI. A Cloudflare Pages preview serves the app shell for every branch. The shell has three placeholder panes, one error boundary per pane, the whole store from README section 4, and the replay clock loop.
+Every quality gate runs on an empty app. `npm run lint`, `typecheck`, `test`, `build` and `e2e` exit 0 in CI. GitHub Pages serves the app shell at `https://parthjain.ca/Overhead/`, deployed from `main` by GitHub Actions (DECISIONS H1); there are no per-branch previews. The shell has three placeholder panes, one error boundary per pane, the whole store from README section 4, and the replay clock loop.
 
 Out of scope for M0:
 
@@ -23,18 +23,18 @@ Out of scope for M0:
 1. Milestones: none.
 2. Data files: none.
 3. Accounts:
-   - a GitHub repository with Actions enabled;
-   - a Cloudflare account for Pages (step 15).
-   - No API keys and no secrets: the app reads no `import.meta.env` variable other than `BASE_URL` (M1 starts using it for data URLs; it is not a secret), and CI needs no repository secrets.
+   - the public GitHub repository `FalconXYX/Overhead` (H1), with Actions enabled and Pages set to deploy from GitHub Actions (step 15). No other account.
+   - No API keys and no secrets: the app reads no `import.meta.env` variable other than `BASE_URL` (`"/Overhead/"`; M1 starts using it for data URLs; it is not a secret), and neither workflow needs a repository secret. Deploys use the workflow's own `GITHUB_TOKEN`.
 4. Machine:
    - Node 26, arm64 (O4): `nvm install 26`, then `nvm alias default 26`. On 2026-10-11 that gives Node 26.11.1 with npm 11.20.0. Node 26 becomes LTS on 2026-10-28.
    - `uname -m` and `node -p process.arch` must both print `arm64`.
    - `which -a node` must print exactly one path, the nvm Node 26 (`~/.nvm/versions/node/v26.x.y/bin/node`). On 2026-10-11 it printed only `~/.nvm/versions/node/v26.11.1/bin/node`. Any other `node` on the `PATH` is a leftover install: remove it before `npm ci` (gotcha 9).
    - Every pinned package accepts Node 26. The `engines` fields in the installed packages are: vitest `^22.12.0 || ^24.0.0 || >=26.0.0`, vite, rolldown and `@vitejs/plugin-react` `^20.19.0 || >=22.12.0`, Playwright `>=20`, Biome `>=14.21.3`, TypeScript `>=16.20.0` and tsx `>=18.0.0`.
-5. Repository state: `main` has no commits yet, and there is no remote.
-   - `.gitignore` keeps `recordings/` (O2) and `docs/verification/` out of git. Its comment on the second reads "verification evidence records stay local (Parth, 2026-10-11)". Before the first commit, `git check-ignore -v docs/verification/README.md recordings/x.mp4` must print two lines, one for each pattern. Links from the committed docs into `docs/verification/` then resolve only in a local checkout.
-   - First commit `.gitignore`, `docs/` and `overview.md` to `main` (`git add .gitignore docs overview.md`, never `git add -A`) and push, so the M0 pull request has a base.
-   - Then branch `m0-scaffold`.
+5. Repository state on 2026-10-11:
+   - The remote is `https://github.com/FalconXYX/Overhead.git`. `main` already holds the docs and this scaffold: commit `80db984` ("Planning and Setup") and `8f6c858` ("Serve under /Overhead/ to match the GitHub Pages path"). Both went straight to `main`, before branch protection.
+   - So M0's work is to check every file on `main` against this document, fix any difference on a branch `m0-scaffold`, and merge it through a pull request once `main` is protected (step 15). The differences found on 2026-10-11: `deploy.yml` still has a `workflow_call` trigger (step 15 removes it), and the root `README.md` lacks the dev URL and the redeploy line (step 12, items 3 and 4).
+   - `.gitignore` keeps `recordings/` (O2) and `docs/verification/` out of git. Its comment on the second reads "verification evidence records stay local (Parth, 2026-10-11)". `git check-ignore -v docs/verification/README.md recordings/x.mp4` must print two lines, one for each pattern. Links from the committed docs into `docs/verification/` then resolve only in a local checkout.
+   - Never `git add -A`: name the paths, so nothing under `recordings/` or a stray file is committed.
 
 ## 3. Deliverables
 
@@ -48,8 +48,8 @@ All paths are from the [file layout](README.md#3-file-layout).
 | `.gitignore` | already correct (it ignores `recordings/`, `docs/verification/`, `node_modules/`, `dist/` and the test output); no change |
 | `biome.json` | recommended preset plus the stricter rules in step 4 |
 | `tsconfig.json`, `tsconfig.app.json`, `tsconfig.worker.json`, `tsconfig.node.json`, `tsconfig.test.json` | four project references |
-| `vite.config.ts` | `worker.format: "es"`, Vitest config |
-| `playwright.config.ts` | one headless Chromium project, `vite preview` web server |
+| `vite.config.ts` | `base: "/Overhead/"`, `worker.format: "es"`, Vitest config |
+| `playwright.config.ts` | one headless Chromium project, `vite preview` web server, both at `http://localhost:4173/Overhead/` |
 | `index.html` | `lang="en"`, title `Overhead`, `#root` |
 | `src/main.tsx` | start the clock loop, render `<App />` in `StrictMode` |
 | `src/app/App.tsx` | shell: three labelled panes and the clock placeholder |
@@ -65,6 +65,7 @@ All paths are from the [file layout](README.md#3-file-layout).
 | `tests/e2e/fixtures.ts` | shared `test` with the guard fixture |
 | `tests/e2e/smoke.spec.ts` | section 5 |
 | `.github/workflows/ci.yml` | the CI job |
+| `.github/workflows/deploy.yml` | the GitHub Pages deploy from `main` (step 15) |
 | `README.md` (root) | stub: setup, scripts, deploy, M0 section |
 | `docs/DECISIONS.md` | append the lines in section 8 |
 
@@ -90,7 +91,7 @@ All paths are from the [file layout](README.md#3-file-layout).
   "allowScripts": { "esbuild": false, "fsevents": false }
 ```
 
-2. Write `.nvmrc` containing `26`. CI (step 10) and Cloudflare Pages (step 15) both read it.
+2. Write `.nvmrc` containing `26`. `ci.yml` (step 10) and `deploy.yml` (step 15) both read it.
 3. Run `npm install` to regenerate the lockfile.
    - Check that it still lists the Linux binaries CI needs: `grep -c 'linux-x64' package-lock.json` must be more than 0.
    - The lockfile must also have no `@types/proj4` entry.
@@ -98,7 +99,7 @@ All paths are from the [file layout](README.md#3-file-layout).
    - Neither package needs its script: esbuild runs from `@esbuild/<platform>`, and fsevents ships a prebuilt `fsevents.node`.
    - `npm install-scripts deny --all` writes the `allowScripts` block above.
 5. Run `rm -rf node_modules && npm ci`. It must finish with no warnings.
-6. Do not add a `postinstall` that downloads browsers: Pages installs the dependencies on every build and would download Chromium each time.
+6. Do not add a `postinstall` that downloads browsers: `deploy.yml` runs `npm ci` on every deploy and would download Chromium each time.
 
 ### Step 2. TypeScript project references
 
@@ -195,6 +196,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  base: "/Overhead/",
   plugins: [react()],
   // Required: Vite 8 defaults to "iife" workers, and the build then fails as soon as anything
   // imports satellite.js (top-level await in its WASM loader). See docs/DECISIONS.md, Tooling.
@@ -206,6 +208,12 @@ export default defineConfig({
   },
 });
 ```
+
+`base` is the GitHub Pages path (H1). It is case-sensitive and must equal the repository name: on 2026-10-11 `https://parthjain.ca/Space-Opera/` answered 200 and `/space-opera/` 404, and the Pages API gives `FalconXYX/Overhead` the URL `parthjain.ca/Overhead/`. With it set, measured on 2026-10-11:
+
+1. `vite build` writes `<script … src="/Overhead/assets/index-….js">` into `dist/index.html` and inlines `import.meta.env.BASE_URL` as `"/Overhead/"`.
+2. `npm run dev` and `vite preview` serve the app at `/Overhead/`. Both answer `/` and `/?<query>` with a 302 to `/Overhead/?<query>`; any other path outside the base gets 404 `text/plain` ("did you mean to visit /Overhead/…").
+3. So every runtime URL is built from `import.meta.env.BASE_URL` (H1). A root-relative `fetch("/data/…")` 404s in preview and fails the e2e guard (step 14).
 
 Keep `worker.format` even though M0 has no worker. With it removed, one main-thread `import { json2satrec } from "satellite.js"` makes `vite build` exit 1. With it set, the build passes and warns that `node:module` and `node:worker_threads` were externalized (harmless).
 
@@ -452,7 +460,7 @@ export default defineConfig({
   workers: ci ? 1 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://localhost:4173",
+    baseURL: "http://localhost:4173/Overhead/",
     trace: "retain-on-failure",
   },
   projects: [
@@ -463,12 +471,14 @@ export default defineConfig({
   ],
   webServer: {
     command: "npx vite preview --port 4173 --strictPort",
-    url: "http://localhost:4173",
+    url: "http://localhost:4173/Overhead/",
     reuseExistingServer: !ci,
     timeout: 30_000,
   },
 });
 ```
+
+`baseURL` ends with the base and a slash. Specs navigate with base-relative paths: `page.goto("./")`, `page.goto("./?t=2026-10-10T03:30:00Z")`. Playwright resolves `goto` like `new URL(path, baseURL)`, so `"/?t=…"` leaves the base and reaches the app only through `vite preview`'s 302 (step 3), and `"/data/…"` is a 404.
 
 ```ts
 // tests/e2e/fixtures.ts — every spec imports `test` and `expect` from here.
@@ -571,10 +581,11 @@ These are the steps of [README section 8, CI](README.md#ci): lint runs first, an
 
 How the workflow was checked:
 
-1. `actionlint` 1.7.12 passes it. actionlint knows no inputs for the v7 actions, so every input above was checked against each action's `action.yml` at tag `v7`. All three actions run on `node24`: that is the actions' own runtime, separate from the project's Node 26.
+1. `actionlint` 1.7.12 passes it. actionlint knows no inputs for the v7 actions, so every input above was checked against each action's `action.yml` at tag `v7`.
 2. GitHub Actions sets `CI=true`. That turns on `forbidOnly`, Vitest's `allowOnly: false`, and a fresh `vite preview`.
-3. Node 26 in CI comes from `.nvmrc`. `node-version-file: .nvmrc` reads `26`, which asks setup-node for the same thing as `node-version: 26`: the newest 26.x in its manifest. On 2026-10-11 the first 26.x entry in `actions/node-versions`' `versions-manifest.json` was 26.11.1, marked stable. Keep the file input, so `.nvmrc` stays the one place the version is set (Pages reads it too, step 15).
+3. Node 26 in CI comes from `.nvmrc`. `node-version-file: .nvmrc` reads `26`, which asks setup-node for the same thing as `node-version: 26`: the newest 26.x in its manifest. Keep the file input, so `.nvmrc` stays the one place the version is set (`deploy.yml` reads it too, step 15).
 4. Node 26's Linux builds need `libatomic.so.1` (both `node-v26.11.1-linux-x64` and `-linux-arm64` list it as `NEEDED`; gotcha 18). The hosted `ubuntu-24.04` image (20261004.327.1) installs gcc 13, whose `libgcc-13-dev` depends on `libatomic1`, so the workflow needs no extra step.
+5. It ran green on GitHub on 2026-10-11 (`FalconXYX/Overhead`, runs 38157297404 and 38157417613, image `ubuntu-24.04` 20261004.327.1). setup-node logged "Attempting to download 26..." and installed 26.11.1 x64; `npm ci` added 91 packages with no install-script warning; Biome checked 32 files; Vitest ran 21 tests; the build wrote `index-DzNXTc5e.js` at 226.83 kB (71.45 kB gzipped); Playwright downloaded Chrome for Testing 156.0.8078.4 (v1248); e2e passed 2 tests in 3.4–4.5 s. The `check` job took 49 s on the first run.
 
 ### Step 11. Local run of every gate
 
@@ -596,9 +607,9 @@ Run, in order: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`,
    - Node 26 arm64 (`nvm use`, then check `node -p process.arch`);
    - `npm ci`;
    - `npx playwright install chromium`.
-3. A table of the nine scripts. Note that `npm run e2e` serves the last `npm run build`.
-4. The production URL and the preview URL pattern (step 15).
-5. Links to `docs/implementation/README.md`, `docs/DECISIONS.md` and `docs/verification/README.md`.
+3. A table of the nine scripts. Note that `npm run e2e` serves the last `npm run build`, and that `npm run dev` and `npm run preview` serve the app at `/Overhead/` (`http://localhost:5173/Overhead/` and `http://localhost:4173/Overhead/`).
+4. Deploy: the production URL `https://parthjain.ca/Overhead/`, the sentence "GitHub Pages, deployed from `main` by `.github/workflows/deploy.yml`; there are no per-branch previews", and how to redeploy by hand (step 15, setup 3).
+5. Links to `docs/implementation/README.md` and `docs/DECISIONS.md`, plus one line saying the verification records (`docs/verification/`) are kept locally and are not in the repository (`.gitignore`).
 6. A milestone checklist, M0–M9.
 7. An "M0 · Scaffold" section, three lines on what exists.
 8. A "Credits" heading that says "none yet". M1 adds GIBS.
@@ -623,41 +634,100 @@ These run locally and are never committed. Each must make its gate fail; paste t
 | `document.title` in `src/domain` | `npm run typecheck` | TS2584 |
 | `test.only` in a spec | `CI=true npm run e2e` | `forbidOnly` |
 | a page-side `console.error` or third-party `fetch` | `npm run e2e` | the guard |
+| `void fetch("/data/gp/meta.json").catch(() => undefined);` in `main.tsx` (a URL without `BASE_URL`) | `npm run build && npm run e2e` | the guard: "Failed to load resource: the server responded with a status of 404 (Not Found)". The same line with `` `${import.meta.env.BASE_URL}data/gp/meta.json` `` passes |
 | remove `if (hitEdge) actions.pause();` | `npm test` | the "+12 h" test |
 
-### Step 15. Deploy preview: Cloudflare Pages
+### Step 15. Deploy: GitHub Pages from Actions (H1)
 
-Recommended host: **Cloudflare Pages through its Git integration.** Why:
+Production is `https://parthjain.ca/Overhead/`. `parthjain.ca` is Parth's user site (`FalconXYX.github.io`, custom domain `parthjain.ca`), so the `FalconXYX/Overhead` project site appears under it at `/Overhead/`, the repository's name (H1). `deploy.yml` publishes `main`, and there are no per-branch previews. A pull request is checked by CI, and a build is looked at locally with `npm run build && npm run preview` at `http://localhost:4173/Overhead/`.
 
-1. Every branch gets a public preview at `https://<branch>.<project>.pages.dev` (the branch name lowercased, other characters turned into `-`), plus a permanent `https://<hash>.<project>.pages.dev`, with no workflow file and no repository secret. The `m0-scaffold` preview is `https://m0-scaffold.<project>.pages.dev`.
-2. It serves from the domain root, so Vite's default `base: "/"`, the `public/data/...` paths and the `vite preview` e2e server all match production.
-3. The free plan allows 500 builds a month, one at a time, 20 minutes each, 20,000 files per site and 25 MiB per file (Cloudflare's Pages limits page, last updated 2026-09-05, read on 2026-10-11). That leaves room for M3's `fetch-gp.yml` commits (up to 4 a day, about 124 a month) plus pull-request pushes, and the largest data file (`starlink.json`, 4.7 MB) fits. The recorded 2026-10-11 clip (148,643,811 bytes) does not; M9 step 14 deploys a 23,515,809-byte copy. Static files are always sent whole: on 2026-10-11 two `pages.dev` sites answered ranged requests for a script, a font and an MP4 with 200 and the full body, and sent no `Accept-Ranges`. M9 step 14 covers what that means for video.
-4. `pages.dev` responses carry `referrer-policy: strict-origin-when-cross-origin` and no COOP/COEP (checked with `curl -sI` on a live `pages.dev` site). The YouTube embed needs a Referer (error 153). Non-CORS camera images and the YouTube iframe need the absence of COEP.
-5. Previews carry `X-Robots-Tag: noindex` by default.
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
 
-Setup:
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # fetch-gp.yml dispatches this after a data commit (M3)
 
-1. Cloudflare dashboard → Workers & Pages → Create application → **Pages** → Connect to Git. Pick the repository, then Install & Authorize and Begin setup.
-2. Production branch: `main`. Framework preset: None. Build command: `npm run build`. Build output directory: `dist`. Root directory: empty. Then Save and Deploy.
-   - That first deploy builds `main`, which holds only the docs until this pull request merges, so it fails. This is expected.
-   - Push `m0-scaffold` afterwards (or push it again) to get its preview build, and check that one.
-3. Environment variables: none.
-   - The build image (v3, default Node 22.16.0) reads `.nvmrc`; Cloudflare's build-image page (last updated 2026-09-18) lists Node.js as "Any version". Check that the `m0-scaffold` build log shows Node v26.x.
-   - If it does not, set `NODE_VERSION` to `26.11.1`. That is the only variable allowed, and it is not a secret.
-4. Settings → Build:
-   - leave the preview branch control at "All non-Production branches" (the default);
-   - set Build watch paths to include `*` and exclude `docs/*`, so documentation-only pushes do not build.
-5. On GitHub, protect `main` and require the `check` job of `CI`. Pages builds independently of CI, so this protection is what keeps red code off production.
-   - On GitHub Free, protected branches exist only in public repositories; a private repository needs GitHub Pro.
-   - Without protection, merge only after `check` is green.
-   - From M3, `fetch-gp.yml` pushes data commits to `main` with `GITHUB_TOKEN`, and those pushes never trigger CI, so a required check may reject them. The docs assume a repository ruleset that requires `check` and lets the data push bypass it ([README "Assumed until Parth confirms"](README.md#assumed-until-parth-confirms)); M3 proves it on the first manual run.
-6. Never add a `public/_headers` file that sets COOP/COEP or `Referrer-Policy: no-referrer`.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
-Fallback if Parth does not want a Cloudflare account: GitHub Pages deployed from Actions.
+concurrency:
+  group: pages
+  cancel-in-progress: false # never cancel a deploy that is already publishing
 
-- It has no per-branch previews.
-- It serves from `/<repo>/`, which needs `base: "/<repo>/"` in Vite, every data URL prefixed with `import.meta.env.BASE_URL` (M1 already does this), and the e2e `baseURL` changed to match.
-- On GitHub Free it needs a public repository.
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+```
+
+Rules:
+
+1. **Triggers: `push` to `main` and `workflow_dispatch`, never `workflow_call`.**
+   - M3's `fetch-gp.yml` pushes its data commits with `GITHUB_TOKEN`, and a push made with `GITHUB_TOKEN` starts no workflow. GitHub's docs name the exception: "`workflow_dispatch` and `repository_dispatch` events always create workflow runs."
+   - So after a data push, `fetch-gp.yml` runs `gh workflow run deploy.yml --ref main` with `GH_TOKEN: ${{ github.token }}`, and adds `actions: write` to its `permissions` (M3 step 9). That change, added after M3's commit step, passed actionlint 1.7.12. The dispatched run builds "the last commit on the `GITHUB_REF` branch", which includes the data commit.
+   - A `workflow_call` from `fetch-gp.yml` would publish stale data. A called workflow's `GITHUB_SHA` is "same as the caller workflow", and a scheduled caller's is "last commit on default branch" when the run started, which is before its own data push. (GitHub's "Events that trigger workflows" and "Triggering a workflow" pages, read on 2026-10-11.)
+2. **Build.** The job uses the same Node (`.nvmrc`) and `npm ci` as CI, then `npm run build`. M9 step 14 changes that one step to `npm run build:pages`. It does not repeat lint, tests or e2e: branch protection (setup 4) keeps a red commit off `main`.
+3. **Permissions and concurrency.** `contents: read`, `pages: write` and `id-token: write` are the minimum `actions/deploy-pages` names. The `pages` concurrency group never cancels, so a deploy that is publishing always finishes.
+4. **Action inputs** were checked against each action's `action.yml` at its major tag, the newest releases on 2026-10-11:
+   - `configure-pages@v6` (v6.0.0) takes no inputs here, and fails when Pages is off (gotcha 20);
+   - `upload-pages-artifact@v5` (v5.0.0) takes `path`, tars that folder, and leaves out dotfiles unless `include-hidden-files: true`;
+   - `deploy-pages@v5` (v5.0.1) gives the `page_url` output.
+
+Measured on 2026-10-11 with `curl` and headless Chromium 156:
+
+1. **Paths.** `https://parthjain.ca/Overhead/` answers 200, and `/Overhead` answers 301 to `/Overhead/`. Paths are case-sensitive (`/Space-Opera/` 200, `/space-opera/` 404), hence `base: "/Overhead/"` (step 3).
+2. **Headers.** There is no `referrer-policy`, no COOP and no COEP; there is `access-control-allow-origin: *` and `cache-control: max-age=600`.
+   - Without a `referrer-policy` header Chromium applies its default, `strict-origin-when-cross-origin`, so the YouTube embed gets the Referer it needs (error 153 otherwise, `verification/sources.md`).
+   - GitHub Pages cannot set response headers, so only a `<meta>` in `index.html` could drop the Referer. Never add `<meta name="referrer" content="no-referrer">` (step 8).
+3. **Byte ranges.** A `Range: bytes=0-1` request answers 206 with `content-range` and `accept-ranges: bytes`. MP4 files behave the same: on a 22,306,323-byte `video/mp4` file, `bytes=20000000-20000009` answered 206. M9 step 14 relies on this.
+4. **Missing files** answer 404 `text/html` (GitHub's 404 page). `vite preview` answers 200 with `index.html` instead. A `fetch` that gets a 404 logs "Failed to load resource" in the console.
+5. **Plain http is not redirected.** `http://parthjain.ca/Overhead/` answers 200 over http: the Pages API reports `https_enforced` false for the project, while the user site redirects to https. An http page is not a secure context, and `navigator.clipboard` is undefined there (headless Chromium 156 on a non-localhost http origin). Always link `https://parthjain.ca/Overhead/`; M9's "Copy link" checks for the clipboard first.
+6. **Caching.** With `max-age=600`, a browser can show the previous deploy for up to 10 minutes.
+7. **Limits** (GitHub's "GitHub Pages limits" page, read on 2026-10-11):
+   - a published site may be no larger than 1 GB;
+   - bandwidth has a soft limit of 100 GB a month;
+   - a deployment times out after 10 minutes;
+   - the soft limit of 10 builds an hour "does not apply if you build and publish your site with a custom GitHub Actions workflow".
+   - The page states no per-file limit. The largest data file (`starlink.json`, 4.7 MB) is far inside these. M9 step 14 sizes the recorded clip.
+
+Setup (one time):
+
+1. Settings → Pages → Build and deployment → Source: **GitHub Actions**. Do this before the first push that runs `deploy.yml`.
+   - On 2026-10-11 the first Deploy run (38157297554) failed at `configure-pages` with "Get Pages site failed. Please verify that the repository has Pages enabled and configured to build using GitHub Actions", because Pages was still off.
+   - After it was switched on, the next push deployed (run 38157417680). The Pages API now reports `build_type` `workflow` and `html_url` `http://parthjain.ca/Overhead/`.
+2. GitHub created the `github-pages` environment with one deployment-branch rule, `main`. Leave it, so a run on another branch cannot deploy.
+3. To redeploy without a push: Actions → Deploy → Run workflow, or `gh workflow run deploy.yml --ref main`.
+4. Protect `main`: require a pull request and the `check` job of `CI`. Branch protection is available for public repositories on GitHub Free. On 2026-10-11 `main` was not protected yet.
+   - From M3, `fetch-gp.yml` pushes data commits to the protected `main`. That needs a repository ruleset that requires `check` and lets that workflow's push bypass it ([README "Assumed until Parth confirms"](README.md#assumed-until-parth-confirms)); M3 proves it on the first manual run.
+5. Add no secrets and no variables. The deploy authenticates with the run's own `GITHUB_TOKEN`.
 
 ## 5. Tests
 
@@ -692,82 +762,82 @@ The manual scheduler in `clockLoop.test.ts` holds at most one pending callback, 
 E2E tests, `tests/e2e/smoke.spec.ts`. Both use the guard and have no data fixture.
 
 1. **"the shell loads with every pane"**
-   - `goto("/")`; the title is `Overhead`.
+   - `goto("./")` (base-relative, step 9); the title is `Overhead`.
    - The regions `Sky view`, `Ground map` and `Timeline` are visible.
    - The Timeline's `time` element matches `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/`.
 2. **"Play advances the replay clock and Pause stops it"**
-   - In M0, `goto("/")`. From M1 the app starts live and playing when the URL has no `t`, so M1 changes this test to start at `/?t=2026-10-10T03:30:00Z` (M1 step 17).
+   - In M0, `goto("./")`. From M1 the app starts live and playing when the URL has no `t`, so M1 changes this test to start at `./?t=2026-10-10T03:30:00Z` (M1 step 17).
    - Read the readout, click `Play`, and expect the text to change within 3,000 ms.
    - Click `Pause` and wait 300 ms, so the 4 Hz readout catches up.
    - Read the readout again, wait 1,100 ms, and expect the same text.
 
 ## 6. Acceptance criteria
 
-1. On the pull request, the `CI / check` job is green, with every step exit 0: `npm ci`, `lint`, `typecheck`, `test` (21 tests), `build`, the browser install and `e2e` (2 tests).
+1. On the pull request and then on `main`, the `CI / check` job is green, with every step exit 0: `npm ci`, `lint`, `typecheck`, `test` (21 tests), `build`, the browser install and `e2e` (2 tests).
 2. The e2e guard recorded no console errors, uncaught exceptions or third-party requests. Both specs passing shows this.
 3. Every negative control in step 14 failed its gate.
-4. The CI log and the `m0-scaffold` Pages build log both show Node v26.x. The local `node -p process.arch` prints `arm64`, and `which -a node` prints one path (section 2, item 4).
-5. The Pages preview for `m0-scaffold`:
-   - loads the three panes;
+4. The CI log and the Deploy log both show Node v26.x (setup-node prints `node: v26.11.1` or a later 26.x). The local `node -p process.arch` prints `arm64`, and `which -a node` prints one path (section 2, item 4).
+5. After the merge, the Deploy run for that commit is green, and `https://parthjain.ca/Overhead/` (allow up to 10 minutes for the cache, step 15):
+   - loads the three panes, with `<script … src="/Overhead/assets/index-….js">` in its HTML;
    - Play advances the UTC readout and Pause stops it;
    - the DevTools console shows no errors;
-   - `curl -sI` shows no `cross-origin-embedder-policy`, no `cross-origin-opener-policy` and no `referrer-policy: no-referrer`.
+   - `curl -sI https://parthjain.ca/Overhead/` shows status 200 and no `cross-origin-embedder-policy`, no `cross-origin-opener-policy` and no `referrer-policy`;
+   - `curl -sI https://parthjain.ca/Overhead` shows 301 to `https://parthjain.ca/Overhead/`.
 6. No secrets:
    - `grep -rn "import.meta.env" src` prints nothing (from M1 its only hits are `import.meta.env.BASE_URL`);
-   - the repository has no Actions secrets;
-   - the Pages project has no variables except, optionally, `NODE_VERSION`.
-7. `package-lock.json` has no `@types/proj4` and still lists the `linux-x64` binaries. `npm ci` prints no install-script warning.
-8. `docs/DECISIONS.md` has the section 8 lines, and the root `README.md` has the step 12 contents.
+   - the repository has no Actions secrets and no Actions variables;
+   - `deploy.yml` has exactly the `push` (to `main`) and `workflow_dispatch` triggers, and the permissions `contents: read`, `pages: write` and `id-token: write`.
+7. `main` requires the `check` job (step 15, setup 4). Either `gh api repos/FalconXYX/Overhead/branches/main/protection` (classic protection) or `gh api repos/FalconXYX/Overhead/rules/branches/main` (rulesets) lists a required status check named `check`. On 2026-10-11 the first answered 404 "Branch not protected" and the second `[]`.
+8. `package-lock.json` has no `@types/proj4` and still lists the `linux-x64` binaries. `npm ci` prints no install-script warning.
+9. `docs/DECISIONS.md` has the section 8 lines, and the root `README.md` has the step 12 contents.
 
 Evidence in the pull request:
 
-- the CI run link;
+- the CI run link, and after the merge the Deploy run link;
 - the output of `npx vitest run --reporter=verbose` (21 test names) and of `npm run e2e` (2 names);
 - the step 14 transcript;
-- one screenshot of the preview page, for the record only: design is not judged in M0;
-- the `curl -sI` output;
-- the preview URL.
+- one screenshot of `https://parthjain.ca/Overhead/`, for the record only: design is not judged in M0;
+- the two `curl -sI` outputs.
 
 No trace is needed. Playwright keeps one on failure (`retain-on-failure`), and CI uploads it with the HTML report.
 
 ## 7. Gotchas
 
-1. **TypeScript 7 rejects old options.** `baseUrl` gives TS5102 and `moduleResolution: "node10"` gives TS5108. `types` defaults to `[]`, so `vite/client` and `node` must be listed. satellite.js's types need `ESNext.Disposable`. ([tooling.md](../verification/tooling.md) claim 1)
-2. **The default worker format breaks the build.** It fails on any satellite.js import, even on the main thread. Re-confirmed for this doc. ([tooling.md](../verification/tooling.md) claim 2, [satellite-js.md](../verification/satellite-js.md))
-3. **Banned tools.** typescript-eslint, vite-plugin-checker and ts-morph are banned (DECISIONS, Tooling): they call the old TypeScript JS API, which `typescript` 7.0.2 no longer exports. Type-check only with `tsc -b`. ([tooling.md](../verification/tooling.md) claim 5)
-4. **Biome's recommended preset is not enough.** It only warns on `any`, ignores `it.skip`, and errors on `import Map from "ol/Map"`. ([tooling.md](../verification/tooling.md) claim 9)
-5. **Playwright needs its own Chromium.** 1.64.0 requires Chromium 1248; an older cached build is not used, and the launch fails with "Executable doesn't exist". ([tooling.md](../verification/tooling.md) claim 4)
-6. **Never run `npm run dev` as a CI step.** The Vite dev server never exits, and under `CI=true` it skips its stdin-end shutdown. CI runs `vite preview` only through Playwright's `webServer`. ([architecture.md](../verification/architecture.md) claim 25)
+1. **TypeScript 7 rejects old options.** `baseUrl` gives TS5102 and `moduleResolution: "node10"` gives TS5108. `types` defaults to `[]`, so `vite/client` and `node` must be listed. satellite.js's types need `ESNext.Disposable`. (`verification/tooling.md` claim 1)
+2. **The default worker format breaks the build.** It fails on any satellite.js import, even on the main thread. Re-confirmed for this doc. (`verification/tooling.md` claim 2, `verification/satellite-js.md`)
+3. **Banned tools.** typescript-eslint, vite-plugin-checker and ts-morph are banned (DECISIONS, Tooling): they call the old TypeScript JS API, which `typescript` 7.0.2 no longer exports. Type-check only with `tsc -b`. (`verification/tooling.md` claim 5)
+4. **Biome's recommended preset is not enough.** It only warns on `any`, ignores `it.skip`, and errors on `import Map from "ol/Map"`. (`verification/tooling.md` claim 9)
+5. **Playwright needs its own Chromium.** 1.64.0 requires Chromium 1248; an older cached build is not used, and the launch fails with "Executable doesn't exist". (`verification/tooling.md` claim 4)
+6. **Never run `npm run dev` as a CI step.** The Vite dev server never exits, and under `CI=true` it skips its stdin-end shutdown. CI runs `vite preview` only through Playwright's `webServer`. (`verification/architecture.md` claim 25)
 7. **`npm run e2e` with no `dist/` fails slowly.** `vite preview` serves 404 silently, and Playwright fails after 30 s with "Timed out waiting 30000ms from config.webServer". Locally, a stale `dist/` tests old code, so always build first. (Checked for this doc.)
 8. **`npm run perf` exits 1 until M2.** It prints "No tests found" because no `tests/perf/*.perf.ts` exists yet; M2 adds `sky.perf.ts`. (Checked for this doc.)
-9. **x86_64 Node breaks the native binaries.** A Node running under Rosetta (`node -p process.arch` prints `x64`) installs darwin-x64 builds of rolldown, Biome, lightningcss and the TypeScript compiler; that happened with the old Node 25.2.1. The machine now has only the arm64 Node 26.11.1. After any switch of Node, run `rm -rf node_modules && npm ci`. ([tooling.md](../verification/tooling.md) claim 10, DECISIONS O4)
-10. **npm skips install scripts that `allowScripts` does not list.** npm 11.19 and 11.20 both skip them and warn. Without the block, npm 11.20.0 printed "2 packages have install scripts not yet covered by allowScripts", naming `esbuild@0.28.2` (postinstall) and `fsevents@2.3.3` (install), and `npm install-scripts deny --all` wrote `{ "esbuild": false, "fsevents": false }`. `allowScripts` records the review; esbuild and fsevents work without their scripts. (Checked for this doc with Node 24.21.0 and Node 26.11.1.)
-11. **zustand 5 typing and selectors.** The store creator needs its annotated return type (TS2345 otherwise). A React selector that returns a new object throws React error #185; use `useShallow`. ([tooling.md](../verification/tooling.md) claims 8 and 17)
-12. **StrictMode runs effects twice in development.** It runs mount, cleanup, mount. The clock loop therefore starts at module scope in `main.tsx`, and `startClockLoop` throws if started twice. ([tooling.md](../verification/tooling.md) claim 6)
-13. **Background tabs pause rAF.** The first delta after returning is huge, so `advanceReplayMs` clamps it to 250 ms (at 600×, a 1 h absence would otherwise jump about 25 days). ([architecture.md](../verification/architecture.md) claim 5)
+9. **Use only the arm64 Node 26.** `node -p process.arch` must print `arm64` (section 2, item 4): an x64 Node installs the darwin-x64 builds of rolldown, Biome, lightningcss and the TypeScript compiler. After any switch of Node, run `rm -rf node_modules && npm ci`. (`verification/tooling.md` claim 10, DECISIONS O4)
+10. **npm skips install scripts that `allowScripts` does not list.** npm 11.20.0 skips them and warns. Without the block, it printed "2 packages have install scripts not yet covered by allowScripts", naming `esbuild@0.28.2` (postinstall) and `fsevents@2.3.3` (install), and `npm install-scripts deny --all` wrote `{ "esbuild": false, "fsevents": false }`. `allowScripts` records the review; esbuild and fsevents work without their scripts. (Checked for this doc with Node 26.11.1; with the block, `npm ci` on GitHub's runner printed no warning.)
+11. **zustand 5 typing and selectors.** The store creator needs its annotated return type (TS2345 otherwise). A React selector that returns a new object throws React error #185; use `useShallow`. (`verification/tooling.md` claims 8 and 17)
+12. **StrictMode runs effects twice in development.** It runs mount, cleanup, mount. The clock loop therefore starts at module scope in `main.tsx`, and `startClockLoop` throws if started twice. (`verification/tooling.md` claim 6)
+13. **Background tabs pause rAF.** The first delta after returning is huge, so `advanceReplayMs` clamps it to 250 ms (at 600×, a 1 h absence would otherwise jump about 25 days). (`verification/architecture.md` claim 5)
 14. **React retries a failed render once before the boundary shows.** A component that throws only on its first render never shows the fallback: React 19.3 recovers and reports minified error #520 ("error during concurrent rendering but React was able to recover") as an uncaught error, which the guard records as a `pageerror`. To check the fallback by hand, throw on every render until a flag flips. A caught error is logged once with `console.error`, so the e2e guard fails any test where a pane crashes. (Checked in a production build for this doc.)
 15. **Route order is reversed.** Playwright tries matching routes newest first. Register the guard's catch-all before every mock, which the auto fixture does. Add mocks in the spec body, or in a fixture that takes `guard` as a parameter so it is set up after the catch-all: M1's `routes` fixture does this, and every later mock goes there. (Checked for this doc.)
 16. **Paste the README blocks verbatim.** They are Biome-formatted and pass `tsc -b` under these configs. A block retyped by hand, or one that lost its whitespace, fails `biome ci` on import order or line width; `npm run format` fixes that.
-17. **Never add a header that breaks the embeds.** No `Referrer-Policy: no-referrer` (YouTube error 153, [sources.md](../verification/sources.md)). No COOP/COEP: they block non-CORS camera images or the YouTube iframe ([architecture.md](../verification/architecture.md) claim 1).
+17. **Never add anything that breaks the embeds.** No `no-referrer` policy (YouTube error 153, `verification/sources.md`), and no COOP/COEP: they block non-CORS camera images or the YouTube iframe (`verification/architecture.md` claim 1). GitHub Pages sends none of these and cannot be configured to (step 15), so the only way in is a `<meta name="referrer">` or a `<meta http-equiv>` in `index.html`: add neither.
 18. **Node 26 on Linux needs `libatomic1`.** In a bare `ubuntu:24.04` container the official Node 26.11.1 binary stops with "error while loading shared libraries: libatomic.so.1" (exit 127). `readelf -d` lists `libatomic.so.1` as `NEEDED` in both the linux-x64 and linux-arm64 builds. Install `libatomic1` before Node in any container or self-hosted runner; GitHub's hosted `ubuntu-24.04` image has it through gcc 13 (step 10). (Checked for this doc.)
+19. **Navigate and fetch under the base.** The app lives at `/Overhead/`. A spec's `page.goto("/…")` and the app's `fetch("/…")` resolve against the origin, not the base. `vite preview` rescues only `/` and `/?<query>` with a 302; any other root path is a 404 that the guard reports (step 14). Use `goto("./…")` in specs and `import.meta.env.BASE_URL` in the app. (Checked for this doc.)
+20. **Turn Pages on before the first deploy.** With Pages off, `configure-pages@v6` stops with "Get Pages site failed … Not Found" and Deploy fails; that happened to the first push on 2026-10-11. Switching the source to GitHub Actions does not re-run it: push again or dispatch Deploy (step 15, setup 1 and 3).
+21. **A data commit deploys only if dispatched.** Pushes made with `GITHUB_TOKEN` start no workflow, so `deploy.yml`'s `push` trigger never sees `fetch-gp.yml`'s commits. `fetch-gp.yml` must run `gh workflow run deploy.yml --ref main`, and must not call `deploy.yml` through `workflow_call`, which would build the commit before the data push (step 15, rule 1). (GitHub's docs, read on 2026-10-11.)
+22. **The http URL works but is not a secure context.** `http://parthjain.ca/Overhead/` is served without a redirect, and there `navigator.clipboard` is undefined. Link the https URL everywhere. (Measured on 2026-10-11.)
+23. **Pages and `vite preview` disagree on missing files.** Pages answers 404 with GitHub's HTML page; `vite preview` and the dev server answer 200 with `index.html`. Code that checks for "not part of this build" must accept both: not OK, or not the expected content type (M5). (Measured on 2026-10-11.)
 
 ## 8. Decisions to append to `docs/DECISIONS.md`
 
-`DECISIONS.md` already holds M0's contract lines under "Contract changes from the implementation docs": `tsconfig.node.json` with `bundler`, the Biome rules, `allowScripts`, the CI order without a `postinstall`, Cloudflare Pages hosting, and the throwing placeholder actions. Append the rest.
+`DECISIONS.md` already holds M0's contract lines under "Contract changes from the implementation docs": `tsconfig.node.json` with `bundler`, the Biome rules, `allowScripts`, the CI order without a `postinstall`, and the throwing placeholder actions. Its hosting line there names GitHub Pages at `/Overhead/` (H1). Its "M0 · Scaffold" section already holds the e2e-after-build, ±12 h pause, throwing-updater and `ErrorBoundary` lines, and its section "Revisions for O1, O2, O4 and H1" holds the base-relative e2e navigation and the `deploy.yml` triggers, so do not append those again. Append these, under the "M0 · Scaffold" heading:
 
 Under **Tooling**:
 
-- e2e runs against `vite preview` of the last build; run `npm run build` first. Reason: CI must not run the dev server, and a missing `dist/` only shows up as a 30 s web-server timeout.
 - A container or self-hosted runner installs `libatomic1` before Node 26. Reason: Node 26's Linux builds need `libatomic.so.1`, and a bare `ubuntu:24.04` image lacks it (Node exits 127); GitHub's hosted `ubuntu-24.04` image has it.
 
-Under **Live clock**:
+Under **Hosting** (new heading):
 
-- The replay clock pauses when it reaches the ±12 h edge of the scrubber. Reason: a "playing" clock that cannot move is confusing.
-- A frame updater that throws is removed and logged once with `console.error`; the clock keeps running. Reason: one bad updater must not freeze both views or log 60 errors a second.
-
-Under **Process**:
-
-- `ErrorBoundary` does not log in `componentDidCatch`. Reason: React 19.3 already logs each caught error once with `console.error`.
+- Links to the app always use `https://parthjain.ca/Overhead/`. Reason: GitHub Pages serves the http URL without redirecting, and an http page has no `navigator.clipboard`.
 
 If O3 changes: M0 lands only `ClockState` and the four M0 actions. `initialState.ts` shrinks to match, and each later milestone proposes its slices in its own pull request (README section 4).
 

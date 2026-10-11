@@ -1,12 +1,12 @@
 # Decisions
 
-Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the verification run in [`docs/verification/`](verification/README.md). Where this file and `overview.md` disagree, this file wins until the brief is updated.
+Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the verification run in `docs/verification/` (kept locally). Where this file and `overview.md` disagree, this file wins until the brief is updated.
 
 ## Decided by Parth (2026-10-11)
 
 | # | Decision | Notes |
 | - | -------- | ----- |
-| O1 | **The OpenLayers overlay is drawn on top of the YouTube player.** Drawing over the video is the point of the project. The video overlay is deliberately light: a curated subset of objects and labels, readable on moving video. The dense data (Starlink, tracks, footprint, imagery, terrain) lives on the ground map. | Parth's call, made knowingly: YouTube's Required Minimum Functionality ("Overlays and frames") is not followed. Engineering consequences still apply. Player controls must stay usable, so the map target gets `pointer-events: none` and only DOM hit targets (`ol/Overlay`, `stopEvent: false`) take clicks. A channel can block embedding, so fall back to replay. |
+| O1 | **The OpenLayers overlay is drawn on top of the YouTube player.** Drawing over the video is the point of the project. The video overlay is deliberately light: a curated subset of objects and labels, readable on moving video. The dense data (Starlink, tracks, footprint, imagery, terrain) lives on the ground map. | Parth's call. Engineering consequences still apply. Player controls must stay usable, so the map target gets `pointer-events: none` and only DOM hit targets (`ol/Overlay`, `stopEvent: false`) take clicks. A channel can block embedding, so fall back to replay. |
 | O2 | **The replay clip is recorded from the StarCam stream** with yt-dlp + ffmpeg, from the live edge or the DVR window, and kept locally in `recordings/` (gitignored). The first clip was recorded on 2026-10-11: a sunlit ISS pass crossing the Subaru StarCam frame from about 15:10 to 15:15 UTC. | Parth's call; download terms are not a blocker. Keep the on-screen credit "NAOJ & Asahi Shimbun". How the clip ships with a deploy (size limits per host) is an engineering question settled in M5/M9. |
 | H1 | **Hosting: GitHub Pages, deployed from Actions, at `https://parthjain.ca/Overhead/`** (public repo `FalconXYX/Overhead`). Vite `base: "/Overhead/"` (GitHub Pages paths are case-sensitive and follow the repo name); every runtime URL goes through `import.meta.env.BASE_URL`; e2e serves `vite preview` under the same base. Production deploys from `main` only; there are no per-branch previews. | It matches Parth's other projects: `parthjain.ca` is his GitHub Pages user site (`FalconXYX.github.io`, CNAME `parthjain.ca`), so a project repo with Pages enabled appears at `parthjain.ca/<repo>`. Cloudflare Pages custom domains are whole hostnames and cannot serve a path under a domain hosted elsewhere. This replaces the Cloudflare Pages plan in M0 step 15. GitHub limits: git rejects files over 100 MB, a published site must stay under 1 GB, and bandwidth is soft-capped at 100 GB a month. |
 | O4 | **Latest Node: 26.x (26.11.1, arm64).** Pin `.nvmrc` to `26`, set `engines.node` to `>=26`, use Node 26 in CI, and use `@types/node` 26. Node 26 becomes LTS on 2026-10-28. | Every pinned package accepts it: vitest `>=26.0.0`, vite and rolldown `>=22.12.0`. The machine was cleaned on 2026-10-11 down to a single Node 26.11.1 arm64; every Rosetta (x86_64) install was removed. |
@@ -137,7 +137,7 @@ Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the 
 ## Process
 
 - The visual design (layout, colours, panel placement) is not fixed by the brief. It is settled during the build from screenshots. Reason: Parth asked that the brief's description of the look not be treated as ground truth.
-- Performance claims are benchmarked in headless Chromium (Playwright), not Node. Reason: Node under Rosetta ran propagation about 3× slower than Chrome.
+- Performance claims are benchmarked in headless Chromium (Playwright), not Node. Reason: the app propagates in a browser worker, and Node timings do not transfer (one `collectIncoming` call with Starlink took 14.4–16.5 ms in Node 26.11.1 arm64, against 9.6 ms p95 in a Chromium worker; M8).
 
 ## Contract changes from the implementation docs
 
@@ -145,8 +145,8 @@ Appended on 2026-10-11 by the cross-document consistency pass over `implementati
 
 ### Store and process
 
-- The O3 store shape includes `recenter(timeMs)` (M1), `cancelImagePoint()` (M4), `data.goes.status` with `setGoesStatus` (M7) and `ui.demo.paused` with `setDemoPaused` (M9): 44 actions in all. Reason: `?t=` can lie beyond ± 12 h of now, Esc must cancel a pending calibration point, the DescribeDomains poll needs a load status (README Errors rule 5), and the tour needs a pause.
-- `createActions` returns all 44 actions from M0; an action whose milestone has not landed throws `Error("actions.<name> lands in M<n>")`. Reason: the `Actions` type is complete from M0 (O3), and a silent no-op would hide wiring mistakes.
+- The O3 store shape includes `recenter(timeMs)` (M1), `cancelImagePoint()` (M4), `data.goes.status` with `setGoesStatus` (M7) and `ui.demo.paused` with `setDemoPaused` (M9), plus `setVideoLayer` (M5) for O1: 45 actions in all. Reason: `?t=` can lie beyond ± 12 h of now, Esc must cancel a pending calibration point, the DescribeDomains poll needs a load status (README Errors rule 5), and the tour needs a pause.
+- `createActions` returns all 45 actions from M0; an action whose milestone has not landed throws `Error("actions.<name> lands in M<n>")`. Reason: the `Actions` type is complete from M0 (O3), and a silent no-op would hide wiring mistakes.
 - `cameras.json` holds every known camera from M1; only `ENABLED_CAMERA_IDS` reach the store, and the milestone that enables an entry settles and edits it in place. Reason: the corrected Subaru facts are validated from M1, while earlier milestones still see one camera.
 
 ### Tooling and hosting
@@ -155,7 +155,7 @@ Appended on 2026-10-11 by the cross-document consistency pass over `implementati
 - Biome adds `noNonNullAssertion` and `noConsole` (allowing `error` and `warn`; off in `scripts/` and `tests/`) as errors, and excludes `public/data` and `tests/fixtures`. Reason: `!` defeats `noUncheckedIndexedAccess`, stray logs reach production, and generated JSON is not Biome-formatted.
 - `package.json` `allowScripts` denies the esbuild and fsevents install scripts. Reason: npm 11.19 skips unlisted install scripts with a warning, and both packages work without theirs.
 - CI runs lint, typecheck, unit tests and the build, then installs Chromium 1248 and runs e2e, and uploads the Playwright report and traces. No `postinstall` downloads browsers. Reason: lint and type errors fail before the browser download, and Pages installs dependencies on every build.
-- Hosting is Cloudflare Pages through its Git integration (build `npm run build`, output `dist`, Node from `.nvmrc`, no variables), with `main` protected by the CI `check` job. Confirm: it needs a Cloudflare account, and branch protection needs a public repository on GitHub Free. Fallback: GitHub Pages from Actions (no per-branch previews, `base: "/<repo>/"`). Reason: per-branch preview URLs without secrets, root-path serving, a Referer sent and no COOP/COEP.
+- Hosting is GitHub Pages from Actions (H1): `deploy.yml` builds `main` with `npm ci` and `npm run build` (Node from `.nvmrc`, no secrets or variables) and publishes `dist/` at `https://parthjain.ca/Overhead/`, with `main` protected by the CI `check` job (the repository is public). This replaces the earlier Cloudflare Pages line. Reason: H1. Pages sends no COOP/COEP and no `referrer-policy`, so the YouTube embed gets its Referer, and it answers byte ranges (M0 step 15).
 - `fetch-gp.yml` pushes its data commits straight to the protected `main`: a repository ruleset requires the CI `check` job and lets that workflow's push bypass it, proven on the first manual run (M3). Confirm; the alternatives are a pull-request-based data update or no required check. Reason: pushes made with `GITHUB_TOKEN` never start other workflows, so a data commit never gets the `check` run a required check waits for.
 
 ### Imagery, rendering and the clock
@@ -205,3 +205,98 @@ Appended on 2026-10-11 by M0 (`implementation/M0-scaffold.md` section 8). M0's c
 ### Process
 
 - `ErrorBoundary` does not log in `componentDidCatch`. Reason: React 19.3 already logs each caught error once with `console.error`.
+
+## M1 · Ground map
+
+Appended on 2026-10-11 by M1 (`implementation/M1-ground-map.md` section 8). M1's contract lines (the 13:30 true-colour pass, never reselecting a failed `Time`, `renderSyncAll()` only when sim time changed, `registerMap` as the one map cleanup, `cameras.json` with `ENABLED_CAMERA_IDS`) are already under "Contract changes from the implementation docs".
+
+### GIBS imagery
+
+- True colour uses NOAA-20 only. NOAA-21 stays in the snapshot as the manual alternate; `TRUE_COLOR_LAYER` and `TRUE_COLOR_INSTRUMENT` change together. Reason: both were complete over Hawaii for 20 days; one layer keeps the e2e simple.
+- The snapshot is the `LAYER`-filtered KVP capabilities, trimmed by regex to 5 layers and Level6/Level9. The script falls back to trimming the full document, refuses to write a snapshot that fails its checks, and the app never reads its Time values. Reason: 28.6 KB instead of 5.84 MB; Time values in a committed file are stale.
+- GIBS sources set `crossOrigin: "anonymous"`. Reason: GIBS sends `access-control-allow-origin: *`; pixel reads stay possible.
+- The Layers label keeps the requested true-colour date after a tile-error revert. Reason: showing the displayed date needs new state.
+
+### Ground map
+
+- The ground view starts at zoom 6 (min 2, max 12), centred on the site, and recentres on a camera change. Reason: Level9 overzooms acceptably to 12.
+- The OpenLayers attribution control is off; the always-rendered Credits region is the only credit display; `ol/ol.css` is imported. Reason: one place that is always visible; working controls.
+- `geoidSepM` is EGM96 from PROJ: 24.23 m at the CFHT point, 24.32 m Subaru, 47.08 m Walenstadt. `synthetic-walenstadt` uses `Europe/Zurich`. Reason: same method everywhere; Zurich and Vaduz agreed at every half hour from 2020 to 2030.
+
+### Live clock
+
+- Live mode on a synthetic camera recentres the scrubber with `jumpToNow()` once now leaves ± 12 h. Reason: long live sessions.
+- The app starts live when the URL has no `t`. Reason: the default camera is synthetic, whose live time is `Date.now()`.
+- The scrubber is a controlled range input, so `Timeline` re-renders in its own `onChange`. Reason: with only the 4 Hz re-render, React resets the thumb and keyboard steps on the slider are lost.
+- "Frames where the sim time changed" compares the frame's sim time with the one the maps last rendered, not with the value at the start of the frame. Reason: a seek or step while paused then gets exactly one `renderSyncAll()` on the next frame, and a paused, untouched map still gets none.
+
+### URL and keyboard
+
+- `?t=` must end in `Z`; the URL carries raw colons and `t` only in replay; writes are debounced 250 ms and wrapped in `try/catch`. Reason: zone-less dates parse as local time; readable links; the WebKit limit.
+- The key handler also skips `defaultPrevented` events, Alt/Ctrl/Meta chords and Space on buttons. The ground map container is focusable (`role="application"`, Biome suppression). Reason: OpenLayers keyboard pan and zoom; Cmd+[ is Back; Space must press the focused button.
+
+### Testing
+
+- e2e route mocks live in an auto fixture `routes` that depends on `guard`. Reason: M0's guard stays unedited, and the dependency orders the routes after the catch-all.
+- e2e tile stubs are a real NOAA-20 tile and an empty Reference_Labels tile, chosen by `Format`. Reason: real decodable images, no OSM data committed.
+
+## Revisions for O1, O2, O4 and H1
+
+Appended on 2026-10-11 by the final consistency pass over `overview.md` and `implementation/`, after Parth decided O1, O2, O4 and H1. Each line is a contract in [`implementation/README.md`](implementation/README.md) or a stage file that the revisions settled. The stage files' section 8 lists no longer repeat these lines.
+
+### Video overlay (O1)
+
+- The overlay on a video draws a light set by default: the `satellites` layer's two groups (stations and visual, the ISS emphasised); labels only for the ISS, the selected or hovered object, the Sun, the Moon and the planets; stars to V ≤ 2 (`VIDEO_STAR_MAG_LIMIT`; V ≤ 4 while calibrating) as small marks named on hover; trails only for the selected object; the terrain skyline as a thin line. `layers.video` (`starlink`, `grid`, `denseLabels`) starts all false and gates only the sky view. Reason: O1 keeps the video readable (V ≤ 2 leaves 1–8 stars in the Subaru frame, V ≤ 3 leaves 7–22), while the ground map, the worker and the Inspector keep every object.
+- Over a YouTube player the map target and the HoverCard overlay's container get `pointer-events: none`, and picking moves to `ol/Overlay` button hit targets (`stopEvent: false`, at least 24 × 24 CSS px). Reason: the player's controls stay usable, and OpenLayers sets `pointer-events: auto` on every overlay container.
+- The player is created with `fs: 0`; a Fullscreen button puts the stage (player plus overlay) in fullscreen, and a `fullscreenchange` guard exits the player's own fullscreen. Reason: YouTube's fullscreen hides the overlay, and `fs: 0` leaves the `f` key working (measured); `disablekb: 1` would also remove the player's other keys.
+- The player follows the stage with `setSize`, and the map with `fitSkyFrame`; both contain the 16:9 frame. Reason: the real player letterboxed into the same centred box as `view.fit` (rows 45–854 of a 1440 × 900 stage).
+
+### Cameras and clips (O2)
+
+- `subaru-starcam` defaults are the 2026-10-11 star fit: az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992, `rmsDeg` 0.0294. M1's published-centre values stay provisional until M5, and fixtures that name "the Subaru defaults" keep az 81.2°, alt 19.6°, roll 0, f 2742 inline. Reason: with the published centre and f 2742 the ISS marker was up to 3.0° off on the clip (a scale error no time shift removes), and existing fixture numbers must not move.
+- Both StarCams' `termsNote` is "Non-commercial use only". M5 sets it in place over M1's provisional string, and a clip camera shows its source camera's note. Reason: `readme.test.ts` compares exact strings, and the note is true of a recording too.
+- A clip is `recordings/<clip>.mp4` plus `recordings/<clip>.json`, a `ClipSidecar` (README section 6). The contract fields are required; other keys (provenance) are allowed and ignored; `calibration` is in the source camera's W × H pixels; `startUtcMs` comes from the burned-in clock when the camera shows one, else from the first segment's PROGRAM-DATE-TIME, with `startUncertaintyS` covering the cross-checks. Reason: the clip plays as its source camera, the camera clock is the capture time (PROGRAM-DATE-TIME was 0.144 s earlier on 2026-10-11), and provenance must not break parsing.
+- `record-clip.ts` cuts a clip from the HLS DVR playlist by segment (PROGRAM-DATE-TIME), keeps the concatenation as `<clip>-dvr.ts`, remuxes with `-map 0:v -c copy -movflags +faststart`, and copies `public/data/gp/` (all three groups and `meta.json`) into `<clip>.gp/`. Reason: yt-dlp's section download cannot cut a live DVR window, Chromium cannot play MPEG-TS, and a clip must replay with the elements of its day.
+- `find-passes.ts` runs `frameSpans` over each pass's [riseMs − 60 s, setMs + 60 s]. Reason: `findPasses` works in geometric altitude and `frameSpans` in apparent altitude; refraction kept the ISS up 10 s after its geometric set on 2026-10-11, which the bare window cut off.
+- The M5 acceptance is `check-clip-pass.ts`, run by hand against `npm run dev`: the drawn marker at the 94 media seconds of the committed ISS track, compared by angle through the sidecar's star fit, every sample ≤ 1.0°. `--gp <dir>` routes both `data/gp/` and `recordings/<clip>.gp/` to `<dir>`; without it nothing is routed. Reason: it is repeatable and covers the whole visible pass, an angle is right across the gnomonic frame where a pixel threshold is not, and M9 runs the same tool against production's own element sets.
+- `satelliteCheckSummary` takes `hiddenMs`, the stretches where the object is known to be hidden (from the sidecar's `pass.visibleMediaS`); only the uncovered part of a gap counts against the 2,500 ms rule. Reason: the domes hide the ISS for 10.0 s and 14.5 s on the 2026-10-11 clip, so the plain rule always failed there.
+- `bindHorizonWorker` recomputes a camera's profile when the active camera keeps its id but its site changes (`latDeg`, `lonDeg` or `mastM`). Reason: `local-replay` takes the site of whichever clip loads, and its cached profile would belong to the previous site.
+
+### Deploy (H1)
+
+- The deployed 2026-10-11 clip is a two-pass x264 copy (390 kbit/s, 1920 × 1080, 23,515,809 bytes) published as an asset of the release `clips-2026-10-11` on `FalconXYX/Overhead`, and copied into `dist/recordings/` by `npm run build:pages` in `deploy.yml`, which checks size and sha256; its element sets go to `dist/recordings/<clip>.gp/`. Reason: recordings never enter git (O2); a sixth of the 148.6 MB master's bandwidth per play against GitHub Pages' soft 100 GB a month; the app's own origin keeps the canvas readable without CORS.
+- A sidecar-URL clip whose server answers a `Range: bytes=0-1` probe with 200 is read into a Blob; 206 streams from the URL. Reason: Chromium cannot seek a video served without ranges (Playwright's `route.fulfill`), and GitHub Pages answers 206.
+- From M9 a clip replays with its own element sets: the worker loads `recordings/<clip>.gp/` while that clip camera is active and the directory exists, and restarts when the source changes. Reason: `public/data/gp/` moves every 6 h; on this pass the ISS ran 0.08–0.88 s behind with sets 20–40 h old, and 2.9 s (about 1.5°) with a 3.7-day-old ephemeris; the worker's catalogue only appends.
+- e2e runs under the H1 base: `baseURL` `http://localhost:4173/Overhead/`, and specs navigate base-relative (`./`, `./?t=…`), never `/…`. Reason: Playwright resolves `goto("/…")` against the origin, and under `base: "/Overhead/"` only `/` and `/?…` reach the app (through a 302).
+- `deploy.yml` runs on `push` to `main` and `workflow_dispatch`, never `workflow_call`; `fetch-gp.yml` dispatches it after a data push (`gh workflow run deploy.yml --ref main`, `actions: write`). Reason: pushes made with `GITHUB_TOKEN` start no workflow, and a called workflow builds the caller's commit, which is the one before the data push.
+
+## M1 · Review fixes
+
+Appended on 2026-10-11 by the M1 review pass. These lines belong under "M1 · Ground map" above. They sit here because this file is append-only while other edits are in flight.
+
+### GIBS imagery
+
+- `Reference_Labels` is requested over REST, across both of its snapshot templates; every time-enabled layer stays on KVP. `gibsWmtsOptions` gains a fifth parameter, `encoding: "KVP" | "REST" = "KVP"`, after `dropLimits`. `OVERLAY_ENCODING` in `gibs.ts` picks the encoding per overlay (`Coastlines` stays KVP). A REST call throws when the layer has no tile template or has a Time dimension. Reason: GIBS answers every KVP `GetTile` for `Reference_Labels` with the same 155 B transparent tile, without `layer-identifier-*` headers, so no place label ever drew. REST serves the labels: "Maui" is in tile 6/28/4 (1,729 B, CORS `*`). The REST templates drop only `{Time}`, which this layer does not have. This corrects M1 step 2 ("the Reference_Labels tile over Hawaii at z5 is empty") and step 10 (KVP for every GIBS source).
+- `tests/fixtures/gibs/tile.png` stays. It is GIBS's generic transparent KVP answer (sha256 `1cd99521…`), not a real empty label tile. The e2e `routes` fixture also serves it for `…/best/Reference_Labels/default[/default]/GoogleMapsCompatible_Level9/{z}/{row}/{col}.png`. This corrects the M1 Testing line "an empty Reference_Labels tile".
+- `selectTrueColorDate` takes the date from `min(clock.simTimeMs, Date.now())`. The map binding, the Layers label and the Credits imagery line all read this selector. Reason: when the sim time is ahead of the real clock (the scrubber's right end, or playing at 600×), the 4 h rule picks a pass that has not happened yet. GIBS serves that date as 200 black tiles with no `layer-time-actual` header, so the tile-error revert never fires. The selector reads the real clock only when the state changes, which is every frame in live or while playing. A paused sim time ahead of now therefore keeps an older date, which has imagery, until the next change. This corrects M1 section 1 ("the 4 h rule in step 3 avoids black tiles") and the README selector block.
+- After a tile-error revert, the Credits line "Imagery: NOAA-20 / VIIRS, <date>" also shows the requested date. Reason: the same as for the Layers label: showing the displayed date needs new state.
+
+### Timeline and keyboard
+
+- The "Simulation time" slider handles its keys in its own `onKeyDown`, from the store's clock, and calls `preventDefault()`:
+  - ArrowLeft/Right/Up/Down step ± 1 s.
+  - PageUp/PageDown step ± 8,640 s (Chromium's native step, a tenth of the range).
+  - Home/End seek to ± 12 h from `rangeCenterMs`.
+  - `onChange` (pointer drags and set values) stays an absolute `seek`.
+
+  Reason: the native steps start from the thumb's DOM value. That value lags the clock by up to one 4 Hz render and drops the sub-second part of the offset, so one ArrowRight could add 0–2 s, or move the clock back by up to 150 s at 600×. Acceptance criterion 6 requires exactly 1 s.
+- `handleKeyDown` also returns false when the target is inside a focused keyboard-pannable map, matched with `closest('[role="application"]')` (`MAP_SELECTOR` in `keyboard.ts`). This adds a fifth rule to README Keyboard. Reason: OpenLayers `KeyboardPan` prevents only unmodified arrows, so Shift+arrows, Space, `[`, `]` and `L` reached the window handler from the focused map. Criterion 6 says the keys do nothing on the focused map. README Accessibility rule 5 gives `role="application"` to every map that takes keyboard pan and zoom.
+- `[` at 1× and `]` at 600× do nothing: no `setRate` call with the unchanged rate. Reason: `setRate` switches to replay, so `[` in Live silently left Live.
+- A `?t=` value must also read back as written: `toISOString()` must start with `t` minus its `Z`. Reason: `Date.parse` rolls day overflow forward (`2026-02-30` becomes `2026-03-02`, and `T24:00` becomes the next day). A bad link is rejected, never guessed.
+
+### Files and tests
+
+- `tests/helpers/random.ts` exports `mulberry32(seed)`, and every seeded test (seed 20261011) imports it. Reason: one generator for M1, M2 and M4. README section 3 should list `random.ts [M1] mulberry32(seed)` under `tests/helpers/`, and section 6 should add it to the exports table.
+- `src/ui/gibsStatus.ts` [M1] exports `gibsStatusText(gibs)`, which `GroundView` and `LayerToggles` share. Reason: a component file that also exports a plain function is not a React Fast Refresh boundary. README section 3 should list the file under `src/ui/`.
+- `tests/unit/gibs.test.ts` checks `gibsWmtsOptions` and `createOverlayLayers` against a hand-built parse of the committed snapshot. Reason: Vitest's Node environment has no `DOMParser`.
+- After M1, 28 placeholder actions remain (45 actions in all). M1 step 4.4 and the section 5 `store.test.ts` row still say 27 and 44.

@@ -27,7 +27,8 @@ Out of scope:
 ## 2. Prerequisites
 
 - M4 is merged: all lens models, `unprojectPixel`, the Calibration panel, persistence, `CameraPicker`, the background layer and `bindBackground`. M3 supplies the ISS, selection, `ephemeris.ts`, the test hooks and the HoverCard overlay; M2 supplies the sky map.
-- No accounts, keys or new dependencies. Hosting is M0's: no COOP/COEP, and a Referer on embeds ([M0 gotcha 17](M0-scaffold.md)).
+- No accounts, keys or new dependencies. Hosting is M0's GitHub Pages site at `https://parthjain.ca/Overhead/` (DECISIONS H1). On 2026-10-11 `curl -sI https://parthjain.ca/` showed no COOP/COEP and no `referrer-policy` header, so embeds get a Referer ([M0 gotcha 17](M0-scaffold.md)).
+- Every URL the app builds goes through `import.meta.env.BASE_URL` (`"/Overhead/"`). Measured with Vite 8.3.4 and `base: "/Overhead/"`: `npm run dev` serves the app at `http://localhost:5173/Overhead/` and `recordings/x.json` at `/Overhead/recordings/x.json` (200 `application/json`; an MP4 Range request got 206 `video/mp4`), while `/recordings/x.json` got 404. Both dev and `vite preview` answer `/?<query>` with a 302 to `/Overhead/?<query>`.
 - Decisions: O1, O2 and O4 are decided (`DECISIONS.md`, "Decided by Parth"). O3 is open. M5 uses `video`, `layers.video`, `camera.status` and `camera.frameTimeMs`, plus the actions `setStreamDelayMs`, `setVideoStatus` and `setVideoLayer`, from the proposed shape. If O3 changes, propose them in this pull request.
 - Tools for the hand procedures (never CI): yt-dlp 2026.08.19 through `uvx`, ffmpeg 7.1 (a static arm64 build was used), Node 26.11.1.
 - The 2026-10-11 clip and sidecar in `recordings/` on the machine that runs the acceptance (section 6). They are never committed.
@@ -386,7 +387,7 @@ For `youtube` cameras: a status line in a `role="status"` element with `data-tes
 
 The camera's `credit` and `termsNote` show in the Credits region (M1) at all times.
 
-For `local-video` cameras: the clip states, the picker (only for `local-replay`) and the clip information (step 10).
+For `local-video` cameras: the clip states in the same `data-testid="video-status"` element (its `data-status` is `video.status` here too; step 18 and the clip e2e tests wait on it), the picker (only for `local-replay`) and the clip information (step 10).
 
 ### Step 8. The sky stage: the overlay on the player
 
@@ -394,7 +395,7 @@ This step implements [README "Sky over video"](README.md#sky-over-video). Every 
 
 1. **Stage** (rule 4). `SkyView.tsx` renders one stage element (`data-testid="sky-stage"`) holding the sky map target (`data-testid="sky-map"`), the same element for every camera kind. For a `youtube` camera the stage has the aspect W:H and also holds the player wrapper (`data-testid="video-player"`). Both children fill the stage, and the map target is drawn above the wrapper. The map is transparent: no controls, no attribution, no background.
 2. **Pass-through** (rule 5). `SkyMapHandle.setPassThrough(on)`:
-   - On: set `pointer-events: none` on the map target element itself (not `.ol-viewport`); detach the map's `click`, `singleclick` and `pointermove` picking handlers; set `pointer-events: none` on the HoverCard overlay's container (`hoverOverlay.getElement()?.parentElement`); call `hitTargets.setEnabled(true)`.
+   - On: set `pointer-events: none` on the map target element itself (not `.ol-viewport`); detach the map's `click`, `singleclick` and `pointermove` picking handlers; set `pointer-events: none` on the HoverCard overlay's container (`hoverElement.parentElement`, the `div` that `ol/Overlay` wraps around `SkyMapHandle.hoverElement`); call `hitTargets.setEnabled(true)`.
    - Off: undo each of these.
    - Why the HoverCard rule: OpenLayers sets `pointer-events: auto` on every overlay's container (`ol/Overlay.js` line 169). Checked with a `srcdoc` iframe standing in for the player: a 200 × 100 card over it took the click, and with its container set to `none` the click reached the iframe.
    - Measured on the real player: a click on an empty point of the overlay hit the iframe (`elementFromPoint` returned IFRAME) and paused the stream (state 2); a second click resumed it (state 1).
@@ -420,7 +421,7 @@ export interface HitTargets {
 export function createHitTargets(map: OlMap, store: AppStore): HitTargets;
 ```
 
-   - Targets: exactly the objects the sky layers drew this frame among the ISS and the visual-group satellites, the stars (V ≤ 2 over a video), the Sun, the Moon, the planets and the selected object. Use the same projected positions and visibility predicates the layers and `pick` use. Starlink gets none.
+   - Targets: exactly the objects the sky layers drew this frame among the ISS and the other stations and visual satellites (the `satellites` layer), the stars (V ≤ 2 over a video), the Sun, the Moon, the planets and the selected object. Use the same projected positions and visibility predicates the layers and `pick` use. Starlink gets none.
    - Each target is a `<button type="button">`, at least `HIT_TARGET_MIN_PX` × `HIT_TARGET_MIN_PX` CSS px, centred on the object, with the object's name as `aria-label` and `tabIndex` −1. It is placed with `new Overlay({ element, stopEvent: false, positioning: "center-center" })`.
    - `pointerenter` calls `hover(id)`; `pointerleave` calls `hover(null)` if the hover is still that id; `click` calls `select(id)`.
    - Overlays are created as needed, reused, and parked with `setPosition(undefined)`. None is created per frame. The selected object's target is placed last, so it wins overlaps.
@@ -432,8 +433,8 @@ export function createHitTargets(map: OlMap, store: AppStore): HitTargets;
 5. **Fullscreen** (rule 7).
    - A "Fullscreen" button outside the stage, shown for `youtube` and `local-video` cameras, calls `stage.requestFullscreen()`. Player and overlay go fullscreen together, the stage fills the screen, and the browser's Esc exits.
    - The player's own fullscreen. `fs: 0` removes the button, but with the player focused the `f` key still made the iframe fullscreen (`document.fullscreenElement` was the iframe) with `fs: 0` and with `fs: 1`. The double-click on the video did not enter fullscreen in headless Chromium with either value.
-   - The guard: SkyView listens for `fullscreenchange` on `document`. When `document.fullscreenElement` is inside the stage but is not the stage, it calls `document.exitFullscreen()`, and a polite status next to the Fullscreen button says "Use this Fullscreen button to keep the sky on the video."
-     - Measured: the guard left the iframe's fullscreen 16 ms after it began.
+   - The guard: SkyView listens for `fullscreenchange` on `document`. When `document.fullscreenElement` is inside the stage but is not the stage, it calls `document.exitFullscreen()`, and a polite status line says "Use this Fullscreen button to keep the sky on the video."
+     - Measured: the guard left the iframe's fullscreen 16–17 ms after it began, with `fs: 0` and with `fs: 1`, on the live Subaru stream (the sessions above, and again at 19:05Z).
      - Switching to the stage inside the handler failed with "Permissions check failed": the handler has no user activation.
      - Do not pass `disablekb: 1`. It does stop `f`, but it also removes the player's other keys.
 6. **Accessibility.** `SkyView`'s `aria-label` reads "Computed sky drawn over the live video from <camera name>" for `youtube` and "Computed sky drawn over the clip from <camera name>" for `local-video` (M4 words the still-image case; M2's locator `/Computed sky/` still matches). The text alternative (M2, M3) is unchanged and is the keyboard route to every object.
@@ -464,7 +465,7 @@ For `youtube` cameras the panel gains a "Stream delay" section. Star pairs are o
    - Apply: `frameUtcMs = localDateTimeToUtcMs(value, site.timeZone) + 500` (the middle of the burned-in second), then `streamDelayForFrameMs(anchor.wallMs, anchor.mediaSec, mediaSec(), frameUtcMs)`.
    - A null from `localDateTimeToUtcMs` shows "Enter a valid date and time" and changes nothing. A delay outside [0, 120,000] ms shows "That gives a delay of X s; check the time" and changes nothing. Otherwise it calls `setStreamDelayMs`.
    - The control is disabled before the anchor exists.
-   - The burned-in clock has failed NTP sync by more than 10 s in the past ([sources.md](../verification/sources.md) claim 10), so confirm on a satellite. On 2026-10-11 it was right to within 0.3 s (README "Recorded clips").
+   - The burned-in clock has failed NTP sync by more than 10 s in the past (`verification/sources.md` claim 10), so confirm on a satellite. On 2026-10-11 it was right to within 0.3 s (README "Recorded clips").
 6. **Suggestion**, only when `mediaReferenceTimeMs()` is non-null: "The player suggests 20.9 s (undocumented API)" plus Apply. The value is `streamDelayForFrameMs(anchor.wallMs, anchor.mediaSec, mediaSec(), mrtMs)`, rounded to 0.1 s, which equals `(now − mrt) − stall`. Never apply it automatically ([DECISIONS](../DECISIONS.md) "Live clock").
 7. **Satellite step**, as text: "Wait for a bright satellite or the ISS. Drag the delay until its marker sits on the dot in the video." The ISS crossed the Subaru frame at up to 0.53°/s, so 1 s of delay error is up to about 0.5° there.
 8. **Accessibility:** labels carry units; `aria-valuetext` reads "50.0 seconds"; results go to the panel's `aria-live="polite"` region. The global key handler ignores these inputs, so arrow keys stay native.
@@ -497,8 +498,10 @@ For `youtube` cameras the panel gains a "Stream delay" section. Star pairs are o
    - It returns null when `sidecar.cameraId` is not in the registry, or differs from a non-null `entry.source.sourceCameraId`.
 4. **`loadClipFromSidecarUrl(store, cameraId, fetchFn = fetch)`**. VideoPanel runs it from an effect keyed by camera id when the active camera is `local-video` with a `sidecarUrl` and a null `videoUrl`. An `AbortController` per activation drops the result if the camera changed meanwhile.
    1. `setVideoStatus("loading")`; status line "Loading the clip…".
-   2. `abs = new URL(entry.source.sidecarUrl, new URL(import.meta.env.BASE_URL, location.href)).href`; fetch it with `{ cache: "no-cache" }`.
-   3. A response that is not OK, whose `content-type` does not contain `json`, or whose text does not parse as JSON means "This clip is not part of this build.": `setVideoStatus("error")`, `setCameraStatus(cameraId, "offline")`, and the "Replay a local clip" button. `vite preview` answers `/recordings/…` with `index.html` (200, `text/html`), so no request fails and no console error is logged.
+   2. `abs = new URL(entry.source.sidecarUrl, new URL(import.meta.env.BASE_URL, location.href)).href`, which is `…/Overhead/recordings/<clip>.json`; fetch it with `{ cache: "no-cache" }`.
+   3. A response that is not OK, whose `content-type` does not contain `json`, or whose text does not parse as JSON means "This clip is not part of this build.": `setVideoStatus("error")`, `setCameraStatus(cameraId, "offline")`, and the "Replay a local clip" button.
+      - `vite preview` answers a missing `/Overhead/recordings/…` file with `index.html` (200, `text/html`), and so does `npm run dev`. No request fails, so no console error is logged; this is the e2e case.
+      - A GitHub Pages build that does not hold the file answers 404 (`https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.json` did on 2026-10-11). The result is the same message, and the browser logs the failed load. M9 step 14 ships the clip with the deploy, so production holds it from M9 on.
    4. `parseClipSidecar(json, registry, Date.now())`. Errors → `setVideoStatus("error")` and "The sidecar has problems:" followed by the list.
    5. `camera = clipCamera(entry, sidecar, clipVideoUrl(abs, sidecar), registry)`. Null → "The sidecar's cameraId (<id>) does not match this clip camera."
    6. Probe the video (step 10.6).
@@ -603,7 +606,7 @@ export function onVideoFrames(
    5. Store to video, through one subscription to `[clock.playing, clock.rate]`:
       - `playing` → `video.play()`. On rejection call `pause()` and `setVideoStatus("paused")`.
       - Not playing → `video.pause()`.
-      - Rate → `video.playbackRate = rate` inside `try/catch`. Chromium accepts 0.0625–16 and throws `NotSupportedError` for 0.05, 16.01, 17, 60 and 600 ([architecture.md](../verification/architecture.md) claim 5, re-measured).
+      - Rate → `video.playbackRate = rate` inside `try/catch`. Chromium accepts 0.0625–16 and throws `NotSupportedError` for 0.05, 16.01, 17, 60 and 600 (`verification/architecture.md` claim 5, re-measured).
    6. Video to store:
       - `play` → `setVideoStatus("playing")` and `setFrameTimeMs(null)`.
       - `pause` → `"paused"` and `setFrameTimeMs(localVideoTimeMs(startUtcMs, video.currentTime))`.
@@ -618,7 +621,7 @@ export function onVideoFrames(
 ### Step 12. Timeline, picker, keyboard and app
 
 1. **Timeline:**
-   - When `selectLiveLocked` is true, a description next to the mode readout says "Follows the video". `data-testid="time-mode"` itself still reads exactly "Live" or "Replay" (M1).
+   - When `selectLiveLocked` is true, the mode readout has the description "Follows the video" (`aria-describedby`). `data-testid="time-mode"` itself still reads exactly "Live" or "Replay" (M1).
    - For a `local-video` camera the Live button has `aria-disabled="true"` and the description "A clip has no live mode".
    - While a clip is loaded the rate group offers only 1× and 10×. `keyboard.ts` cycles `[` and `]` over the same list.
 2. **CameraPicker:**
@@ -645,7 +648,9 @@ In the Calibration panel, for image cameras (`local-video`, `still-image`), add 
    - `residualDeg` = `angularSeparationDeg` between the click's az/alt from `unprojectPixel(model, uPx, vPx, out, 0)` and the selected satellite's apparent az/alt for this frame: `ephemeris.frame.azAltDeg` at `2 × indexOfObjectId(selectedId)` (M3), the values its marker is projected from.
    - A click that does not unproject is not recorded; say so.
 3. Samples live in component state, not the store. They are cleared on a camera change or a new clip.
-4. The table lists time, residual in degrees and in pixels, and Remove. Under it, the summary from `satelliteCheckSummary(samples, 1.0)`, for example "12 samples, largest gap 2.0 s, max 0.85°, median 0.58°: pass".
+4. The table lists time, residual in degrees and in pixels, and Remove. Under it, the summary from `satelliteCheckSummary(samples, 1.0, hiddenMs)`, for example "12 samples, largest gap 2.0 s, max 0.85°, median 0.58°: pass".
+   - `hiddenMs` comes from the clip's sidecar: when `pass.noradId` is the selected satellite and `pass.visibleMediaS` is present, the stretches between consecutive visible intervals, as `[startUtcMs + a × 1000, startUtcMs + b × 1000]`. Otherwise it is `[]`.
+   - On the 2026-10-11 clip that gives media 228–238 s, 241.5–256 s and 258.4–260.8 s, where the domes hide the ISS. Without them, clicks every 2 s across the visible stretches leave a 16 s gap and fail; with them the largest uncovered gap is 2 s (a prototype of the README rule on those clicks: 94 samples, pass).
 5. "Export check" downloads `overhead-satcheck-<cameraId>-<YYYYMMDDTHHMMSSZ>.json` with the clip name, the sidecar, the calibration, the satellite's element epoch, the samples and the summary.
 6. Advance with the Timeline's "Forward 1 second" button, not with →: while the Calibration panel is open the arrow keys nudge the pointing ([README Keyboard](README.md#keyboard)).
 
@@ -674,7 +679,7 @@ In the Calibration panel, for image cameras (`local-video`, `still-image`), add 
    - `**/astroasahi.github.io/**`: any path → `astroasahi.html`, status 200, `text/html`, `access-control-allow-origin: *`.
    - same-origin `**/recordings/**`: `subaru-2026-10-11-iss.json` → `tests/fixtures/video/test-pattern.sidecar.json`, and `test-pattern.webm` → `tests/fixtures/video/test-pattern.webm`, both with `route.fulfill({ path })`.
      - Checked in Chromium 156: the JSON arrived as `application/json`, and an unrouted path from an index-serving server arrived as `text/html`.
-     - The routed WebM loaded, seeked and played with no console error.
+     - The routed WebM loaded and played with no console error, but it cannot seek: `route.fulfill` ignores `Range` (the request carried `bytes=0-`) and answers 200 with the whole file, and headless Chromium 156 then reported `seekable` [0, 0] and left a seek to 5 s at 0 (re-measured on 2026-10-11 with a 7 s VP9 WebM). No M5 test seeks a routed clip: tests 10 and 20 only load it, and test 18, which seeks, runs on picked files, whose object URL seeks. M9 step 14d adds the Blob path that makes a routed clip seekable; `npm run dev` and GitHub Pages answer ranges with 206.
    - A spec overrides any of these with `page.route`, which runs before the shared `context.route` (M4).
    - Never answer 404 or abort in a passing test. A fetch answered 404 and an aborted fetch each logged "Failed to load resource" as a console error. A 200 page with no id tests the resolver fallback cleanly, and a 200 `text/html` answer tests "not part of this build".
 4. The test clip comes from `scripts/fixtures/make-test-clip.ts`, run by hand with `npx tsx scripts/fixtures/make-test-clip.ts` and committed:
@@ -774,7 +779,7 @@ export interface CameraPassSpan extends FrameSpan {
   readonly sunAltDegAtEnter: number; // geometric
   readonly elementAgeH: number; // enterMs − the element set's EPOCH, hours
 }
-/** findPasses (10 s, 0°) then frameSpans (1 s) per pass; readText reads cameras.json, the GP files and the calibration file. */
+/** findPasses (10 s, 0°) then frameSpans (1 s) over each pass's [riseMs − 60 s, setMs + 60 s]; readText reads cameras.json, the GP files and the calibration file. */
 export function findCameraPasses(
   options: FindPassesOptions,
   readText: (path: string) => string,
@@ -820,9 +825,9 @@ export interface ClipTrack {
 export interface CheckClipPassOptions {
   readonly cameraId: string; // --cam, a local-video camera with a sidecarUrl
   readonly trackFile: string; // --track
-  readonly gpDir: string; // --gp, default "public/data/gp"
+  readonly gpDir: string | null; // --gp <dir>; null (the default): no GP route, the app loads what the server holds
   readonly calibrationFile: string | null; // --calibration, imported through the Calibration panel first
-  readonly url: string; // --url, default "http://localhost:5173/"
+  readonly url: string; // --url, default "http://localhost:5173/Overhead/" (npm run dev under the H1 base)
   readonly limitDeg: number; // --limit, default 1.0
 }
 export function parseCheckClipPassArgs(argv: readonly string[]): CheckClipPassOptions;
@@ -841,6 +846,9 @@ It cuts a UTC window out of a StarCam's YouTube DVR window after the fact (READM
 1. `parseMediaPlaylist(text)`:
    - It reads `#EXT-X-MEDIA-SEQUENCE`, the head `#EXT-X-PROGRAM-DATE-TIME` and each `#EXTINF`. A segment's `programDateTimeMs` is the head's plus the EXTINF durations before it.
    - It throws when the head has no PROGRAM-DATE-TIME, when a segment follows an `#EXT-X-DISCONTINUITY`, or when a URL's `/sq/<n>/` differs from MEDIA-SEQUENCE plus the segment's index.
+   - It ignores every other tag. The 2026-10-11 playlist also held `#EXT-X-VERSION:3`, `#EXT-X-TARGETDURATION:5`, `#EXT-X-DISCONTINUITY-SEQUENCE:132` and 20 ad-marker pairs, each an `#EXT-X-DATERANGE:CLASS="CUEPOINT-AD",…` line followed by `#EXT-X-CUEPOINT:…,TYPE=AD`, about every 180 s. Three of them sit inside the clip's window, before sq 887677, 887713 and 887749, and the video after them is the camera's (the burned-in clock steps once a second throughout).
+   - Match `#EXT-X-DISCONTINUITY` against the whole line. A prefix test also matches the `#EXT-X-DISCONTINUITY-SEQUENCE` header and rejects every real playlist.
+   - A prototype with these rules parsed the real playlist into 720 segments, and `selectSegments` gave sq 887655–887750 for the window below.
 2. `selectSegments(playlist, fromMs, toMs)` returns the segments overlapping [fromMs, toMs), in order. It throws unless the window lies inside the playlist. On the 2026-10-11 playlist, [15:08:30.039Z, 15:16:30.039Z) gives exactly sq 887655–887750 (96 segments); `--from 2026-10-11T15:08:30Z` would also take 887654, which ends at 15:08:30.039Z.
 3. `parseRecordClipArgs(argv)` throws `Error(usage)` for a missing flag, a time without `Z`, `--to` not after `--from`, a window over 3,600 s, or a bad `--name`.
 4. `buildClipSidecar(input)` returns the contract fields:
@@ -861,15 +869,15 @@ It cuts a UTC window out of a StarCam's YouTube DVR window after the fact (READM
    5. Run `<ffmpeg> -i recordings/<name>-dvr.ts -map 0:v -c copy -movflags +faststart recordings/<name>.mp4`. Then parse `<ffmpeg> -i recordings/<name>.mp4` stderr (`Duration: 00:08:00.00`, `1920x1080`, `30 fps`) into a `ClipProbe`. Stop if `probe.durationS` differs from the segment sum by more than 1/`fps`.
    6. With `--norad`, compute `frameSpans` over the window with the camera's defaults, convert the first span to media seconds and pass it as `pass`.
    7. Write `recordings/<name>.json` (`buildClipSidecar`), and `recordings/<name>.segments.json` (`sq`, PROGRAM-DATE-TIME and bytes per segment, no URLs).
-   8. Copy `public/data/gp/stations.json`, `visual.json` and `meta.json` into `recordings/<name>.gp/`. These are the element sets as committed when the clip was cut; step 18 and the timing check use them.
+   8. Copy `public/data/gp/stations.json`, `visual.json`, `starlink.json` and `meta.json` into `recordings/<name>.gp/`. These are the element sets as committed when the clip was cut. Step 18 and the timing check use them, and from M9 the app replays the clip with them (M9 step 14f), so the directory needs every group the app may load. The 2026-10-11 clip was cut by hand before this script existed: its set is the committed snapshot, copied once with `mkdir -p recordings/subaru-2026-10-11-iss.gp && cp tests/fixtures/gp/*.json recordings/subaru-2026-10-11-iss.gp/` (README "Recorded clips", "Element sets for a clip").
    9. Print the burned-in-clock command of "Recording a clip" step 4 with the file names filled in.
 
 ### Step 18. `scripts/check-clip-pass.ts` (the acceptance tool)
 
-It measures the app's drawn marker against a measured track, frame by frame. Run it by hand against `npm run dev` (which serves `recordings/`), never in CI:
+It measures the app's drawn marker against a measured track, frame by frame. Run it by hand against `npm run dev` (which serves `recordings/` at `/Overhead/recordings/`), never in CI. Its `main` runs only when the file is executed directly, as in `find-passes.ts` and `record-clip.ts`, so the unit tests import the helpers without starting a browser:
 
 ```text
-npx tsx scripts/check-clip-pass.ts --cam <clip camera id> --track <ClipTrack file> [--gp <dir>] [--calibration <CalibrationFileV1>] [--url http://localhost:5173/] [--limit 1.0]
+npx tsx scripts/check-clip-pass.ts --cam <clip camera id> --track <ClipTrack file> [--gp <dir>] [--calibration <CalibrationFileV1>] [--url http://localhost:5173/Overhead/] [--limit 1.0]
 ```
 
 1. **Inputs.**
@@ -878,7 +886,7 @@ npx tsx scripts/check-clip-pass.ts --cam <clip camera id> --track <ClipTrack fil
    - The reference model is `createCameraModel({ lens, calibration: sidecar.calibration, widthPx: W, heightPx: H })` with the source camera's lens and size. Without a sidecar calibration, stop: "The check needs a star-calibrated sidecar."
 2. **Browser.**
    - `chromium.launch()` from `@playwright/test` (headless), viewport 1600 × 1000.
-   - `context.route("**/data/gp/*.json", …)` answers from `--gp` with `route.fulfill({ path })`, so the app propagates the chosen element sets.
+   - `context.route("**/data/gp/*.json", …)` and `context.route("**/recordings/*.gp/*.json", …)` both answer from `--gp` with `route.fulfill({ path })` (the file name after the last `/`), so the app propagates the chosen element sets whichever GP source it uses: `data/gp/` until M9, or the clip's own `recordings/<clip>.gp/` from M9 (README section 5, "Propagation: sample lifecycle" rule 11). Without `--gp` (`gpDir` null) neither route is added, and the app uses what the server holds: that is how M9 checks production, which serves the clip's own set.
    - Go to `<url>?cam=<id>&sel=sat:<noradId>`. Wait until `[data-testid=video-status]` has `data-status="paused"`, `[data-testid=time-utc]` reads `isoUtcSeconds(startUtcMs)`, and `__overhead.readyFrame()` is not null.
 3. **Optional calibration.** With `--calibration`, open the Calibration panel (C), `setInputFiles` on its "Import JSON" input (M4), wait for the success message, and close the panel (C).
 4. **Samples**, in track order, from media 0:
@@ -888,7 +896,7 @@ npx tsx scripts/check-clip-pass.ts --cam <clip camera id> --track <ClipTrack fil
    4. `measuredPx = [uPx × W / track.widthPx, vPx × H / track.heightPx]` (× 2 for the 2026-10-11 track).
    5. `sepDeg = pixelSeparationDeg(reference, markerPx, measuredPx)`.
 5. **Report.** Write `recordings/<clip stem>.check.json` with:
-   - the options, the ISS epoch from `<gp>/stations.json` and the calibration used;
+   - the options, the ISS epoch from the `stations.json` the app received (the script keeps that response's body through `page.on("response")`), and the calibration used;
    - every sample (`mediaS`, `markerPx`, `measuredPx`, `sepDeg`);
    - the count, max (with its `mediaS`), median, the samples over `--limit` or without a marker, and `alongTrackOffsetS`.
 
@@ -992,10 +1000,12 @@ The hand procedure behind `recordings/subaru-2026-10-11-iss.*`, and how to repea
    npx tsx scripts/find-passes.ts --cam subaru-starcam [--norad 25544] [--from <ISO Z>] [--hours 48] [--gp public/data/gp]
    ```
 
-   With the settled defaults and the ISS elements in `tests/fixtures/gp` (epoch 2026-10-09T22:48:38.797Z), the window 2026-10-11T14:00Z–17:00Z has one span:
-   - entry 15:09:50Z (05:09:50 HST) at az 123.78°, alt 28.85°;
-   - exit 15:15:09Z at az 52.06°, alt 0.002° (the set);
-   - `maxAltDeg` 28.85°, the Sun at −16.21° at entry, elements 40.35 h old.
+   With the settled defaults and the ISS elements in `tests/fixtures/gp` (epoch 2026-10-09T22:48:38.797Z), `--from 2026-10-11T14:00:00Z --hours 3 --gp tests/fixtures/gp` finds two passes. The second (16:42–16:51Z) is in daylight. The first rises at 15:04:35.6Z and sets at 15:14:59.2Z (geometric), and gives one span:
+   - entry 15:09:50.6Z (05:09:50.6 HST) at az 123.43°, alt 28.84°;
+   - exit 15:15:08.6Z at az 52.09°, alt 0.02°;
+   - `maxAltDeg` 28.84°, the Sun at −16.21° at entry, elements 40.35 h old.
+
+   `frameSpans` runs over the pass's [riseMs − 60 s, setMs + 60 s] (README "Finding a pass" step 3), so its samples fall on whole seconds from 15:03:35.6Z. Refraction keeps the ISS above the apparent horizon until 15:15:09.0Z (az 52.06°), 10 s after the geometric set, so the exit is the last sample before that. Over the pass's bare [riseMs, setMs] the exit would have been cut at 15:14:58.6Z (az 52.58°, alt 0.52°). Both runs used a Node prototype of `frameSpans` with satellite.js 7.1.0, astronomy-engine 2.1.19 and the M4 model.
 
    On the video the ISS entered at 15:09:48.9Z and went behind the left-hand dome at 15:13:20.6Z, before the geometric set. Choose a window that starts at least 60 s before entry (M8's incoming look-ahead) and ends after exit. The 2026-10-11 clip runs 15:08:30.039Z–15:16:30.039Z.
 2. **Cut the window from the DVR within the hour.** The DVR window holds the last 3,600 s, so fetch within about 60 min of the window's start. On 2026-10-11 the playlist was fetched at 15:21:49Z and all segments were down by 15:22:53Z.
@@ -1014,6 +1024,7 @@ The hand procedure behind `recordings/subaru-2026-10-11-iss.*`, and how to repea
    cat segs/887655.ts … segs/887750.ts > recordings/subaru-2026-10-11-iss-dvr.ts
    ```
 
+   - Run these in a scratch directory outside the repository and delete it once the MP4 is checked. `m3u8url.txt` and `manifest.m3u8` hold signed URLs that carry the client's IP address (G24); only the concatenation goes into the project's `recordings/`.
    - The URL from `-g` contains `playlist_duration/3600` and `playlist_type/DVR`, and expires about 6 h after it is fetched.
    - The playlist held 720 segments of exactly 5.0 s, with `#EXT-X-MEDIA-SEQUENCE:887094`, one `#EXT-X-PROGRAM-DATE-TIME` (2026-10-11T14:21:45.039Z) on its first segment, and no discontinuities. Segment n's PROGRAM-DATE-TIME was 14:21:45.039Z + 5 s × (n − 887094). The live edge was about 4 s behind the wall clock.
    - itag 270 is 1080p H.264, video only; the stream has no muxed formats.
@@ -1028,14 +1039,15 @@ The hand procedure behind `recordings/subaru-2026-10-11-iss.*`, and how to repea
 4. **Pin the start time with the burned-in clock.** The Subaru StarCam burns its capture clock (HST, UTC−10) into the lower right of each frame.
 
    ```text
-   ffmpeg -hide_banner -i recordings/subaru-2026-10-11-iss.mp4 -vf "select='between(n\,20\,31)',showinfo,crop=200:50:1450:925,tile=2x6" -fps_mode passthrough -frames:v 1 clock.png 2>&1 | grep -o 'n: *[0-9]* pts: *[0-9]* pts_time:[0-9.]*'
+   ffmpeg -hide_banner -i recordings/subaru-2026-10-11-iss.mp4 -vf "select='between(n\,20\,31)',showinfo,crop=200:50:1450:925,tile=2x6" -fps_mode passthrough -frames:v 1 -y clock.png 2>&1 | grep -o 'n: *[0-9]* pts: *[0-9]* pts_time:[0-9.]*'
    ```
 
-   - This tiles frames 20–31 (row by row, two per row) and prints their `pts_time`. Tile 4 (frame 24, 0.8 s) reads 05:08:30; tile 5 (frame 25, 0.833333 s) reads 05:08:31.
+   - This tiles frames 20–31 (row by row, two per row) and prints their `pts_time`. `showinfo`'s `n:` counts the selected frames from 0, so `n: 4` is frame 24 at `pts_time:0.8`. Keep `-y`: without it ffmpeg asks before overwriting an existing `clock.png`, the question goes into the pipe, and the command prints nothing.
+   - Tile 4 (the left tile of the third row: frame 24, 0.8 s) reads 05:08:30; tile 5 (frame 25, 0.833333 s) reads 05:08:31. Re-run on 2026-10-11 with the static ffmpeg 7.1.
    - The second therefore began between `pts_time` 0.8 and 0.833333. Media 0 = 05:08:31.000 HST − 0.816667 s = 05:08:30.183 HST ± 0.017 s, which is 2026-10-11T15:08:30.183Z, `startUtcMs` 1791731310183.
    - Repeat at two later seconds (change `between(n\,a\,b)`): the clock reads 05:10:11 from 100.833 s and 05:15:11 from 400.833 s. The seconds digit changed at frames 25 + 30k for all 480 transitions, so the video timeline and the camera clock agree in rate to better than 70 ppm.
    - Write `startUtcMs`, `timingSource` `{ method: "burned-in-clock", detail }` and `startUncertaintyS` into `recordings/<clip>.json`. The first segment's PROGRAM-DATE-TIME, 15:08:30.039Z, was 0.144 s earlier; `startUncertaintyS` must cover it.
-5. **Calibrate on stars.** Run `npm run dev` and open `/?cam=<clip camera>`, or pick both files in `local-replay`. Pause on a frame with stars and fit star pairs until M4's acceptance passes for a rectilinear lens (at least 10 named stars at alt ≥ 10°). Then "Save sidecar" (step 10.8) over `recordings/<clip>.json`.
+5. **Calibrate on stars.** Run `npm run dev` and open `http://localhost:5173/Overhead/?cam=<clip camera>`, or pick both files in `local-replay`. Pause on a frame with stars and fit star pairs until M4's acceptance passes for a rectilinear lens (at least 10 named stars at alt ≥ 10°). Then "Save sidecar" (step 10.8) over `recordings/<clip>.json`.
    - The 2026-10-11 fit came from 60-frame stacks at media 56, 241 and 461 s, which bring out fainter stars. It gave the values in step 2.
    - Jupiter at top centre, (1056, 60) at media 56 s, fitted as a holdout within about 5 px.
 6. **Refine the timing with the ISS track.** Trust the clock, but check it against the ISS with an element set no older than a day.
@@ -1072,22 +1084,22 @@ What failed on 2026-10-11, so do not do it:
 | `youtube.test.ts` · resolve | Fake `fetch` returning a `Response` | 200 page → `{ id, source: "resolver" }`. 404 → fallback, reason "resolver HTTP 404". No id → "no video id in resolver page". Throws `TypeError("Failed to fetch")` → reason "Failed to fetch". `resolverUrl` null → "no resolver". The `cache` argument reaches `fetch` (`"no-cache"` seen). A fake that never resolves but, like the real `fetch`, rejects with `init.signal.reason` when its signal aborts, with `timeoutMs` 50, falls back with reason "The operation was aborted due to timeout" (Node's message; measured 52 ms). A fake that ignores the signal would hang the test: the timeout works only through the signal. Never throws. |
 | `youtube.test.ts` · mapping | Inline | Errors: 2 and 5 `error`; 100 `error`; 101, 150, 153 `embed-blocked`. States: −1 `loading`, 0 `ended`, 1 `playing`, 2 `paused`, 3 `buffering`, 5 `paused`. |
 | `clip.test.ts` · `parseClipSidecar` | Inline: the README's contract JSON for the 2026-10-11 clip plus provenance keys (`format`, `version`, `startUtc`, `recordedWith`), the README e2e sidecar, and the broken object `{ cameraId: "synthetic-maunakea", videoFile: "a/b.mp4", startUtcMs: "x", timingSource: { method: "guess" }, durationS: 0, width: 1920, height: 1000, fps: 0, sourceVideoId: "abc", credit: {}, calibration: 3, pass: { noradId: 0 } }`; registry from `public/data/cameras.json` plus `synthetic-maunakea`; now 2026-10-11T16:00Z | Both real sidecars → ok. The broken object → exactly 11 messages, in the step 10.1 order: cameraId, videoFile, startUtcMs (finite), startUncertaintyS, timingSource, durationS, fps, sourceVideoId, credit, calibration, pass. There is no width:height message while `cameraId` is invalid. The e2e sidecar with `height` 200 → only the width:height message. With `startUtcMs` 2026-10-13T00:00Z and now 2026-10-11T10:00Z → `["startUtcMs is out of range"]`. With `cameraId` `local-replay` → only the cameraId message. `"x"` and `[]` → `["sidecar must be a JSON object"]`. |
-| `clip.test.ts` · camera | Same | `clipVideoUrl("http://localhost:4173/recordings/subaru-2026-10-11-iss.json", s)` → `http://localhost:4173/recordings/subaru-2026-10-11-iss.mp4`. `clipCamera(subaru-2026-10-11-iss entry, …)` → source `{ sidecarUrl: "recordings/subaru-2026-10-11-iss.json", sourceCameraId: "subaru-starcam", videoUrl, startUtcMs: 1791731310183 }`, `defaults.focalPx` 2525.93, `streamDelayMs` 0, credit "NAOJ & Asahi Shimbun", `termsNote` from `subaru-starcam`, and the entry's name. An entry with `sourceCameraId` `cfht-starcam` → null. A sidecar without `calibration` → the `subaru-starcam` defaults with `streamDelayMs` 0. |
+| `clip.test.ts` · camera | Same | `clipVideoUrl("http://localhost:4173/Overhead/recordings/subaru-2026-10-11-iss.json", s)` → `http://localhost:4173/Overhead/recordings/subaru-2026-10-11-iss.mp4`. `clipCamera(subaru-2026-10-11-iss entry, …)` → source `{ sidecarUrl: "recordings/subaru-2026-10-11-iss.json", sourceCameraId: "subaru-starcam", videoUrl, startUtcMs: 1791731310183 }`, `defaults.focalPx` 2525.93, `streamDelayMs` 0, credit "NAOJ & Asahi Shimbun", `termsNote` from `subaru-starcam`, and the entry's name. An entry with `sourceCameraId` `cfht-starcam` → null. A sidecar without `calibration` → the `subaru-starcam` defaults with `streamDelayMs` 0. |
 | `clockLoop.test.ts` · media clocks | Manual scheduler (M0), `vi.setSystemTime`, fake `MediaClock` objects | Live YouTube, no clock: sim = now − 50,000. Anchor (T, 4,399,105.5), media 4,399,125.75, now T + 30,000 → T − 29,750. Media null → no tick. Delay set to 30,000 → T − 9,750. Local clip, start S, media 2.25 → S + 2,250 on every frame whatever the rate and wall delta. `seek(S + 5,000)` → `seekToSec(5)` called once and sim S + 5,000. `seek(S + 9,000)` on a 7 s clip → `seekToSec(9)`, then (the fake clamps like the real one) the next frame reads S + 7,000. `setMediaClock(null)` → M0's replay branch again. |
 | `actions.test.ts` | `createAppStore` with the registry | `setStreamDelayMs(130,000)` stores 120,000; NaN changes nothing; on a non-YouTube camera nothing changes. `setVideoStatus("embed-blocked", 150)` is stored. `setActiveCamera` resets `video`. `setVideoLayer("grid", true)` gives a new `layers.video` with only `grid` changed; repeating it leaves the same reference. |
 | `selectors.test.ts` | `createAppStore` with the committed, enabled registry | Exact. `selectStreamDelayMs`: 50,000 on `subaru-starcam`, 22,000 after `setStreamDelayMs(22_000)`, 0 on `synthetic-maunakea` and on `subaru-2026-10-11-iss`. `selectLiveLocked`: true in live mode on `subaru-starcam`, false in replay there, false in live mode on `synthetic-maunakea`. `selectSkyOverVideo`: true on `subaru-starcam` and `local-replay`, false on `synthetic-maunakea` and `cfht-nanaao`. `selectStarMagLimit`: 4.5 on synthetic and still-image cameras, 2 on `youtube` and `local-video`, 4 with the Calibration panel open. `selectSkyLayerVisible("grid")`: false on `subaru-starcam` by default, true after `setVideoLayer("grid", true)`. `("starlink")` needs both `layers.starlink` and `layers.video.starlink`. `("stars")` is true. `selectSkyDenseLabels`: false on `subaru-starcam`, true on `synthetic-maunakea`, true after `setVideoLayer("denseLabels", true)`. |
 | `bindLayers.test.ts` · `bindSkyLayerVisible` | Live store, a real `ol/layer/Vector` in Node | The README run: the grid shows on a synthetic camera, hides on a `youtube` camera, ignores a clock tick, shows again with `layers.video.grid`, follows `layers.grid` off and on, stays on for a `local-video` camera, and stops after unsubscribe. |
 | `cameras.test.ts` | The committed `cameras.json`, plus variants | It parses. M1's file-order list gains `local-replay` and `subaru-2026-10-11-iss` after `cfht-starcam`. `enabledCameras` gives `synthetic-maunakea`, `cfht-nanaao`, `subaru-starcam`, `cfht-starcam`, `local-replay`, `subaru-2026-10-11-iss`. M1's Subaru `defaults` assertion becomes az 81.2322, alt 19.6185, roll 0.7698, f 2525.93, k1 −0.00992, delay 50,000. Each of these is rejected with a message naming the field: id `Kj5DjRYkzD8X` (12 characters), an `http:` resolver, `sidecarUrl` `/recordings/x.json`, `sourceCameraId` `synthetic-maunakea`, a non-null `videoUrl`, `startUtcMs: "x"`, and a `local-video` delay of 1. |
-| `fit.test.ts` · `satelliteCheckSummary` | 12 samples 2,000 ms apart, residuals 0.30…0.85° | Pass, max 0.85, median 0.575, gap 2,000. One residual 1.01 → fail; exactly 1.0 → pass. 9 samples → fail. One 3,000 ms gap → fail. Reversed order gives the same result. A NaN residual → fail. Empty → count 0, nulls, fail. |
+| `fit.test.ts` · `satelliteCheckSummary` | 12 samples 2,000 ms apart, residuals 0.30…0.85°; 13 samples at 0, 2, … 20 s and 30, 32 s, residual 0.5° | Pass, max 0.85, median 0.575, gap 2,000. One residual 1.01 → fail; exactly 1.0 → pass. 9 samples → fail. One 3,000 ms gap → fail. The 13 samples: without `hiddenMs` gap 10,000 → fail; with `hiddenMs` [[21,000, 29,000]] gap 2,000 → pass; with [[23,000, 29,000]] gap 4,000 → fail (prototype run in Node 26). Reversed order gives the same result. A NaN residual → fail. Empty → count 0, nulls, fail. |
 | `passes.test.ts` · `findPasses` | ISS from `tests/fixtures/gp/stations.json`, site 19.82552°, −155.47587°, 4,148 m, 2026-10-11T14:00Z–17:00Z, 10 s, 0° | 2 passes. The first: rise 15:04:35.6Z ± 1 s, culmination 15:09:47Z ± 2 s at 28.835° ± 0.05° (geometric), set 15:14:59.2Z ± 1 s, `sunlitAtCulmination` true, Sun −16.22° ± 0.05°. |
 | `passes.test.ts` · `frameSpans` | README "ISS span in the Subaru frame": the old Subaru defaults as inline inputs; and the settled `subaru-starcam` defaults from `cameras.json` over 15:05:00Z–15:20:00Z, 1 s | Old defaults: exactly one span, enter 15:09:55Z (az 120.760°, alt 28.756°), exit 15:15:09Z (az 52.065°, alt 0.002°), `maxAltDeg` 28.756°; ± 1 s and ± 0.05°. Settled defaults: exactly one span, enter 15:09:50Z (az 123.78°, alt 28.85°), exit 15:15:09Z, `maxAltDeg` 28.85°. With that model, `projectAzAltDeg` of az 172.11°, alt 18.99° (the ISS at 15:08:08Z, 84.51° off the axis) returns false. Without M4's cull it would land at (49, 1724), inside the frame, and open a false span at 15:08:08Z. |
 | `findPasses.test.ts` | Inline argv | `["--cam", "subaru-starcam"]` with now N → norad 25544, `fromMs` N, hours 48, `gpDir` `public/data/gp`, `calibrationFile` null. `--from 2026-10-11T14:00:00` (no Z), an unknown flag or no `--cam` → throws. |
-| `recordClip.test.ts` | `tests/fixtures/hls/dvr-playlist.m3u8`; inline playlists; the `subaru-starcam` entry | `parseMediaPlaylist`: 4 segments, `sq` 887655 at 15:08:30.039Z, 5.0 s each, `mediaSequence` 887655. `selectSegments` for [15:08:31Z, 15:08:41Z) → 887655–887657; for [15:08:20Z, 15:08:41Z) → throws. Throws on: no PROGRAM-DATE-TIME; an `#EXT-X-DISCONTINUITY` before a segment; a `/sq/887660/` URL at index 0. `parseRecordClipArgs`: defaults `ytDlp` `["uvx", "yt-dlp"]`, `ffmpeg` `"ffmpeg"`, `noradId` null; throws on `--to` before `--from`, on a 3,601 s window and on `--name Bad_Name`. `buildClipSidecar` on 887655–887657 with probe 1920 × 1080, 30 fps, 15 s → `startUtcMs` 1791731310039, `durationS` 15, method `"hls-program-date-time"`, `startUncertaintyS` 0.2, credit href `https://www.youtube.com/watch?v=<videoId>`, and it passes `parseClipSidecar`. |
-| `checkClipPass.test.ts` | Inline | `clientToImagePx`: in the rect {left 100, top 50, width 1440, height 900} (letterboxed, s 0.375, 45 px bars), the CSS points of image (0, 0), (3840, 2160), (1920, 1080) and (1234.5, 678.9) map back to themselves within 1e-9. The CSS point (580, 320) in {100, 50, 960, 540} maps to (1920, 1080). `alongTrackOffsetS`: markers at (1000 + 10t, 500 − 5t) for t = 0, 2, 4, 6, 8 with measured = marker + 0.5 s × velocity → 0.5 exactly. One sample → null. Two samples 4 s apart → null. `parseCheckClipPassArgs` defaults: `gpDir` `public/data/gp`, `url` `http://localhost:5173/`, `limitDeg` 1, `calibrationFile` null. |
+| `recordClip.test.ts` | `tests/fixtures/hls/dvr-playlist.m3u8`; inline playlists; the `subaru-starcam` entry | `parseMediaPlaylist`: 4 segments, `sq` 887655 at 15:08:30.039Z, 5.0 s each, `mediaSequence` 887655; the fixture's `#EXT-X-DISCONTINUITY-SEQUENCE:132` line does not throw. An inline two-segment playlist with an ad-marker pair in the real form (`#EXT-X-DATERANGE:CLASS="CUEPOINT-AD",…`, then `#EXT-X-CUEPOINT:…,TYPE=AD`) before its second segment → 2 segments, 5 s apart (step 17.1). `selectSegments` for [15:08:31Z, 15:08:41Z) → 887655–887657; for [15:08:20Z, 15:08:41Z) → throws. Throws on: no PROGRAM-DATE-TIME; an `#EXT-X-DISCONTINUITY` before a segment; a `/sq/887660/` URL at index 0. `parseRecordClipArgs`: defaults `ytDlp` `["uvx", "yt-dlp"]`, `ffmpeg` `"ffmpeg"`, `noradId` null; throws on `--to` before `--from`, on a 3,601 s window and on `--name Bad_Name`. `buildClipSidecar` on 887655–887657 with probe 1920 × 1080, 30 fps, 15 s → `startUtcMs` 1791731310039, `durationS` 15, method `"hls-program-date-time"`, `startUncertaintyS` 0.2, credit href `https://www.youtube.com/watch?v=<videoId>`, and it passes `parseClipSidecar`. |
+| `checkClipPass.test.ts` | Inline | `clientToImagePx`: in the rect {left 100, top 50, width 1440, height 900} (letterboxed, s 0.375, 45 px bars), the CSS points of image (0, 0), (3840, 2160), (1920, 1080) and (1234.5, 678.9) map back to themselves within 1e-9. The CSS point (580, 320) in {100, 50, 960, 540} maps to (1920, 1080). `alongTrackOffsetS`: markers at (1000 + 10t, 500 − 5t) for t = 0, 2, 4, 6, 8 with measured = marker + 0.5 s × velocity → 0.5 exactly. One sample → null. Two samples 4 s apart → null. `parseCheckClipPassArgs` defaults: `gpDir` null, `url` `http://localhost:5173/Overhead/`, `limitDeg` 1, `calibrationFile` null; `--gp tests/fixtures/gp` gives `gpDir` `tests/fixtures/gp`. |
 
 ### End-to-end: `tests/e2e/video.spec.ts`
 
-YouTube tests run at viewport 1280 × 720. Call `page.clock.setFixedTime(new Date("2026-10-11T08:00:00Z"))` (22:00 HST) before going to `/?cam=subaru-starcam`. `setFixedTime` fixes `Date` but keeps timers and frames running: a prototype loop ran 19 frames, then 58. After PLAYING the sky time is 07:59:10Z (delay 50 s), and Uranus (az 73.12°, alt 16.72°) is the only Sun, Moon or planet in the frame. It sits at image (1577, 1206) with the settled defaults.
+YouTube tests run at viewport 1280 × 720. Call `page.clock.setFixedTime(new Date("2026-10-11T08:00:00Z"))` (22:00 HST) before going to `./?cam=subaru-starcam` (specs navigate base-relative, M0 step 9). `setFixedTime` fixes `Date` but keeps timers and frames running: a prototype loop ran 19 frames, then 58. After PLAYING the sky time is 07:59:10Z (delay 50 s), and Uranus (az 73.12°, alt 16.72°) is the only Sun, Moon or planet in the frame. It sits at image (1577, 1206) with the settled defaults.
 
 1. **Resolves the id and embeds one player.**
    - One request to `/maunakea_east/`.
@@ -1098,7 +1110,7 @@ YouTube tests run at viewport 1280 × 720. Call `page.clock.setFixedTime(new Dat
    - `[data-testid=sky-map]` and the player's iframe have the same box within 1 px, both inside `[data-testid=sky-stage]`.
    - The map target's computed `pointer-events` is `none`.
    - At `clientPoint("sky", "planet:Uranus")`, `elementFromPoint` is a `button` with `aria-label` "Uranus": the overlay is on top.
-   - The "On the video" group is visible in the Layers panel with three unchecked boxes. On `?cam=synthetic-maunakea` it is absent.
+   - The "On the video" group is visible in the Layers panel with three unchecked boxes. On `./?cam=synthetic-maunakea` it is absent.
 3. **Clicks pass through to the player.** Pick a point in the stage at least 30 CSS px from every hit-target button's box; `elementFromPoint` there is the iframe. Click it → `__ytStub.clicks` grows by exactly 1, and the URL has no `sel=`.
 4. **Hit targets select and hover.**
    - Move to Uranus's `clientPoint` → the HoverCard shows "Uranus". At a point inside the HoverCard's box and outside every hit-target box, `elementFromPoint` is the player's iframe.
@@ -1129,7 +1141,7 @@ YouTube tests run at viewport 1280 × 720. Call `page.clock.setFixedTime(new Dat
 Clip tests (no fake clock):
 
 16. **Picked files on `local-replay`.**
-    - At `/?cam=local-replay`, `setInputFiles([test-pattern.webm, test-pattern.sidecar.json])` → `data-status` `paused`, `time-utc` `2026-10-11T08:00:00Z`, `time-mode` "Replay".
+    - At `./?cam=local-replay`, `setInputFiles([test-pattern.webm, test-pattern.sidecar.json])` → `data-status` `paused`, `time-utc` `2026-10-11T08:00:00Z`, `time-mode` "Replay".
     - Live is `aria-disabled`, and the rates are only 1× and 10×.
     - The sidecar credit and "CC0-1.0" are visible. The clip information names the start source "manual".
 17. **The frame fills the camera's pixel extent.**
@@ -1140,8 +1152,8 @@ Clip tests (no fake clock):
     - "Forward 1 second" twice → `08:00:02Z`.
     - Choose 10× and Play → `data-status` `ended`, `time-utc` equal to the end time in the clip information (`08:00:07Z` for the committed 7.00 s clip), and the button reads "Play".
 19. **Sidecar errors are listed.** A copy of the sidecar with `"videoFile": "a/test-pattern.webm"` → the message `videoFile must be a file name with no / or \` is shown, and no clip loads (`time-utc` unchanged).
-20. **A clip camera loads from its sidecar URL.** `/?cam=subaru-2026-10-11-iss` → through the `**/recordings/**` route, `data-status` `paused`, `time-utc` `2026-10-11T08:00:00Z`, the credit "Test pattern generated for the Overhead e2e tests", and the button "Copy pointing to Subaru-Asahi StarCam (east, live)" in the Calibration panel.
-21. **Not part of this build.** `page.route("**/recordings/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>Overhead</title>" }))`, then `/?cam=subaru-2026-10-11-iss` → "This clip is not part of this build.", the picker reads "Offline", and "Replay a local clip" is offered. No console error.
+20. **A clip camera loads from its sidecar URL.** `./?cam=subaru-2026-10-11-iss` → through the `**/recordings/**` route, `data-status` `paused`, `time-utc` `2026-10-11T08:00:00Z`, the credit "Test pattern generated for the Overhead e2e tests", and the button "Copy pointing to Subaru-Asahi StarCam (east, live)" in the Calibration panel.
+21. **Not part of this build.** `page.route("**/recordings/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>Overhead</title>" }))`, then `./?cam=subaru-2026-10-11-iss` → "This clip is not part of this build.", the picker reads "Offline", and "Replay a local clip" is offered. No console error.
 
 ## 6. Acceptance criteria and PR evidence
 
@@ -1155,16 +1167,16 @@ Clip tests (no fake clock):
      ```
 
    - **What is measured.**
-     - For each of the 94 track samples (even media seconds from 80 s to 290 s across the four visible stretches), the script steps the clip to exactly that media second. It reads the app's drawn ISS marker through `__overhead.clientPoint("sky", "sat:25544")` and converts it to image px.
+     - For each of the 94 track samples (one per even media second from 80 s to 290 s across the four visible stretches, with 221, 257 and 265 s standing in for frames without a clean detection; step 14.6), the script steps the clip to exactly that media second. It reads the app's drawn ISS marker through `__overhead.clientPoint("sky", "sat:25544")` and converts it to image px.
      - It compares the marker with the ISS centroid measured in that frame by angle on the sky through the star-fit model (step 18).
      - The app runs with the clip camera's own calibration (the sidecar's star fit) and the ISS elements in `tests/fixtures/gp` (epoch 2026-10-09T22:48:38.797Z, 40.3 h before the pass).
-   - **Pass.** All 94 samples have a marker and every `sepDeg` ≤ 1.0°. The track's samples are 2 s apart within each stretch. The ISS moves at most 19 px/s at 1080p (0.53°/s), and the error changes smoothly between samples.
-   - **Expected values.** A Node prototype of the same comparison (satellite.js 7.1.0, the M4 model, site height 4,148 m) gave: max 0.543° (16.4 px at 1080p, media 94 s), median 0.270°, rms 0.306°, none over 1°, and `alongTrackOffsetS` +0.867 s. The app interpolates ENU between 100 ms samples (README: 0.0024° at 60×, less at 1×), so its numbers should match to a few thousandths of a degree. A larger difference means the marker, the conversion or the stepping is wrong; fix that, not the threshold.
-   - **Why calibration is required.** The same comparison with the old Subaru defaults (f 2742, roll 0, k1 0) gave max 3.003° at 82 s, median 1.329°, and 54 of 94 samples over 1°. It is a scale error that changes sign across the frame centre, so no time shift fixes it. The best shift (+3.49 s) still left an rms of 29 px.
+   - **Pass.** All 94 samples have a marker and every `sepDeg` ≤ 1.0°. Within each stretch the samples are 2 s apart, 1 or 3 s around the three substituted seconds. The ISS moves at most 19 px/s at 1080p (0.53°/s), and the error changes smoothly between samples.
+   - **Expected values.** A Node prototype of the same comparison (satellite.js 7.1.0, the M4 model, site height 4,148 m) gave: max 0.543° (16.4 px at 1080p, media 94 s), median 0.269° (the mean of the middle two, as `satelliteCheckSummary` takes it), rms 0.306°, none over 1°, and `alongTrackOffsetS` +0.867 s. The app interpolates ENU between 100 ms samples (README: 0.0024° at 60×, less at 1×), so its numbers should match to a few thousandths of a degree. A larger difference means the marker, the conversion or the stepping is wrong; fix that, not the threshold.
+   - **Why calibration is required.** The same comparison with the old Subaru defaults (f 2742, roll 0, k1 0) gave max 3.003° at 82 s, median 1.297°, and 54 of 94 samples over 1°. It is a scale error that changes sign across the frame centre, so no time shift fixes it. The best shift (+3.49 s) still left an rms of 29 px.
    - **Why the fixture elements.** They are committed, and their 40.3 h age costs about 0.9 s along-track: a mean along-track error of 7.7 px at 1080p, rms 8.57 px. Fresher sets would do better: a 20.2-h set put the calibrated marker within 0.13° (rms 1.2 px).
    - **Evidence:** the report `recordings/subaru-2026-10-11-iss.check.json` and its printed line. Add screenshots of the replay at media 94 s and 280 s with the marker on the ISS, and a screen recording of 30 s or less of the replay.
    - Optional evidence: repeat with `--calibration <file>` exported after an in-app star calibration of the clip that passed M4's checklist, and report its max.
-4. **Live check by hand, on the real player** (a headed browser, `npm run dev`, `?cam=subaru-starcam`):
+4. **Live check by hand, on the real player** (a headed browser, `npm run dev`, `http://localhost:5173/Overhead/?cam=subaru-starcam`):
    - The player shows no fullscreen button. A click on the video pauses and resumes it through the overlay. Its controls bar, volume and DVR scrubber work.
    - "Fullscreen" takes the video and the overlay together; pressing `f` in the player is undone with the note.
    - At night, align the delay on a satellite or the ISS (step 9.7) and record the delay found.
@@ -1179,48 +1191,42 @@ Clip tests (no fake clock):
 
 ## 7. Gotchas
 
-- **G1. Pass-through is per element.** CSS `pointer-events` applies to elements, not canvas pixels, and the page gets no pointer events while the pointer is over the cross-origin iframe. Set `none` on the map target itself: on `.ol-viewport` alone, the target div still blocked the iframe. Never toggle pass-through from `pointermove` ([openlayers.md](../verification/openlayers.md) claim 12).
+- **G1. Pass-through is per element.** CSS `pointer-events` applies to elements, not canvas pixels, and the page gets no pointer events while the pointer is over the cross-origin iframe. Set `none` on the map target itself: on `.ol-viewport` alone, the target div still blocked the iframe. Never toggle pass-through from `pointermove` (`verification/openlayers.md` claim 12).
 - **G2. Every `ol/Overlay` container takes clicks.** OpenLayers sets `pointer-events: auto` on each overlay's container. The HoverCard overlay blocked clicks over the player until its container was set to `none` (step 8.2). Hit targets want exactly this behaviour; the card does not.
-- **G3. `fs: 0` hides the button, not the `f` key.** With the player focused, `f` made the iframe fullscreen with `fs: 0`. The guard exits it (16 ms). The stage cannot take over fullscreen from the handler, which has no user activation. `disablekb: 1` would also remove the player's other keys.
+- **G3. `fs: 0` hides the button, not the `f` key.** With the player focused, `f` made the iframe fullscreen with `fs: 0`. The guard exits it (16–17 ms). The stage cannot take over fullscreen from the handler, which has no user activation. `disablekb: 1` would also remove the player's other keys.
 - **G4. Keyboard focus lands in the player.** After a click on the video, key presses go to the iframe: YouTube's own keys work, and the app's shortcuts (Space, arrows, L, C) do nothing until focus returns to the page. Tests press app keys only after focusing the page.
 - **G5. The player needs `setSize`.** The iframe keeps the size it was created with. In a 1440 × 900 fullscreen stage it stayed 960 × 540 until `setSize(1440, 900)`, while the map filled the screen.
 - **G6. Letterboxing must match.** The player contains the video (rows 45–854 of a 1440 × 900 stage). The map must contain the frame the same way: a view with an `extent` and `constrainOnlyCenter: false` fits by cover and misaligns by 80 px per side there.
 - **G7. Headless Escape does not leave fullscreen.** Use `document.exitFullscreen()` in tests; real browsers exit on Esc.
-- **G8. YouTube latency only grows.** A 10 s pause added 11.5 s, and stalls added their full length. `Date.now() − delay` is then 10–50° wrong near culmination. `getCurrentTime()` deltas tracked every change to within 0.5 s ([architecture.md](../verification/architecture.md) claim 21). Hence the media clock.
+- **G8. YouTube latency only grows.** A 10 s pause added 11.5 s, and stalls added their full length. `Date.now() − delay` is then 10–50° wrong near culmination. `getCurrentTime()` deltas tracked every change to within 0.5 s (`verification/architecture.md` claim 21). Hence the media clock.
 - **G9. `getCurrentTime()` is not a raw value.** While PLAYING the widget returns the last reported time plus up to 1 s of wall-clock extrapolation (`www-widgetapi.js`). Before the live position is known it returned 0, and once null. Anchor only on PLAYING with a finite value above 0.
-- **G10. Error 150 also means "this id is dead".** The ended stream `qh6Nqiq6LIg` and a nonexistent id both gave 150. Live ids change when a stream restarts ([sources.md](../verification/sources.md) claim 2). Re-resolve once before showing the blocked state.
-- **G11. Only the github.io resolvers work at runtime.** `naoj.org/PIO/LiveCam/cam_redirect.html` is a JavaScript redirect with no CORS. `embed/live_stream?channel=` picks any of the channel's concurrent streams ([sources.md](../verification/sources.md) claim 4). The resolver pages are cached for 600 s.
+- **G10. Error 150 also means "this id is dead".** The ended stream `qh6Nqiq6LIg` and a nonexistent id both gave 150. Live ids change when a stream restarts (`verification/sources.md` claim 2). Re-resolve once before showing the blocked state.
+- **G11. Only the github.io resolvers work at runtime.** `naoj.org/PIO/LiveCam/cam_redirect.html` is a JavaScript redirect with no CORS. `embed/live_stream?channel=` picks any of the channel's concurrent streams (`verification/sources.md` claim 4). The resolver pages are cached for 600 s.
 - **G12. The API swaps the host element.** Its iframe replaces the element passed in, and `destroy()` restores it. A React-owned host breaks reconciliation.
 - **G13. A negative k1 folds far points back into the frame.** With the settled Subaru model (k1 −0.00992), the ISS at az 172.11°, alt 18.99° (15:08:08Z, 84.51° off the axis) has unit radius r = 10.41. So s = 1 + k1 r² = −0.0753, and without M4's cull (r > 1.05 × 0.87885 = 0.9228) the point lands at (49, 1724), inside the frame. Every projection path must go through `projectAzAltDeg`'s cull, including `frameSpans` and the hit targets.
 - **G14. The delay varies a lot.**
-  - The verification measured 43–60 s at first play and 22.7 s at the live head ([sources.md](../verification/sources.md) claim 10).
+  - The verification measured 43–60 s at first play and 22.7 s at the live head (`verification/sources.md` claim 10).
   - `getMediaReferenceTime` gave 17.8, 19.9 and 20.7 s at the first PLAYING in three sessions.
   - The 50 s default is only a starting point: calibrate each session. The undocumented suggestion is the fastest check when present.
 - **G15. Referer.** Error 153 means no Referer. The API sets `referrerpolicy="strict-origin-when-cross-origin"` on its own iframe, so a page served with `Referrer-Policy: no-referrer` still played. Keep M0's header rule anyway.
-- **G16. `playbackRate` stops at 16** ([architecture.md](../verification/architecture.md) claim 5). Offer only 1× and 10× with a clip, and wrap the assignment in `try/catch`.
-- **G17. No frame callbacks while paused.** After a paused seek Chromium 156 delivered one callback (media time 2.0), but other engines may not. Redraw on `seeked` as well, and scrub by setting `currentTime` ([architecture.md](../verification/architecture.md) claim 5).
-- **G18. `ImageCanvas` caches.** It redraws only after `changed()`, and its default `ratio` 1.5 builds a canvas 1.5 × the viewport every frame ([openlayers.md](../verification/openlayers.md) claim 21).
+- **G16. `playbackRate` stops at 16** (`verification/architecture.md` claim 5). Offer only 1× and 10× with a clip, and wrap the assignment in `try/catch`.
+- **G17. No frame callbacks while paused.** After a paused seek Chromium 156 delivered one callback (media time 2.0), but other engines may not. Redraw on `seeked` as well, and scrub by setting `currentTime` (`verification/architecture.md` claim 5).
+- **G18. `ImageCanvas` caches.** It redraws only after `changed()`, and its default `ratio` 1.5 builds a canvas 1.5 × the viewport every frame (`verification/openlayers.md` claim 21).
 - **G19. Keep the background layer `ImageLayer<ImageSource>`.** `ImageLayer<ImageStatic>` plus `ImageCanvasSource` is TS2739, and an `ImageLayer<ImageSource>` passed to a parameter typed `ImageLayer<ImageStatic>` is TS2345.
 - **G20. The map canvas is CSS-scaled.** At a device pixel ratio other than 1, OpenLayers sizes its canvas in device pixels and shrinks it with a CSS transform, so `canvas.clientWidth` equals `canvas.width`. Convert CSS px to canvas px with `canvas.width / canvas.getBoundingClientRect().width`.
 - **G21. Failed fetches log console errors.** Both a 404 and an aborted request log "Failed to load resource", which fails the shared e2e fixture. Playwright-fulfilled responses load even without CORS headers ([M4](M4-camera-model.md) G11).
 - **G22. Chromium cannot play MPEG-TS, and the extension lies.** An interrupted yt-dlp recording stays MPEG-TS under an `.mp4` name (`ffmpeg -i` reports `mpegts`). Always remux with `-c copy -movflags +faststart`.
 - **G23. yt-dlp cannot cut a live DVR window.** `--download-sections` fails on the live-from-start DASH formats and silently records the live edge on HLS. Use the playlist's segments (step 17).
-- **G24. The DVR holds one hour, and its URLs expire and identify you.** Cut a pass within about 60 min. Playlist and segment URLs last about 6 h and carry the client's IP: never log or store them.
+- **G24. The DVR holds one hour, and its URLs expire and identify you.** Cut a pass within about 60 min. Playlist and segment URLs last about 6 h and carry the client's IP. `record-clip.ts` keeps them in memory only; the hand procedure keeps them in a scratch directory outside the repository and deletes it. Never log or commit them.
 - **G25. `file://` taints the canvas.** A page opened from `file://` cannot read video pixels (`SecurityError`); object URLs and `npm run dev` over http can.
 - **G26. Old elements look like a clock error.** A start-time error, a stream-delay error and an old element set all shift a satellite along its track. On 2026-10-11 a 40-h ISS set lagged 0.88 s (a mean along-track error of 7.7 px at 1080p, up to about 0.5°) while the clock was right. Fix the start time from a clock; use satellites only to check it with elements under a day old (Recording a clip, step 6).
 - **G27. Starlink element sets are worse.** On the clip, 23 tracks matched 20 Starlink satellites at ≤ 2.6 px rms with the star calibration, but each needed its own time shift: −16.3 to +7.8 s, median +0.27 s, only 7 within 1 s. That is against the 2026-10-11T03:50Z snapshot. A bright object 60 s behind the ISS matched CYGNUS NG-24 (68689) only after a 34 s shift. Do not use these for timing.
 
 ## 8. Decisions to append to `docs/DECISIONS.md`
 
-`DECISIONS.md` already holds the YouTube anchor rule and O1/O2 themselves. Append the rest.
+`DECISIONS.md` already holds the YouTube anchor rule and O1/O2 themselves. Its section "Revisions for O1, O2, O4 and H1" also holds M5's lines on pass-through and hit targets, `fs: 0` and the fullscreen guard, the content box, the settled Subaru defaults, the StarCam `termsNote`, the clip sidecar, `record-clip.ts`, the `find-passes` window, the scripted acceptance and `satelliteCheckSummary`'s hidden stretches; do not append those again. Append the rest.
 
-- The sky map sits on top of the YouTube player in one stage, with `pointer-events: none` on the map target and `ol/Overlay` button hit targets (`stopEvent: false`, ≥ 24 × 24 CSS px) for the ISS, visual satellites, drawn stars, Sun, Moon, planets and the selection. The HoverCard overlay's container is also set to `none`. Reason: player controls stay usable. OpenLayers sets `auto` on every overlay container, and a card took the player's click until set to `none`.
-- The player is created with `fs: 0`. A Fullscreen button puts the stage in fullscreen, and a `fullscreenchange` guard exits the player's own fullscreen. Reason: YouTube's fullscreen hides the overlay. `fs: 0` leaves the `f` key working (measured), and `disablekb` would remove the player's other keys.
-- The player follows the stage with `setSize`, and the map with `fitSkyFrame`; both contain the 16:9 frame. Reason: the real player letterboxed into the same centred box as `view.fit` (1440 × 810 at 45 px in 1440 × 900).
-- `subaru-starcam` defaults come from the 2026-10-11 star fit: az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992, `rmsDeg` 0.0294. Reason: the published centre with f 2742 left the ISS marker up to 3.0° off (54 of 94 samples over 1°); the fit leaves 0.54° with 40-h elements and 0.13° with 20-h elements.
-- Clip cameras load a `ClipSidecar` from `sidecarUrl` on activation; anything that is not JSON means "not part of this build". `local-replay` takes picked files and needs the sidecar. Reason: `vite preview` and deploys answer `index.html` for missing files; a clip without a clock-derived start has no time.
-- `record-clip.ts` cuts clips from the HLS DVR playlist by segment (PROGRAM-DATE-TIME), concatenates and remuxes with ffmpeg, and copies the committed GP files next to the clip. The burned-in clock then replaces PROGRAM-DATE-TIME. Reason: yt-dlp's section download cannot cut a live DVR window, the camera clock is the capture time (0.144 s after the PDT on 2026-10-11), and timing checks need the elements of the day.
-- The M5 acceptance is scripted: `check-clip-pass.ts` steps the clip to the 94 measured ISS positions, reads the drawn marker from the test hook, and compares by angle through the star-fit model. Pass: every sample ≤ 1.0°. Reason: it covers every 2 s of the visible pass without manual clicking, and an angle is right across the gnomonic frame where a pixel threshold is not.
+- Clip cameras load a `ClipSidecar` from `sidecarUrl` on activation; anything that is not JSON means "not part of this build". `local-replay` takes picked files and needs the sidecar. Reason: `vite preview` and `npm run dev` answer `index.html` (200) for a missing file and GitHub Pages answers 404, and either means the clip is absent; a clip without a clock-derived start has no time.
 - The ISS track on the 2026-10-11 clip is committed as a fixture (numbers only); the clip is not. Reason: the acceptance must be repeatable; recordings stay local.
 - The UI shows the delay plus the stall as "behind real time now". A rebuffer of ≥ 1 s shows a "check the delay" prompt; the delay is never changed automatically; `getMediaReferenceTime` is only a suggestion with an Apply button. Reason: DECISIONS "Live clock".
 - On error 100, 101 or 150, or on ENDED, the id is re-resolved once with `cache: "no-cache"` before giving up. Errors 101, 150 and 153 set `embed-blocked` and `offline`, switch to replay, destroy the player, and offer "Watch on YouTube", the camera's recorded clips and "Replay a local clip". Reason: dead and nonexistent ids report 150, and live ids change on restart.

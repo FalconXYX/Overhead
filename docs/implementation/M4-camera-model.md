@@ -23,7 +23,7 @@ Out of scope:
 - No new dependency: ajv 8.20.0 and proj4 2.22.0 are pinned since M0.
 - No accounts or keys. Two one-off network tasks, by hand:
   - Download the GeoPose schema and its four instances (step 1).
-  - Record the calibration-pairs fixture on a clear night with Nānā ao's hatch open (step 18). `last_vis.png` returned 404 at every check on 2026-10-11: 04:06–05:29 UTC in [sources.md](../verification/sources.md) claim 6, 09:48 UTC here, when the weather server said `HATCH_CLOSED` at 73.7 % humidity, and again at 11:40 UTC (01:40 HST). Build steps 1–17 first.
+  - Record the calibration-pairs fixture on a clear night with Nānā ao's hatch open (step 18). `last_vis.png` returned 404 at every check on 2026-10-11: 04:06–05:29 UTC in `verification/sources.md` claim 6, 09:48 UTC here, when the weather server said `HATCH_CLOSED` at 73.7 % humidity, and again at 11:40 UTC (01:40 HST). Build steps 1–17 first.
 - Decisions ([DECISIONS](../DECISIONS.md)):
   - O3 (open): M4 uses `camera.status`, `camera.frameTimeMs`, `calibrationUi` and `ui.panel`. If O3 changes: propose those fields in this pull request.
   - O1: a still image gets the full overlay set and map picking ([README camera kinds](README.md#camera-kinds)); the light set over video and the YouTube hit targets come in M5. O2 and O4: no effect.
@@ -80,7 +80,7 @@ Build in this order. For every formula, write the failing test from section 5 fi
 
 1. Download `https://schemas.opengis.net/geopose/1.0/schemata/GeoPose.Basic.YPR.Schema.json` into `src/domain/camera/schemas/`. `shasum -a 256` must print `5508d26aed6f546384ac1e1b9d1117f201179a2b32200ad28af3e5209c765640` (969 bytes, `Last-Modified: Wed, 09 Apr 2025 01:48:37 GMT`, re-fetched 2026-10-11).
 2. Download `…/geopose/1.0/instances/GeoPose.Basic.YPR.Instance.00.json` … `.03.json` into `tests/fixtures/geopose/` (174, 173, 173 and 174 bytes).
-3. `PROVENANCE.md`: the URL, sha256, size, retrieval date, "Copyright (c) 2022 Open Geospatial Consortium" and Apache-2.0 through the byte-identical copy in `github.com/opengeospatial/GeoPose` (`standard/standard/schemata/`). Warn: never use `GeoPose.Basic.Euler.Schema.json` or the repo's `Data/Schemata` draft, which says `location` ([geopose.md](../verification/geopose.md) claim 2).
+3. `PROVENANCE.md`: the URL, sha256, size, retrieval date, "Copyright (c) 2022 Open Geospatial Consortium" and Apache-2.0 through the byte-identical copy in `github.com/opengeospatial/GeoPose` (`standard/standard/schemata/`). Warn: never use `GeoPose.Basic.Euler.Schema.json` or the repo's `Data/Schemata` draft, which says `location` (`verification/geopose.md` claim 2).
 4. Never fetch the schema at runtime or in CI.
 
 ### Step 2. Forward model for every lens (`lens.ts`, `project.ts`)
@@ -128,11 +128,11 @@ Build in this order. For every formula, write the failing test from section 5 fi
    7. In ENU, d = cos θ·F + (sin θ/p)(x·R̂ + y·Û), with F = (cos h₀ sin A₀, cos h₀ cos A₀, sin h₀), R̂ = (cos A₀, −sin A₀, 0) and Û = (−sin h₀ sin A₀, −sin h₀ cos A₀, cos h₀).
    8. az = `wrap360(atan2(d_E, d_N))`, alt = atan2(d_U, hypot(d_E, d_N)).
 
-   No proj4 call: its `gnom` inverse returns NaN at the principal point ([proj4-lens.md](../verification/proj4-lens.md) claim 5).
+   No proj4 call: its `gnom` inverse returns NaN at the principal point (`verification/proj4-lens.md` claim 5).
 
 ### Step 4. Frame coverage (`coverage.ts`)
 
-`frameAzimuthCoverage(model, samplesPerEdge)`; callers pass 16 ([architecture.md](../verification/architecture.md) claim 17).
+`frameAzimuthCoverage(model, samplesPerEdge)`; callers pass 16 (`verification/architecture.md` claim 17).
 
 1. If `projectAzAltDeg(model, 0, 90)` lands inside [0, W] × [0, H], return `{ kind: "full" }`. That is every zenith or slightly tilted fisheye, and the 2742 px StarCam from alt₀ 68.502° (atan(2742/1080)) up.
 2. Otherwise unproject `samplesPerEdge` points per edge, corners included, and sort their azimuths. The range runs clockwise from the azimuth after the largest circular gap to the one before it, so it may cross 0°.
@@ -272,7 +272,7 @@ Where the values come from:
 
 - **Lens and defaults**: a fit of 71 and 93 named stars (V ≤ 4, alt ≥ 20°) found automatically in the two archived frames. Tilted equidistant with k1, after 5 saturated stars per frame were rejected: RMS 0.038° and 0.040°, worst 0.091° and 0.112°; pose az 227.0/227.5, alt 88.28/88.24, roll 44.5/45.1, f 373.0/373.2 px, principal point (619.7, 609.7)/(619.5, 609.8), k1 0.003. A calibration from either frame predicts the other frame's stars to RMS 0.08–0.09°, worst 0.43°. The defaults are the mean. Step 18 refits them on a 2026 frame.
 - **Lens choice**: on the same pairs, equisolid matches the RMS only with k1 = 0.054, stereographic gives 0.071–0.074°, orthographic 0.69–0.75° (fails). Equidistant needs the least correction.
-- **Orientation**: north up, east right, the mirror of the usual all-sky view ([sources.md](../verification/sources.md) claim 6), hence `flipX`. The pose is a locked roll of 177.5° plus a 1.74° tilt toward az 227°.
+- **Orientation**: north up, east right, the mirror of the usual all-sky view (`verification/sources.md` claim 6), hence `flipX`. The pose is a locked roll of 177.5° plus a 1.74° tilt toward az 227°.
 - **Image**: 1232 × 1232 in both frames. The image circle is centred at (622.7, 601.7) with radius 589.8 px, and the corners are black.
 - **`geoidSepM`**: 24.23, the EGM96 value M1 uses for the same coordinates.
 - **`captureLagMs`**: the file is written 8–10 s after mid-minute and the app polls every 60 s, so load − capture ≈ 8–10 s + U(0, 60) s; the mean is 40 s.
@@ -281,7 +281,7 @@ Where the values come from:
 ### Step 10. Still-image background
 
 1. `createSkyMap` adds `new ImageLayer<ImageSource>()` (`import type ImageSource from "ol/source/Image"`) with no source as the bottom layer and exposes it as `SkyMapHandle.backgroundLayer`. `ImageSource` and not `ImageStatic`: M5 puts an `ImageCanvas` source on the same layer, which `ImageLayer<ImageStatic>` rejects (TS2739).
-2. `layers/background.ts` holds the refresh loop. A new `ImageStatic` per refresh is the only way to reload ([openlayers.md](../verification/openlayers.md) claim 11). `stop()` puts the shown source back when a request is still in flight; otherwise that image would replace the frozen frame after the loop stopped, with no `onLoad`, so `frameTimeMs` and the pairs would belong to the previous image:
+2. `layers/background.ts` holds the refresh loop. A new `ImageStatic` per refresh is the only way to reload (`verification/openlayers.md` claim 11). `stop()` puts the shown source back when a request is still in flight; otherwise that image would replace the frozen frame after the loop stopped, with no `onLoad`, so `frameTimeMs` and the pairs would belong to the previous image:
 
 ```ts
 import type ImageLayer from "ol/layer/Image";
@@ -353,7 +353,7 @@ export function startStillImageRefresh(layer: ImageLayer<ImageSource>, projectio
 6. `clockLoop.ts`, live mode on a still-image camera: sim time = `frameTimeMs ?? Date.now()`. With no image yet, the sky shows now.
 7. In replay mode keep refreshing the image, show "Image captured HH:MM:SS UTC" beside the overlay time, and offer "Back to live".
 8. The camera's `credit.text` with its link, the licence link and `termsNote` stay visible at all times ([README](README.md#credits)).
-9. Never read the image's pixels: Nānā ao taints the canvas ([openlayers.md](../verification/openlayers.md) claim 23).
+9. Never read the image's pixels: Nānā ao taints the canvas (`verification/openlayers.md` claim 23).
 
 ### Step 11. Sky view for image cameras
 
@@ -499,7 +499,7 @@ export function proj4UnitXY(lens: LensModel, axisAzDeg: number, axisAltDeg: numb
 
 ### End-to-end: `tests/e2e/calibration-export.spec.ts`
 
-Each test calls `page.clock.install({ time: new Date("2026-10-11T08:00:00Z") })` (22:00 HST) before `goto("/?cam=cfht-nanaao")`, then `page.clock.runFor(1000)` so the app renders. The CFHT mock serves the 256 × 256 `tile.jpg`. A test that expects console errors removes exactly those from the shared guard at its end; the guard object is shared by reference, so M0's fixture stays unedited:
+Each test calls `page.clock.install({ time: new Date("2026-10-11T08:00:00Z") })` (22:00 HST) before `goto("./?cam=cfht-nanaao")`, then `page.clock.runFor(1000)` so the app renders. The CFHT mock serves the 256 × 256 `tile.jpg`. A test that expects console errors removes exactly those from the shared guard at its end; the guard object is shared by reference, so M0's fixture stays unedited:
 
 ```ts
 import type { Guard } from "./fixtures";
@@ -534,19 +534,19 @@ function allowConsoleErrors(guard: Guard, allowed: readonly RegExp[]): void {
 ## 7. Gotchas
 
 - **G1. cos 90° ≠ 0.** `Math.cos(π/2)` is 6.1e-17, so a zenith model built with plain trig gets cos c = −6.1e-17 at the S horizon and culls it. Use exact 1 and 0 at h₀ = 90 (found here).
-- **G2. proj4 traps.** `gnom` and `laea` need both `+x_0=0` and `+y_0=0`. `const p = conv.forward([az, alt])` is `number[]`, so `p[0]` is `number | undefined` (TS2322). The inverse returns azimuth in (−180°, 180°] and NaN at the gnomonic centre; ortho gives `undefined` below its horizon; non-finite input throws. Sample only points inside the field: whole-hemisphere gnomonic sampling fails about 1 % of trials ([proj4-lens.md](../verification/proj4-lens.md) claims 4, 5, 7, 10, 12, 17).
-- **G3. Folds.** Orthographic maps alt −30 onto +30: cull before projecting. Negative k1 folds at r = 1/√(−3k1), inside the image circle for k1 = −0.2 ([proj4-lens.md](../verification/proj4-lens.md) claims 1, 4, 6).
+- **G2. proj4 traps.** `gnom` and `laea` need both `+x_0=0` and `+y_0=0`. `const p = conv.forward([az, alt])` is `number[]`, so `p[0]` is `number | undefined` (TS2322). The inverse returns azimuth in (−180°, 180°] and NaN at the gnomonic centre; ortho gives `undefined` below its horizon; non-finite input throws. Sample only points inside the field: whole-hemisphere gnomonic sampling fails about 1 % of trials (`verification/proj4-lens.md` claims 4, 5, 7, 10, 12, 17).
+- **G3. Folds.** Orthographic maps alt −30 onto +30: cull before projecting. Negative k1 folds at r = 1/√(−3k1), inside the image circle for k1 = −0.2 (`verification/proj4-lens.md` claims 1, 4, 6).
 - **G4. g′ > 0 is not enough for a 10-step Newton.** At the exact bound the iteration slows: with margins of 0 and 0.004, one radius per fisheye bound needed more than 10 iterations; 0.01 needed 10, 0.02 needed 9–10, and 0.05 at most 8 for all five lenses. Hence `MIN_DISTORTION_SLOPE` 0.05, which moves the StarCam's k1 floor only from −0.22953 to −0.22909.
-- **G5. The zenith is degenerate and real all-sky cameras tilt.** Nānā ao is tilted about 1.7°: a zenith-locked fit left RMS 0.20° and 0.29° (worst 0.42° and 0.52°; the second frame fails acceptance) where the tilted fit gave 0.04°. Synthetic 2° and 3.7° tilts left 0.32° and 0.51° locked ([architecture.md](../verification/architecture.md) claim 20). Hence rotation increments and `fitTilt`.
+- **G5. The zenith is degenerate and real all-sky cameras tilt.** Nānā ao is tilted about 1.7°: a zenith-locked fit left RMS 0.20° and 0.29° (worst 0.42° and 0.52°; the second frame fails acceptance) where the tilted fit gave 0.04°. Synthetic 2° and 3.7° tilts left 0.32° and 0.51° locked (`verification/architecture.md` claim 20). Hence rotation increments and `fitTilt`.
 - **G6. The fit's basin.** Without stage A and without dropping the frame cull inside the fit, rough starts fail (step 6, items 3 and 6). Never call `projectAzAltDeg` inside the cost function.
 - **G7. 3σ against the overall RMS cannot catch one bad pair in a small set.** One residual can never exceed 3 × the RMS of n ≤ 9 values. That rule caught 0 of 60 wrong clicks at n = 10 and 29 of 60 at n = 12; comparing with the RMS of the other pairs caught 50 and 55. A median-based σ rejected up to 14 good pairs per 60 fits.
-- **G8. GeoPose traps** ([geopose.md](../verification/geopose.md) claims 2, 3, 7, 11): naive `yaw = 90 − az` on a locked fisheye with stored az 37 gives yaw 53 instead of 90; flipping the roll sign moved StarCam pixels up to 305 px; the compass convention (yaw = az, pitch = +alt) puts points behind the camera; the official instances are in radians (schema checks only); the default `import Ajv` fails under `nodenext`; ajv compiles with `new Function`, which a CSP without `'unsafe-eval'` blocks.
+- **G8. GeoPose traps** (`verification/geopose.md` claims 2, 3, 7, 11): naive `yaw = 90 − az` on a locked fisheye with stored az 37 gives yaw 53 instead of 90; flipping the roll sign moved StarCam pixels up to 305 px; the compass convention (yaw = az, pitch = +alt) puts points behind the camera; the official instances are in radians (schema checks only); the default `import Ajv` fails under `nodenext`; ajv compiles with `new Function`, which a CSP without `'unsafe-eval'` blocks.
 - **G9. Compile ajv lazily.** With a module-level `compile`, every bundle that imports the camera index carries ajv: a worker-like bundle grew from 2.3 kB (1.1 kB gzipped) to 122.3 kB (36.1 kB) under rolldown 1.2.13. The M8 propagation worker imports the camera module.
-- **G10. `ImageStatic` reloads only by swapping the source.** It has no `setUrl`, and `source.refresh()` makes no request. The swap loads during a render pass, waits while the view animates, and keeps the old image until the new one decodes ([openlayers.md](../verification/openlayers.md) claim 11). In Chromium the decoded image is an `ImageBitmap`, which has no `naturalWidth`.
-- **G11. Nānā ao has no CORS headers.** With `crossOrigin` set, a real server without CORS fails the load and logs three errors. Playwright-fulfilled responses load either way, so the e2e test asserts the absence of the `Origin` request header; route handlers do not see `sec-fetch-mode` ([sources.md](../verification/sources.md) claim 7).
+- **G10. `ImageStatic` reloads only by swapping the source.** It has no `setUrl`, and `source.refresh()` makes no request. The swap loads during a render pass, waits while the view animates, and keeps the old image until the new one decodes (`verification/openlayers.md` claim 11). In Chromium the decoded image is an `ImageBitmap`, which has no `naturalWidth`.
+- **G11. Nānā ao has no CORS headers.** With `crossOrigin` set, a real server without CORS fails the load and logs three errors. Playwright-fulfilled responses load either way, so the e2e test asserts the absence of the `Origin` request header; route handlers do not see `sec-fetch-mode` (`verification/sources.md` claim 7).
 - **G12. Failed image loads log console errors.** `ol/Image.js:191` calls `console.error` ("EncodingError: The source image cannot be decoded."), and a route-fulfilled 404 adds "Failed to load resource … 404 (Not Found)". A closed hatch logs at least the OpenLayers error once a minute in production (a real-server 404 logged only that one); only e2e test 2 allows them.
-- **G13. 404 means the hatch is closed, even at night**, and even at 73.7 % humidity ([sources.md](../verification/sources.md) claim 6). Do not use `last.png` (a 3-panel mosaic). `last_ir.png` (1240 × 1227) is a second camera: DECISIONS allows it, but it needs its own registry entry and calibration, so M4 ships only `last_vis.png`.
-- **G14. Time errors hide in the pose.** Stars move 0.25° per minute at dec 0 ([architecture.md](../verification/architecture.md) claim 21). A free-axis fit absorbs a wrong frame time as a rotation, so the stars still fit but the pose is wrong by that rotation and shows on the next frame (30 s = 0.125°). Enter the stamp, use the +30 s rule, and keep the image frozen while calibrating.
+- **G13. 404 means the hatch is closed, even at night**, and even at 73.7 % humidity (`verification/sources.md` claim 6). Do not use `last.png` (a 3-panel mosaic). `last_ir.png` (1240 × 1227) is a second camera: DECISIONS allows it, but it needs its own registry entry and calibration, so M4 ships only `last_vis.png`.
+- **G14. Time errors hide in the pose.** Stars move 0.25° per minute at dec 0 (`verification/architecture.md` claim 21). A free-axis fit absorbs a wrong frame time as a rotation, so the stars still fit but the pose is wrong by that rotation and shows on the next frame (30 s = 0.125°). Enter the stamp, use the +30 s rule, and keep the image frozen while calibrating.
 - **G15. Saturated objects are elongated blobs.** V < 0.5 stars and the planets are 5–8 px saturated smears in Nānā ao frames. A centroid around the brightest pixel was 1.6–4.5 px (0.2–0.5°) off; the whole blob's centroid was within 0.3–1.6 px (Jupiter 0.9 px, 0.14°). Click the middle of the whole blob.
 - **G16. Spread the pairs.** 12 random StarCam pairs gave a median worst unseen error of 0.10°, but 0.75° in the worst of 100 draws; 20 pairs gave 0.26° worst. On the real frames, 12 random named stars with 1 px click noise met the acceptance in 26 and 27 of 30 draws.
 - **G17. Rounding.** With the usual modulo form, `((d + 180) % 360 + 360) % 360 − 180`, `wrap180(44.8)` is 44.799999999999955. Compare angles with a tolerance, never with `===`.
@@ -570,7 +570,7 @@ function allowConsoleErrors(guard: Guard, allowed: readonly RegExp[]): void {
 - The image cameras' sky view allows pan, and zoom from the fitted frame in to `minResolution` 0.125 (OpenLayers snaps it to 4–8 screen px per image px), with a new view per refit; pair clicks use `singleclick`. Reason: 0.25° is about 1.6 px on Nānā ao; double-click must still zoom; view limits are fixed at construction.
 - The background layer and the `layer` parameters of `startStillImageRefresh` and `bindBackground` are `ImageLayer<ImageSource>`. Reason: M5 puts an `ImageCanvas` source on the same layer, which `ImageLayer<ImageStatic>` rejects (TS2739).
 - The still-image loop builds each source in the active camera's pixel projection and, when stopped mid-request, puts the shown source back. Reason: a stale projection throws "No transform available", and an in-flight image would replace the frozen frame without `onLoad`.
-- GeoPose export adds `"x-overhead"` (camera id, lens, convention, height datum); import applies angles only, from the rotation matrix, warning beyond 0.01° or 100 m. Reason: OGC's own examples use another convention ([geopose.md](../verification/geopose.md) claim 3).
+- GeoPose export adds `"x-overhead"` (camera id, lens, convention, height datum); import applies angles only, from the rotation matrix, warning beyond 0.01° or 100 m. Reason: OGC's own examples use another convention (`verification/geopose.md` claim 3).
 - `validateGeoPose` compiles on first call. Reason: ajv stays out of bundles that never validate (2.3 kB against 122.3 kB).
 - Calibration files are `overhead.calibration` version 1; localStorage is written on every calibration change, and invalid stored entries are dropped. Reason: small data; no throttle needed.
 - Exposure arcs: a worker `arc` message on a 5 s grid over the exposure, sunlit segments only, live mode only. Reason: 5 s chords stay within 0.1 px of the ISS path.

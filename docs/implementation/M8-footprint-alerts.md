@@ -6,11 +6,11 @@ Numbers without a citation were measured for this file on 2026-10-11 from a prot
 
 ## 1. Goal and scope
 
-The ground map shows where the camera frame looks at orbit height: a polygon on a sphere at the selected satellite's height, or at the 420 km and 480 km presets. An "incoming" chip lists satellites that will become visible inside the frame within 60 s. The worker finds them by propagating each candidate forward and running every sample through the camera model. It never uses the polygon for this, because a fixed-height polygon caught only 24 of 59 real night entries ([architecture.md](../verification/architecture.md) claim 7).
+The ground map shows where the camera frame looks at orbit height: a polygon on a sphere at the selected satellite's height, or at the 420 km and 480 km presets. An "incoming" chip lists satellites that will become visible inside the frame within 60 s. The worker finds them by propagating each candidate forward and running every sample through the camera model. It never uses the polygon for this, because a fixed-height polygon caught only 24 of 59 real night entries (`verification/architecture.md` claim 7).
 
 Out of scope:
 
-- The site wedge. It shipped in M4 (`frameAzimuthCoverage`, `bindSite`) and already shows the azimuth range the frame covers, or a full circle when the zenith is in frame ([architecture.md](../verification/architecture.md) claim 17). M8 does not change it. It adds one test that the footprint's bearings match the wedge (section 5).
+- The site wedge. It shipped in M4 (`frameAzimuthCoverage`, `bindSite`) and already shows the azimuth range the frame covers, or a full circle when the zenith is in frame (`verification/architecture.md` claim 17). M8 does not change it. It adds one test that the footprint's bearings match the wedge (section 5).
 - Using the polygon as a predictor, highlighting incoming satellites on the maps, and sounds or notifications.
 - Incoming alerts while playing at 60× or 600× (gotcha 14).
 - New URL parameters, keyboard shortcuts or persisted settings.
@@ -291,7 +291,7 @@ Node timings do not carry over to Chromium (single `collectIncoming` calls with 
    2. **Following the selection.** `registerFrameUpdater`. When the footprint is on, `footprintHeightKm` is null and the selection is a `sat:` id:
       - h = `heightKmOf(index)` with index = `indexOfObjectId(id)`; h is null when the index is null (the satellite's group is not loaded);
       - call `recompute(h)` when h is not null and either `footprintStatus.source !== "selected"` or |h − `footprintStatus.heightKm`| ≥ 1 km.
-      - The ISS changes height by 15 km over an orbit (419–434 km, [architecture.md](../verification/architecture.md) claim 6), so this is about 30 recomputes per 92-minute orbit at 1×.
+      - The ISS changes height by 15 km over an orbit (419–434 km, `verification/architecture.md` claim 6), so this is about 30 recomputes per 92-minute orbit at 1×.
    3. **`recompute(h?)`.**
       - Footprint off: `polygon.setCoordinates([])`, and set `footprintStatus` to heightKm null, source "fallback", pairCount 0. `footprintStatus` is one exported `const` object: write its fields in place, never reassign it.
       - Otherwise pick the height:
@@ -314,7 +314,7 @@ Follow the README [React rules](README.md#react-rules) and [accessibility rules]
      - "Selected satellite (422 km)" (value `selected` → `setFootprintHeightKm(null)`). The height comes from `heightKmOf`, rounded, and re-renders through `useTick4Hz`. With no satellite selected the option reads "Selected satellite (none: 420 km)".
      - "ISS shell (420 km)" (→ 420).
      - "Starlink shell (480 km)" (→ 480).
-   - The always-visible note "Exact only for satellites at this height" ([architecture.md](../verification/architecture.md) claim 7).
+   - The always-visible note "Exact only for satellites at this height" (`verification/architecture.md` claim 7).
    - While the footprint is on and `footprintStatus.pairCount` is 0, a `role="status"` line: "Nothing to draw at this height: the camera sees no sky above the horizon, or the view would cover a pole."
 2. **`IncomingChip.tsx`** (`<section aria-label="Incoming satellites" data-testid="incoming-chip">`, mounted by `App.tsx` at all times) re-renders through `useTick4Hz` and reads `ephemeris.incoming`, the catalog and `store.getState()` during render.
    1. **Entries.**
@@ -339,7 +339,7 @@ Append section 8 to `docs/DECISIONS.md`. Add the root README's M8 section: what 
 
 ## 5. Tests
 
-All domain tests run in Vitest (`environment: "node"`) on the M3 snapshot read with `node:fs`. "Subaru" means `subaru-starcam` defaults:
+All domain tests run in Vitest (`environment: "node"`) on the M3 snapshot read with `node:fs`. "Subaru" means the inline "Subaru defaults" of the README fixtures (the published pointing), not the star-fit defaults M5 settles in `cameras.json`:
 - site 19.82552°, −155.47587°, 4,148 m;
 - 3840 × 2160, rectilinear, az 81.2°, alt 19.6°, roll 0, f 2742 px, cx 1920, cy 1080.
 
@@ -366,13 +366,13 @@ All domain tests run in Vitest (`environment: "node"`) on the M3 snapshot read w
 | `incomingCoverage.test.ts` · nothing missed | stations + visual, docked skipped, 2026-10-11T04:00Z to 16:00Z in 5 s steps. An appearance is a step where the predicate turns true for an object that was not visible-in-frame (sunlit) at the previous step, with the Sun ≤ −6° at that step and 60 s before. Refine to 1 s; call `collectIncoming` at E − 55 s | every appearance is listed with t + 1000·etaSec in [E − 1,000, E + 5,000) ms: Subaru 58/58, fisheye 167/167 (about 1 s per camera in Node 26.11.1 arm64) |
 | `incomingClient.test.ts` | fake `post`, `IncomingClient` | a frame at wall 0 posts id 1; a frame at 500 posts nothing (in flight). After reply 1, a frame at 1,000 with a new sim time posts id 2. Paused (same sim time and groups) after reply 2: no post at 3,000. `flush()` clears `latest`; the next frame posts at once; a late reply 2 is ignored. A frame whose sim time is 30 s before, or 60 s after, the last request clears `latest` and posts at once, even within 1,000 ms of wall time; one 10 s ahead does not. Inactive: no posts, `latest` null |
 | `actions.test.ts`, `selectors.test.ts` | store | `setFootprintHeightKm` stores `null`, 420, 480 and 0.5; ignores 0, −1, `NaN` and `Infinity` (state unchanged). `selectIncomingMask`: 0b011 by default, 0b111 with `starlink`, 0b100 with only `starlink`, 0 with both off. `selectIncomingActive`: true at rate 1 playing and at 10× playing; false at 60× and 600× while playing in replay; true at 60× while paused; false with both satellite layers off |
-| `bindFootprint.test.ts` | `createAppStore` with the `subaru-starcam` entry active; `createFootprintLayer()`; `vi.mock` of `ephemeris.ts` for `heightKmOf` and `indexOfObjectId`; frames from M0's fake `FrameScheduler` | Off: no rings, `heightKm` null. On with preset 480: one ring of 67 coordinates, first equals last, each equals `fromLonLat` of `footprintLonLatDeg` ± 1e-6 m; status `{ 480, "preset", 66 }`; exactly one source `change`. `updateCalibration({ azDeg: 90 })` recomputes once. `setFootprintHeightKm(null)` without a selection: `{ 420, "fallback" }`. `sat:25544` selected with heights 433.7 → 434.2 → 434.8 km over three frames: recomputes at 433.7 and 434.8 only |
+| `bindFootprint.test.ts` | `createAppStore` with a registry of one `subaru-starcam` entry whose `defaults` are the inline "Subaru" inputs above (the committed entry carries M5's star fit, which would change the ring), active; `createFootprintLayer()`; `vi.mock` of `ephemeris.ts` for `heightKmOf` and `indexOfObjectId`; frames from M0's fake `FrameScheduler` | Off: no rings, `heightKm` null. On with preset 480: one ring of 67 coordinates, first equals last, each equals `fromLonLat` of `footprintLonLatDeg` ± 1e-6 m; status `{ 480, "preset", 66 }`; exactly one source `change`. `updateCalibration({ azDeg: 90 })` recomputes once. `setFootprintHeightKm(null)` without a selection: `{ 420, "fallback" }`. `sat:25544` selected with heights 433.7 → 434.2 → 434.8 km over three frames: recomputes at 433.7 and 434.8 only |
 
 ### End-to-end (`tests/e2e/incoming.spec.ts`)
 
 Import `test` from `tests/e2e/fixtures.ts`. Same-origin `data/gp/*.json` is served from `tests/fixtures/gp`. With M6's `mastM` 33 for `synthetic-maunakea`, the terrain route gives a profile ≤ −0.49°, which does not change any value below. If M6's `mastM` change was not approved (`mastM` 0), the route gives up to +6.87° over az 61–216°. The ISS enters at az 195° and alt 4.5°, and SL-3 R/B 10114 at az 134° and alt 0°, so both would then be behind terrain: regenerate the values below.
 
-1. Open `/?cam=synthetic-maunakea&t=2026-10-11T15:05:07Z`. Wait for `__overhead.incoming()?.timeMs === Date.parse("2026-10-11T15:05:07Z")`. Check:
+1. Open `./?cam=synthetic-maunakea&t=2026-10-11T15:05:07Z`. Wait for `__overhead.incoming()?.timeMs === Date.parse("2026-10-11T15:05:07Z")`. Check:
    - the chip's buttons are, in order, "ISS (ZARYA), NORAD 25544, enters the view within 35 seconds" and "SL-3 R/B, NORAD 19046, enters the view within 55 seconds";
    - no button names 36086, 49044, 68837, 100057, 100712 or 100882;
    - the live region contains "ISS (ZARYA)".
@@ -381,7 +381,7 @@ Import `test` from `tests/e2e/fixtures.ts`. Same-origin `data/gp/*.json` is serv
    - the only button is "SL-3 R/B, NORAD 10114, enters the view within 50 seconds", and there is no ISS button.
    - Click it. The Inspector shows "Enters the view within 50 s" and the URL has `sel=sat:10114`.
 3. Choose rate 60× and press Play. The chip reads "Incoming alerts pause at 60× and 600×" and `incoming()` is null. Pause.
-4. Open `/?cam=synthetic-maunakea&t=2026-10-11T15:05:07Z&sel=sat:25544`. Open Layers and check "Camera view at orbit height":
+4. Open `./?cam=synthetic-maunakea&t=2026-10-11T15:05:07Z&sel=sat:25544`. Open Layers and check "Camera view at orbit height":
    - `footprint()` is `{ source: "selected", heightKm: 422.4 ± 0.5, pairCount: 64 }` (the ISS geodetic height there is 422.400 km), and the option text contains "422 km";
    - choose "Starlink shell (480 km)": `{ "preset", 480, 64 }`;
    - choose "Selected satellite", move focus off the select (`locator.blur()`; `keyboard.ts` ignores keys from a `select`), then press Esc: `{ "fallback", 420, 64 }`.
@@ -390,7 +390,7 @@ Import `test` from `tests/e2e/fixtures.ts`. Same-origin `data/gp/*.json` is serv
 
 ### Performance (`tests/perf/incoming.perf.ts`, `npm run perf`, not CI)
 
-Open `/?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait for `starlink` ready, play at 1×, and collect `computeMs` from 60 consecutive `incoming()` replies (each new `timeMs`). Report p50 and p95; the gate is p95 ≤ 20 ms (acceptance 5). Then run M3's `tests/perf/propagation.perf.ts` again on this branch: the stations + visual sample p95 must stay ≤ 4 ms (M3's gate). Record its Starlink sample numbers next to M3's; they are not gated until M9 (M3 measured p95 18 ms paced at 10 Hz).
+Open `./?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait for `starlink` ready, play at 1×, and collect `computeMs` from 60 consecutive `incoming()` replies (each new `timeMs`). Report p50 and p95; the gate is p95 ≤ 20 ms (acceptance 5). Then run M3's `tests/perf/propagation.perf.ts` again on this branch: the stations + visual sample p95 must stay ≤ 4 ms (M3's gate). Record its Starlink sample numbers next to M3's; they are not gated until M9 (M3 measured p95 18 ms paced at 10 Hz).
 
 ## 6. Acceptance criteria and PR evidence
 
@@ -403,14 +403,15 @@ Open `/?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait f
      - recorded: the manual check below.
 3. **Recorded pass, manual (O2).** The clip is the 2026-10-11 Subaru StarCam recording ([README recorded clips](README.md#recorded-clips)): media 0 is 2026-10-11T15:08:30.183Z (burned-in clock, ± 0.3 s), and the sunlit ISS enters at the right edge at media 78.7 s (15:09:48.883Z; the sidecar's `pass.inFrameFromMediaS`).
    - **Setup.**
-     - Run `npm run dev` (a preview or deployed build serves no recordings) and open the app's URL with `?cam=subaru-2026-10-11-iss&sel=sat:25544`. The clip camera loads `recordings/subaru-2026-10-11-iss.mp4` with its sidecar and opens in replay, paused at media 0, with the ISS selected.
-     - Keep the sidecar's calibration, which the clip camera loads: az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992. With it and the committed OMM (ISS epoch 2026-10-09T22:48:38.797Z) the predicted entry is media 79.8 s (15:09:49.982Z), 1.1 s after the observed one. The Subaru defaults predict media 84.8 s (15:09:54.955Z): the chip would then list the ISS from media 24.8–25.8 s with N = 60, and t_seen − (t_chip + N) would be −6.1 to −7.1 s, so the check can fail on the −7 s bound below. Do not run the check on the defaults.
+     - Use the element sets of the expected values: `cp tests/fixtures/gp/*.json public/data/gp/` before starting, and `git checkout public/data/gp` afterwards; never commit the copy. Until M9 the app propagates `data/gp/` for every camera (README "Recorded clips", "Element sets for a clip").
+     - Run `npm run dev` (`vite preview` serves no recordings) and open `http://localhost:5173/Overhead/?cam=subaru-2026-10-11-iss&sel=sat:25544`. The clip camera loads `recordings/subaru-2026-10-11-iss.mp4` with its sidecar and opens in replay, paused at media 0, with the ISS selected.
+     - Keep the sidecar's calibration, which the clip camera loads: az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992. With it and the committed OMM (ISS epoch 2026-10-09T22:48:38.797Z) the predicted entry is media 79.8 s (15:09:49.982Z), 1.1 s after the observed one. The README's "Subaru defaults" (the published pointing, f 2742) predict media 84.8 s (15:09:54.955Z): the chip would then list the ISS from media 24.8–25.8 s with N = 60, and t_seen − (t_chip + N) would be −6.1 to −7.1 s, so the check can fail on the −7 s bound below. Do not run the check with that pointing.
      - Turn on "Camera view at orbit height".
      - Play at 1× from media 0. The clip starts 78.7 s before the ISS appears, more than the 60 s look-ahead.
    - **Record:**
      - t_chip, the media time when the chip first lists the ISS, and its N;
      - t_seen, the first media time where the ISS is visible at the right edge (step with →).
-   - **Expected** (the M8 prototype of `collectIncoming` with the sidecar calibration, mask 0b011, null profile, re-run under Node 26.11.1): from media 0 the chip lists SL-3 R/B (NORAD 10114) with N = 25; it enters through the right edge at media 21 s at az 118.2°, alt 6.3°, above the computed Subaru skyline, which is about +4.1° near az 118° and +4.14° at its highest ([terrain.md](../verification/terrain.md) claims 5 and 9; M6 gotcha 19), so the M6 profile does not remove it. The ISS joins with N = 60 at the first request at or after media 19.8 s, so t_chip is 19.8–20.8 s. t_seen is 78.7 s, or 79 s when stepping whole seconds.
+   - **Expected** (the M8 prototype of `collectIncoming` with the sidecar calibration, mask 0b011, null profile, re-run under Node 26.11.1): from media 0 the chip lists SL-3 R/B (NORAD 10114) with N = 25; it enters through the right edge at media 21 s at az 118.2°, alt 6.3°, above the computed Subaru skyline, which is about +4.1° near az 118° and +4.14° at its highest (`verification/terrain.md` claims 5 and 9; M6 gotcha 19), so the M6 profile does not remove it. The ISS joins with N = 60 at the first request at or after media 19.8 s, so t_chip is 19.8–20.8 s. t_seen is 78.7 s, or 79 s when stepping whole seconds.
    - **Pass:** t_seen − t_chip ≥ 30 s, and t_seen ∈ [t_chip + N − 7 s, t_chip + N + 2 s]. The 7 s covers the 5 s sampling plus 2 s of clock error.
    - **Evidence:**
      - the four numbers and the element-set epoch;
@@ -428,13 +429,13 @@ Open `/?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait f
 
 ## 7. Gotchas
 
-1. **The brief's root draws the far side of the Earth.** The + root is always positive, even for rays that hit the Earth first: a −3° ray hits the ground 93 km out, but the shell root is 2,697 km. Reject with `raySphereEntryKm` ([architecture.md](../verification/architecture.md) claim 16).
+1. **The brief's root draws the far side of the Earth.** The + root is always positive, even for rays that hit the Earth first: a −3° ray hits the ground 93 km out, but the shell root is 2,697 km. Reject with `raySphereEntryKm` (`verification/architecture.md` claim 16).
 2. **Never mix WGS-84 and the sphere.**
    - With O from `geodeticToEcefKm` and R = 6371.0088: t = 411.110 km instead of 415.796 km, and the straight-up hit lands 0.115° (about 13 km) from the site (claim 16).
    - Use `sphericalObserverKm` for every footprint ray.
 3. **A ray exactly at the dip is a tangent hit.** `raySphereEntryKm` returns 231.48 km there. Clipped directions sit ε = 1e-6° above the clip; 1e-9° was already enough.
 4. **Clamping each sample at its own azimuth leaks out of the frame.** For a rolled camera pointing low (alt₀ 0°, roll 45°) the clamped horizon points landed up to 358 px outside the image. Walk the boundary and bisect the crossings (step 3).
-5. **Fisheye frame corners are not sky.** On an all-sky frame the corners lie outside the image circle: alt −30° to −60°, or NaN for orthographic ([architecture.md](../verification/architecture.md) claim 16, [proj4-lens.md](../verification/proj4-lens.md) claim 5). Pull the samples onto the circle.
+5. **Fisheye frame corners are not sky.** On an all-sky frame the corners lie outside the image circle: alt −30° to −60°, or NaN for orthographic (`verification/architecture.md` claim 16, `verification/proj4-lens.md` claim 5). Pull the samples onto the circle.
 6. **The polygon is not a predictor.** It is exact only for satellites at its height. A fixed 420 km polygon caught 24 of 59 real night entries (claim 7). The chip never reads it.
 7. **"Sunlit now" misses shadow exits.**
    - A satellite that leaves Earth's shadow inside the frame appears without crossing an edge. Over 12 night hours the README's candidate filter caught 51/58 (Subaru) and 121/167 (fisheye) appearances.
@@ -443,7 +444,7 @@ Open `/?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait f
    - If Parth keeps a "sunlit now" filter ([README "Assumed until Parth confirms"](README.md#assumed-until-parth-confirms)): add "not sunlit at k = 0" to the skip list in step 4, item 4.2, and the coverage acceptance becomes 51/58 and 121/167.
 8. **The two refraction models disagree near the horizon.**
    - The terrain profile (κ 0.13) puts Maunakea's sea horizon at −1.94° apparent. astronomy-engine's `'normal'` model adds about 0.64° below −1°. The Subaru frame's bottom edge (alt₀ 19.6°) is at apparent −1.59° (corners) to −1.90° (centre), which becomes geometric −2.23° to −2.53°. All of it is below the −2.067° dip at 4,148 m, so the whole bottom edge (17 samples) is clipped to the limb. That is why the known-pose test has 19 vertices on the limb: 17 clip-curve points plus 2 crossings.
-   - At 420 km the unrefracted bottom edge would reach 2,425–2,462 km; clipped, it sits on the limb at 2,482 km, 20–58 km farther. It is a picture, so accept it. The real refraction at Maunakea's 616 hPa is smaller still ([terrain.md](../verification/terrain.md) claim 17). (The brief's alt₀ 20° pose has its bottom edge at apparent −1.26° to −1.50°, geometric −1.90° to −2.14°, only partly below the dip.)
+   - At 420 km the unrefracted bottom edge would reach 2,425–2,462 km; clipped, it sits on the limb at 2,482 km, 20–58 km farther. It is a picture, so accept it. The real refraction at Maunakea's 616 hPa is smaller still (`verification/terrain.md` claim 17). (The brief's alt₀ 20° pose has its bottom edge at apparent −1.26° to −1.50°, geometric −1.90° to −2.14°, only partly below the dip.)
 9. **Footprint vertices use spherical latitude.**
    - The model places the site at spherical latitude = geodetic latitude, so `sphericalLatLonDeg` is consistent with the ground-map dots (which use Bowring).
    - Converting vertices with `ecefToLatLonDeg` moves the straight-up hit 0.1155° (12.8 km) north at Maunakea and fails the straight-up test.
@@ -451,7 +452,7 @@ Open `/?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z`, turn on Starlink, wait f
 11. **A ring in the neighbouring world still draws but is not "there".**
     - Headless Chromium drew the Nānā ao ring at 800 km correctly from both lon 174.8…234.2 and −185.2…−125.8.
     - `Polygon#intersectsCoordinate(site)` was false for the first and true for the second. Unwrap from the site's longitude.
-12. **Large heights can enclose a pole.** From Walenstadt with a null profile, the ring still closes at 2,230 km but wraps the North Pole at 2,250 km; an unwrapped ring then does not close. Return 0. The snapshot's highest stations or visual object reaches about 2,227 km (a FREGAT debris piece, [architecture.md](../verification/architecture.md) claim 7), which still draws.
+12. **Large heights can enclose a pole.** From Walenstadt with a null profile, the ring still closes at 2,230 km but wraps the North Pole at 2,250 km; an unwrapped ring then does not close. Return 0. The snapshot's highest stations or visual object reaches about 2,227 km (a FREGAT debris piece, `verification/architecture.md` claim 7), which still draws.
 13. **Do not announce the countdown.** Replies arrive every second; announce only a new first entry.
 14. **Alerts at 60× and 600× are meaningless.** The 60 s look-ahead lasts 1 s or 0.1 s of wall time, and requests run once per wall second.
 15. **The Sun gate is per request, not per sample.** A per-sample Sun test would list every sunlit satellite already in frame for the minute before dusk reaches −6°.

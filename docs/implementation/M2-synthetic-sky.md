@@ -1,6 +1,6 @@
 # M2 · Synthetic sky
 
-Branch `m2-synthetic-sky`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: [../verification/](../verification/README.md). Every number below was measured on 2026-10-11 with the pinned packages; browser timings come from headless Chromium 1248 (Playwright 1.64) on an Apple M2.
+Branch `m2-synthetic-sky`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: `docs/verification/` (kept locally). Every number below was measured on 2026-10-11 with the pinned packages; browser timings come from headless Chromium 1248 (Playwright 1.64) on an Apple M2.
 
 ## 1. Goal
 
@@ -182,7 +182,7 @@ QUANTITIES='4'  ANG_FORMAT='DEG'  EXTRA_PREC='YES'  APPARENT='AIRLESS'  CSV_FORM
    - `astroTimeAt(ms)` returns `MakeTime(new Date(ms))`. Build it once per pass.
    - `computeBodies(time, observer, out)` runs over `BODY_IDS` in order with `Body.Sun, Body.Moon, Body.Mercury … Body.Uranus`. For each body it calls `Equator(body, time, observer, true, true)`, then `Horizon(time, observer, eq.ra, eq.dec, "normal")`, then `Illumination(body, time)`, and writes `[azimuth, altitude, mag, phase_fraction]` at `i × BODY_STRIDE`.
    - `bodyAirlessAzAltDeg` uses the same pipeline with the refraction argument left out. It throws `RangeError` for an index outside 0–7.
-5. The library allocates inside `Equator`, `Horizon` and `Illumination`. For 8 bodies that is accepted (0.16–0.19 ms per pass, [architecture.md #22](../verification/architecture.md)). The star loop is the part that must not allocate.
+5. The library allocates inside `Equator`, `Horizon` and `Illumination`. For 8 bodies that is accepted (0.16–0.19 ms per pass, `verification/architecture.md` #22). The star loop is the part that must not allocate.
 
 ### Step 5. Twilight: `twilight.ts`
 
@@ -202,7 +202,7 @@ QUANTITIES='4'  ANG_FORMAT='DEG'  EXTRA_PREC='YES'  APPARENT='AIRLESS'  CSV_FORM
 2. Pixel coordinates are continuous. The image's top-left corner is (0, 0) and its bottom-right corner is (W, H), so pixel `i` covers `[i, i+1)` and the centre is W/2, not (W−1)/2. The README orientation fixture (`[512, 1024]` for north) depends on this.
 3. `horizonRadiusUnit(lens)`: π/2, √2, 2, 1, and `Infinity` for rectilinear.
 4. `createCameraModel(input)` sets `zenithLocked: true`, `thetaMaxRad: π/2` and `rMaxUnit = min(r_corner, horizonRadiusUnit(lens))`, where `r_corner` is the largest `hypot(u − cxPx, v − cyPx) / focalPx` over the four image corners (M4 adds undistortion to it). That is π/2 for the synthetic camera (`r_corner` 2.2214). Until M4 it throws for any lens other than `fisheye-equidistant` with `altDeg === 90`. That is a programmer error, because M2's registry holds only the synthetic camera (M1 enables nothing else).
-5. `projectAzAltDeg` is the polar azimuthal-equidistant closed form (north at the bottom, east on the right), then the shared tail from the brief: roll, radial factor `s`, focal length, principal point and flip. Do not multiply by f before the tail ([proj4-lens.md](../verification/proj4-lens.md), implementation note 5). It returns false for alt < 0 (θ > π/2) and for non-finite input, so NaN never reaches OpenLayers:
+5. `projectAzAltDeg` is the polar azimuthal-equidistant closed form (north at the bottom, east on the right), then the shared tail from the brief: roll, radial factor `s`, focal length, principal point and flip. Do not multiply by f before the tail (`verification/proj4-lens.md`, implementation note 5). It returns false for alt < 0 (θ > π/2) and for non-finite input, so NaN never reaches OpenLayers:
 
 ```ts
 import type { CameraModel } from "./lens";
@@ -239,7 +239,7 @@ export function projectAzAltDeg(
 ```
 
 6. `projectBatch` loops `projectAzAltDeg` over `[az, alt]` pairs into caller-owned arrays through one module-level `Float64Array(2)` scratch. It writes `outVisible[i]` as 1 or 0 and returns the visible count. `toSkyMapCoord(model, u, v, out, offset)` writes `[u, heightPx − v]`.
-7. At roll 180°, W = H = 1024, the map coordinates are: zenith `[512, 512]`, N horizon `[512, 1024]` (top), E `[0, 512]` (left), S `[512, 0]`, W `[1024, 512]`. That is the view from below: north up, east left ([proj4-lens.md #20](../verification/proj4-lens.md)).
+7. At roll 180°, W = H = 1024, the map coordinates are: zenith `[512, 512]`, N horizon `[512, 1024]` (top), E `[0, 512]` (left), S `[512, 0]`, W `[1024, 512]`. That is the view from below: north up, east left (`verification/proj4-lens.md` #20).
 
 ### Step 7. Sky cache and star loading: `src/state/skyCache.ts`
 
@@ -473,7 +473,7 @@ const twoFrames = (page: Page): Promise<void> =>
   );
 
 test("sky recomputes on >= 2 s of sim time", async ({ page }) => {
-  await page.goto("/?cam=synthetic-maunakea&t=2026-10-10T08:00:00Z");
+  await page.goto("./?cam=synthetic-maunakea&t=2026-10-10T08:00:00Z");
   // Wait for the catalogue: its arrival triggers one more pass.
   await expect(page.getByRole("region", { name: /Computed sky/ })).toHaveAttribute(
     "aria-busy",
@@ -547,7 +547,7 @@ Site for every astronomy test unless stated: 19.8253°, −155.4689°, 4,204 m. 
 | `bindSkyCamera.test.ts` | With a fake `{ setCameraModel }`: one call at subscribe, with `zenithLocked` true; none on `tick`; one after a calibration change; none after an unsubscribe. Make the calibration change with `store.setState` on `camera.calibration`: `updateCalibration` still throws until M4. | `storeAt("2026-10-10T08:00:00Z")` (M1 helper) | exact |
 | `actions.test.ts`, `selectors.test.ts` | `setStarMagLimit(7)` → 6.5, `(0)` → 1, `(NaN)` → unchanged; `selectStarMagLimit` gives 4 for a state with `layers.starMagLimit` 4.5 and `ui.panel` "calibration" (build that state directly; the panel lands in M4), and 4.5 otherwise; `selectCalibration` returns the registry `defaults` object itself (`toBe`) while `camera.calibration` is empty, and the stored object once `camera.calibration["synthetic-maunakea"]` is set with `setState` | store | exact |
 | `credits.test.ts` | `starCredits(true)` is `[BSC5_CREDIT, IAU_WGSN_CREDIT]`; `starCredits(false)` is `[]` | none | exact |
-| `sky.spec.ts` (e2e) | Load `/?cam=synthetic-maunakea&t=2026-10-10T08:00:00Z`. Once the region named /Computed sky/ has `aria-busy="false"`, the "Above the horizon" list holds exactly "Saturn, az 120°, alt 58°" and "Uranus, az 73°, alt 16°" (computed az 120.4°, alt 57.60°; az 72.9°, alt 16.00°). | committed `stars.json`; route mocks from `fixtures.ts` | exact |
+| `sky.spec.ts` (e2e) | Load `./?cam=synthetic-maunakea&t=2026-10-10T08:00:00Z`. Once the region named /Computed sky/ has `aria-busy="false"`, the "Above the horizon" list holds exactly "Saturn, az 120°, alt 58°" and "Uranus, az 73°, alt 16°" (computed az 120.4°, alt 57.60°; az 72.9°, alt 16.00°). | committed `stars.json`; route mocks from `fixtures.ts` | exact |
 | `sky.spec.ts` | Paused: `skyPasses` unchanged over 500 ms. → once: unchanged. → again: +1. Shift+→: +1. ← twice: +1. | observer above | exact (`expect.poll` for the increments) |
 | `sky.spec.ts` | Exactly one "Civil dusk" and one "Civil dawn" button. Focus the dusk one and press Enter: the URL's `t` is within 2 s of 2026-10-10T04:24:58.9Z; passes +1; the list becomes Mercury, Venus, Saturn in that order (computed alt 10.77°, 4.46°, 8.74°). | same | ± 2 s |
 | `sky.spec.ts` | Rate 600× (`]` three times) and play for 1 s: at least 20 passes. Rate 1× and play for 3 s: 1 or 2 passes (a wall-clock 1 Hz timer would give 3). | same | bounds as stated |
@@ -579,41 +579,41 @@ Evidence in the PR:
 
 ## 7. Gotchas
 
-1. **astronomy-engine reads a number as days since J2000, not epoch ms.** `Equator` then throws "Object is too distant…", and `Rotation_EQJ_HOR` silently returns a wrong matrix. TypeScript accepts the number, so pass `astroTimeAt(ms)` or a `Date`. [astronomy-engine.md #8](../verification/astronomy-engine.md)
-2. **Airless arguments differ by function.** `HorizonFromVector`'s `refraction` parameter is a required `string`: pass `""` for airless (`null` fails TS2345). `Horizon`'s is optional: leave it out. [astronomy-engine.md #9](../verification/astronomy-engine.md)
-3. **Never pass catalogue RA/Dec to `Horizon`.** Its `ra` is in sidereal hours, and it expects coordinates of date. Polaris comes out 0.15° off without precession. Stars go through `Rotation_EQJ_HOR`. [astronomy-engine.md #10](../verification/astronomy-engine.md)
-4. **`RotateVector` uses the transposed-looking index order** (`r[0][0]x + r[1][0]y + r[2][0]z`), and the HOR frame is x = north, y = west, z = up, so az = −atan2(y, x). Getting either wrong mirrors the sky. The oracle test catches it. [astronomy-engine.md, implementation notes](../verification/astronomy-engine.md)
-5. **Do not call `RotateVector` or `HorizonFromVector` per star in the app.** Each pass allocates 1.1–2.1 MB. Keep them as the test oracle. [astronomy-engine.md #4](../verification/astronomy-engine.md)
+1. **astronomy-engine reads a number as days since J2000, not epoch ms.** `Equator` then throws "Object is too distant…", and `Rotation_EQJ_HOR` silently returns a wrong matrix. TypeScript accepts the number, so pass `astroTimeAt(ms)` or a `Date`. `verification/astronomy-engine.md` #8
+2. **Airless arguments differ by function.** `HorizonFromVector`'s `refraction` parameter is a required `string`: pass `""` for airless (`null` fails TS2345). `Horizon`'s is optional: leave it out. `verification/astronomy-engine.md` #9
+3. **Never pass catalogue RA/Dec to `Horizon`.** Its `ra` is in sidereal hours, and it expects coordinates of date. Polaris comes out 0.15° off without precession. Stars go through `Rotation_EQJ_HOR`. `verification/astronomy-engine.md` #10
+4. **`RotateVector` uses the transposed-looking index order** (`r[0][0]x + r[1][0]y + r[2][0]z`), and the HOR frame is x = north, y = west, z = up, so az = −atan2(y, x). Getting either wrong mirrors the sky. The oracle test catches it. `verification/astronomy-engine.md`, implementation notes
+5. **Do not call `RotateVector` or `HorizonFromVector` per star in the app.** Each pass allocates 1.1–2.1 MB. Keep them as the test oracle. `verification/astronomy-engine.md` #4
 6. **Refraction:**
-   - The Polaris tolerance is 0.01°, not 0.05°: the whole refraction term is 0.045°, so a missing refraction passes at 0.05°. [astronomy-engine.md #5](../verification/astronomy-engine.md)
-   - `'normal'` refraction ignores observer height. At 4,204 m it overstates refraction by about 35% (0.17° at the horizon). JPL Horizons does not scale it either, so the fixtures assume unscaled `'normal'`. Do not "fix" one side only. [astronomy-engine.md #1](../verification/astronomy-engine.md)
+   - The Polaris tolerance is 0.01°, not 0.05°: the whole refraction term is 0.045°, so a missing refraction passes at 0.05°. `verification/astronomy-engine.md` #5
+   - `'normal'` refraction ignores observer height. At 4,204 m it overstates refraction by about 35% (0.17° at the horizon). JPL Horizons does not scale it either, so the fixtures assume unscaled `'normal'`. Do not "fix" one side only. `verification/astronomy-engine.md` #1
 7. **The Horizons table needs care:**
    - It defaults to AIRLESS. Compare it with the airless pipeline, not with `'normal'`, which misses by up to 0.36° near the horizon.
    - Compare by great-circle separation. Raw Δaz near the zenith reached 0.144° at el 89.75° while the true separation was 0.0007°.
-   - [astronomy-engine.md #6](../verification/astronomy-engine.md)
+   - `verification/astronomy-engine.md` #6
 8. **`SearchAltitude` details:**
    - It returns `AstroTime | null`; use `.date`.
    - With a positive `limitDays` it searches forward only; a negative one searches backward.
    - Its altitude is unrefracted. Searching on a refracted altitude moves dusk by +2.6 min, and the ± 60 s test catches that.
    - Pass exactly ±1: 2 behaves like +1, and 0 returns `null` after seconds of work.
-   - [astronomy-engine.md #2, #19](../verification/astronomy-engine.md)
-9. **The Moon at new moon still reports magnitude −4.45** (phase fraction 0.002 on 2026-10-10). Hence the "Moon (new)" label rule. [astronomy-engine.md #16](../verification/astronomy-engine.md)
-10. **Stars lag behind a wall-clock timer.** A wall-clock 1 Hz update leaves stars 2.5° behind at 600× and up to 180° wrong for a second after a scrub. The trigger is ≥ 2 s of sim time in either direction. [astronomy-engine.md #3](../verification/astronomy-engine.md), [architecture.md #22](../verification/architecture.md)
+   - `verification/astronomy-engine.md` #2, #19
+9. **The Moon at new moon still reports magnitude −4.45** (phase fraction 0.002 on 2026-10-10). Hence the "Moon (new)" label rule. `verification/astronomy-engine.md` #16
+10. **Stars lag behind a wall-clock timer.** A wall-clock 1 Hz update leaves stars 2.5° behind at 600× and up to 180° wrong for a second after a scrub. The trigger is ≥ 2 s of sim time in either direction. `verification/astronomy-engine.md` #3, `verification/architecture.md` #22
 11. **How stars are drawn decides the frame budget.** In headless Chromium 1248 on an Apple M2, with 8,404 stars:
     - one `MultiPoint` per 0.5-magnitude bin, with culled points parked off-frame, costs 5–8 ms per `renderSync()`: 5.1 ms at DPR 1 and 8.0 ms at DPR 2 when idle, 5.9–6.0 ms right after a pass. Parking is safe there only because those bins have no per-index arrays (gotcha 20);
     - the single custom-renderer `MultiPoint` costs 0.7–0.9 ms at either DPR, and 0.1–0.2 ms at limit 4.5;
-    - per-feature `Point`s cost 4.5–16 ms per update (Node, [architecture.md #22](../verification/architecture.md)).
+    - per-feature `Point`s cost 4.5–16 ms per update (Node, `verification/architecture.md` #22).
     - The renderer receives device pixels, so multiply radii by `state.pixelRatio`.
     - OpenLayers allocates one `[x, y]` array per point each time it replays the layer. That is library-internal and accepted.
 12. **OpenLayers geometry updates:** `setFlatCoordinates` does not fire a change event, so call `changed()` after it (`ol/geom/SimpleGeometry.js` 157–161). After writing into `getFlatCoordinates()` in place, call `changed()` once per geometry, or the cached extent and replay go stale.
-13. **`map.render()` schedules its own animation frame.** Keep M1's `renderSyncAll()` in the clock loop (it runs on frames where the sim time changed), or the sky draws one frame late or at 30 fps. Do not add a per-frame `renderSync()` of your own. [architecture.md #5](../verification/architecture.md)
+13. **`map.render()` schedules its own animation frame.** Keep M1's `renderSyncAll()` in the clock loop (it runs on frames where the sim time changed), or the sky draws one frame late or at 30 fps. Do not add a per-frame `renderSync()` of your own. `verification/architecture.md` #5
 14. **Catalogue parsing:**
     - CDS trims trailing blanks, so pad each line to 197 before slicing.
     - The BSC `Name` field has no proper names.
     - IAU-CSN names contain spaces ("Polaris Australis"), so slice fixed columns instead of splitting on whitespace.
-    - [sources.md #13](../verification/sources.md) and the BSC5 note in its implementation notes.
+    - `verification/sources.md` #13 and the BSC5 note in its implementation notes.
 15. **Float32 azimuths can read 360.0.** `Math.fround(359.99999)` is 360. That is harmless for projection; wrap with `wrap360` before display.
-16. **Do not scale the fisheye radius by f before the tail.** Doing so applies f twice. The equidistant closed form equals proj4 `aeqd` to about 1e-15. [proj4-lens.md](../verification/proj4-lens.md)
+16. **Do not scale the fisheye radius by f before the tail.** Doing so applies f twice. The equidistant closed form equals proj4 `aeqd` to about 1e-15. `verification/proj4-lens.md`
 17. **Keys go where focus is.** M1's `keyboard.ts` skips Space on a BUTTON (so Space presses a focused twilight marker) and ignores every key typed into an input (so the clock keys do nothing while the magnitude slider has focus). Tests that press clock keys must first move focus off inputs. (M1 step 7)
 18. **The PerformanceObserver needs no buffer.** A measure that is cleared at once is still delivered to an observer: 100 of 100 in a Chromium 1248 check, with 0 left in the buffer. Never rely on `getEntriesByName` in tests.
 19. **M0's Biome rules bite this code** (all checked with Biome 2.5.15 and M0's `biome.json`):

@@ -1,26 +1,26 @@
 # M9 · Polish and ship
 
-Branch `m9-polish-ship`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: [satellite-js.md](../verification/satellite-js.md), [architecture.md](../verification/architecture.md), [openlayers.md](../verification/openlayers.md), [sources.md](../verification/sources.md), [terrain.md](../verification/terrain.md).
+Branch `m9-polish-ship`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: `verification/satellite-js.md`, `verification/architecture.md`, `verification/openlayers.md`, `verification/sources.md`, `verification/terrain.md`.
 
-"Measured" numbers below were run for this file on 2026-10-11. The machine was an Apple M2 (8 cores, load average 3 to 5). The tools were Playwright 1.64.0 (driven from an arm64 Node; Node only runs the test runner, the numbers are Chromium's) and Chrome for Testing 156.0.8078.4 in new headless mode (`channel: "chromium"`, ANGLE Metal), at DPR 2 and 1440 × 900. The app was a prototype of steps 2 to 4, built with Vite 8.3.4 over the 2026-10-11T03:50:21Z CelesTrak snapshot (11,277 objects). The prototype drew WebGL class points on the ground map, canvas class points in the sky, a pass over 8,404 stars every 2 s of sim time, a canvas tile base layer and the ISS label, and called `renderSync()` on both maps. It had no GIBS imagery, React panels or tracks. Every TypeScript snippet type-checks with tsc 7.0.2 (`strict`, `noUncheckedIndexedAccess`, `moduleResolution: "bundler"`) and passes Biome 2.5.15's recommended rules. Each one was also executed: the culling and BulkPropagator code inside the benchmark worker, the perf spec through `playwright test`, the Lighthouse command as written. The `demo.ts` declaration block in step 10 was type-checked only (against README section 4 and 6 types), and the Mermaid diagram was rendered. Steps 10 and 14 were revised the same day for Parth's decisions O1, O2 and O4. They were checked with Node 26.11.1 arm64, ffmpeg 7.1 (static, arm64), headless Chromium 156.0.8078.4 and WebKit 2370 (Playwright 1.64.0) on the real clip `recordings/subaru-2026-10-11-iss.mp4` (sha256 `cf952b8d…ceaa74e2`). Each step says what was run. A second, independent run on the same machine (load average 2 to 3) rebuilt the benchmark from these exact snippets and repeated steps 2, 4 and 6. Where its numbers differed, the ranges below include both runs.
+"Measured" numbers below were run for this file on 2026-10-11. The machine was an Apple M2 (8 cores, load average 3 to 5). The tools were Playwright 1.64.0 (driven from an arm64 Node; Node only runs the test runner, the numbers are Chromium's) and Chrome for Testing 156.0.8078.4 in new headless mode (`channel: "chromium"`, ANGLE Metal), at DPR 2 and 1440 × 900. The app was a prototype of steps 2 to 4, built with Vite 8.3.4 over the 2026-10-11T03:50:21Z CelesTrak snapshot (11,277 objects). The prototype drew WebGL class points on the ground map, canvas class points in the sky, a pass over 8,404 stars every 2 s of sim time, a canvas tile base layer and the ISS label, and called `renderSync()` on both maps. It had no GIBS imagery, React panels or tracks. Every TypeScript snippet type-checks with tsc 7.0.2 (`strict`, `noUncheckedIndexedAccess`, `moduleResolution: "bundler"`) and passes Biome 2.5.15's recommended rules. Each one was also executed: the culling and BulkPropagator code inside the benchmark worker, the perf spec through `playwright test`, the Lighthouse command as written. The `demo.ts` declaration block in step 10 was type-checked only (against README section 4 and 6 types), and the Mermaid diagram was rendered. Steps 10 and 14 were revised the same day for Parth's decisions O1, O2, O4 and H1 (GitHub Pages at `https://parthjain.ca/Overhead/`). They were checked with Node 26.11.1 arm64, ffmpeg 7.1 (static, arm64), headless Chromium 156.0.8078.4 and WebKit 2370 (Playwright 1.64.0) on the real clip `recordings/subaru-2026-10-11-iss.mp4` (sha256 `cf952b8d…ceaa74e2`), and against live GitHub Pages sites with `curl`. Each step says what was run. A second, independent run on the same machine (load average 2 to 3) rebuilt the benchmark from these exact snippets and repeated steps 2, 4 and 6. Where its numbers differed, the ranges below include both runs.
 
 ## 1. Goal
 
 Make the app hold 60 fps with Starlink loaded, prove it with Chrome traces, and finish it as a portfolio piece. That covers:
 
 - a captioned `?demo=1` tour that opens on the recorded 2026-10-11 ISS clip, with the light overlay on the video and the dense data on the ground map, then switches to the live Subaru StarCam with the overlay drawn on the YouTube player;
-- shipping that clip with the production deploy (step 14);
+- shipping that clip, and the element sets from near its pass, with the production deploy (step 14);
 - shareable links and the full keyboard map;
 - an accessibility pass (Lighthouse ≥ 90);
 - the visual design settled from screenshots;
-- the final root README and a production deploy.
+- the final root README and a production deploy to `https://parthjain.ca/Overhead/` (H1).
 
 Out of scope:
 
 - New features or data sources: the tracking-mount stretch goal, OGC API Features, Meteosat.
 - Changing a budget in [section 9](README.md#9-performance-budgets). It already holds M9's gates.
 - Committing a recording. `recordings/` stays gitignored (O2), and the deploy copy is a release asset fetched at build time (step 14).
-- Analytics, a backend, a custom domain, or any dependency over about 50 kB gzipped.
+- Analytics, a backend, a domain of its own (the site lives under `parthjain.ca`, H1), or any dependency over about 50 kB gzipped.
 
 The visual design (layout, colours, panel placement, styling) is not specified here. It is settled during the build from screenshots (step 12).
 
@@ -33,16 +33,17 @@ The visual design (layout, colours, panel placement, styling) is not specified h
    - from M8: `IncomingChip` and `selectIncomingActive`.
 2. Data:
    - Tests use `tests/fixtures/gp/*` (fetched 2026-10-11T03:50:21Z), `iss-pass-maunakea.json` and M5's test-pattern clip.
-   - Step 14 needs the recorded clip on the machine that makes the deploy copy: `recordings/subaru-2026-10-11-iss.mp4` (148,643,811 bytes, sha256 `cf952b8d5b2ade856b33d953b2da0b71f2b0b2716d97db1225f95386ceaa74e2`) and its sidecar `recordings/subaru-2026-10-11-iss.json` (README section 8, "Recorded clips").
+   - Step 14 needs the recorded clip on the machine that makes the deploy copy: `recordings/subaru-2026-10-11-iss.mp4` (148,643,811 bytes, sha256 `cf952b8d5b2ade856b33d953b2da0b71f2b0b2716d97db1225f95386ceaa74e2`) and its sidecar `recordings/subaru-2026-10-11-iss.json` (README section 8, "Recorded clips"). Step 14f ships the committed `tests/fixtures/gp/` with it.
 3. Accounts and tools:
-   - the Cloudflare Pages project and GitHub branch protection from M0;
-   - a public GitHub repository for the release that holds the deploy copy (step 14b), and `gh` or the GitHub web UI to create it (the `gh release create` usage in step 14b was checked against gh 2.83.1);
+   - the Deploy workflow (`.github/workflows/deploy.yml`), GitHub Pages and the branch protection from M0 step 15;
+   - the public repository `FalconXYX/Overhead` (H1) for the release that holds the deploy copy (step 14b), and `gh` or the GitHub web UI to create it (the `gh release create` usage in step 14b was checked against gh 2.83.1);
    - ffmpeg with libx264 for step 14a (a static ffmpeg 7.1 arm64 build was used).
-4. A native arm64 laptop for `npm run perf`, with `npx playwright install chromium`. Without `--only-shell` that command installs both Chrome for Testing (`chromium-1248`) and the headless shell (checked in `playwright-core`'s registry); perf needs the former (gotcha 1). Run it from the arm64 Node 26 (O4; `node -p process.arch` prints `arm64`). Playwright launched from an x64 Node under Rosetta starts Chrome under Rosetta too, which makes the loops about 3× slower ([M3](M3-satellites.md) gotcha 20).
+4. A native arm64 laptop for `npm run perf`, with `npx playwright install chromium`. Without `--only-shell` that command installs both Chrome for Testing (`chromium-1248`) and the headless shell (checked in `playwright-core`'s registry); perf needs the former (gotcha 1). Run it from the arm64 Node 26 (O4; `node -p process.arch` prints `arm64`), so Playwright starts the arm64 browser ([M3](M3-satellites.md) gotcha 20).
 5. Decisions ([DECISIONS](../DECISIONS.md)):
    - O1 (decided): the sky map is drawn on the YouTube player with the light overlay set; the ground map carries the dense data. The tour shows both (step 10).
    - O2 (decided): clips are recorded from the StarCam streams and kept in `recordings/`. The tour opens on the 2026-10-11 clip, and step 14 ships a copy with the deploy.
    - O4 (decided): Node 26.
+   - H1 (decided): GitHub Pages from Actions at `https://parthjain.ca/Overhead/`, `base: "/Overhead/"`, production from `main` only. Step 14 is built on its limits and behaviour (M0 step 15).
    - O3 (open): `ui.demo.paused` and `setDemoPaused` are part of the assumed shape ([README section 4](README.md#store)). If O3 changes: keep `paused` as a module variable in `demo.ts`, with a `subscribe` function that `DemoCaptions.tsx` reads through `useSyncExternalStore`.
 
 ## 3. Deliverables
@@ -53,11 +54,11 @@ The visual design (layout, colours, panel placement, styling) is not specified h
 | `src/domain/orbits/visibility.ts` | `SKY_CUTOFF_GEOMETRIC_DEG`, `belowSkyCutoff` (step 4) |
 | `src/workers/propagation.worker.ts` | Starlink samples through `writeCulledSample` |
 | `src/workers/bulk.ts` | New, only if step 3's measurement says so: BulkPropagator fallback |
-| `src/state/ephemeris.ts` | Sky cut-off and interleaved Starlink ground updates (step 4) |
+| `src/state/ephemeris.ts` | Sky cut-off and interleaved Starlink ground updates (step 4); element sets follow the active clip (step 14f) |
 | `src/state/actions.ts` | `startDemo`, `setDemoStep`, `stopDemo`, `setDemoPaused` (the `ui.demo` shape is M0's) |
 | `src/app/demo.ts` | New: tour steps on the clip and the computed sky, the live step, anchor time, runner (step 10) |
-| `src/app/clip.ts` | Range probe in `loadClipFromSidecarUrl`: a clip whose server ignores `Range` is read into a Blob (step 14d) |
-| `scripts/fetch-deploy-clips.ts` | New: copies the deploy clip from its release asset into `dist/recordings/` on Pages (step 14c) |
+| `src/app/clip.ts` | Range probe in `loadClipFromSidecarUrl`: a clip whose server ignores `Range` is read into a Blob (step 14d); `clipGpBaseUrl` (step 14f) |
+| `scripts/fetch-deploy-clips.ts` | New: copies the deploy clip from its release asset into `dist/recordings/`, and the clip's element sets into `dist/recordings/<clip>.gp/` (steps 14c, 14f) |
 | `src/app/url.ts` | `demo` in `UrlState`, `shareUrl` (step 8) |
 | `src/app/keyboard.ts` | Esc order with the tour (step 9) |
 | `src/app/testHooks.ts` | `commits()` (step 5) |
@@ -68,7 +69,7 @@ The visual design (layout, colours, panel placement, styling) is not specified h
 | `src/**/*.css` | Visual design pass (step 12), OpenLayers control size (step 11) |
 | `vite.config.ts` | `build.chunkSizeWarningLimit` (step 7) |
 | `package.json`, `.gitignore` | `build:dev` and `build:pages` scripts (steps 1, 14c); ignore `dist-dev/` and `lighthouse/` (step 11) |
-| Cloudflare Pages settings | Build command `npm run build:pages` (step 14c) |
+| `.github/workflows/deploy.yml` | The build step runs `npm run build:pages` (step 14c) |
 | GitHub release `clips-2026-10-11` | The deploy copy of the clip and its sidecar, never committed (step 14b) |
 | `playwright.config.ts` | Perf project on Chrome for Testing with the GPU; `PERF_OUTDIR` (step 1) |
 | `tests/perf/starlink.perf.ts`, `commits.perf.ts`, `screens.perf.ts` | New (steps 1, 5, 12) |
@@ -108,7 +109,8 @@ declare global {
   }
 }
 
-const p95 = (xs: readonly number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(0.95 * xs.length)] ?? Number.NaN;
+const p95 = (xs: readonly number[]): number =>
+  [...xs].sort((a, b) => a - b)[Math.floor(0.95 * xs.length)] ?? Number.NaN;
 
 for (const throttle of [1, 4] as const) {
   test(`Starlink loaded, 60x, CPU ${throttle}x`, async ({ browser, context, page }) => {
@@ -117,10 +119,11 @@ for (const throttle of [1, 4] as const) {
       window.__perf = perf;
       new PerformanceObserver((list) => {
         for (const e of list.getEntriesByName("overhead:frame")) perf.frame.push(e.duration);
-        for (const e of list.getEntriesByName("overhead:propagate")) perf.propagate.push(e.duration);
+        for (const e of list.getEntriesByName("overhead:propagate"))
+          perf.propagate.push(e.duration);
       }).observe({ type: "measure" });
     });
-    await page.goto("/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z");
+    await page.goto("./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z");
     const gpu = await page.evaluate(() => {
       const gl = document.createElement("canvas").getContext("webgl2");
       const ext = gl?.getExtension("WEBGL_debug_renderer_info");
@@ -136,12 +139,19 @@ for (const throttle of [1, 4] as const) {
       if (window.__perf) window.__perf.since = performance.now();
     });
     mkdirSync("test-results/perf", { recursive: true });
-    await browser.startTracing(page, { path: `test-results/perf/trace-${throttle}x.json`, screenshots: false });
+    await browser.startTracing(page, {
+      path: `test-results/perf/trace-${throttle}x.json`,
+      screenshots: false,
+    });
     await page.waitForTimeout(10_000);
     // Read before stopTracing(): writing the trace stalls the page.
     const perf = await page.evaluate(() => {
       const p = window.__perf ?? { frame: [], propagate: [], since: 0 };
-      return { frame: [...p.frame], propagate: [...p.propagate], seconds: (performance.now() - p.since) / 1000 };
+      return {
+        frame: [...p.frame],
+        propagate: [...p.propagate],
+        seconds: (performance.now() - p.since) / 1000,
+      };
     });
     await browser.stopTracing();
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
@@ -309,7 +319,11 @@ export async function createStarlinkBulk(recs: SatRec[]) {
   const runtime = await createSingleThreadRuntime();
   const bulk = new BulkPropagator({
     runtime,
-    calculators: [new EciBaseCalculator(), new SunPositionCalculator(), new ShadowFractionCalculator()],
+    calculators: [
+      new EciBaseCalculator(),
+      new SunPositionCalculator(),
+      new ShadowFractionCalculator(),
+    ],
     satRecsCount: recs.length,
     datesCount: 1,
   });
@@ -319,7 +333,12 @@ export async function createStarlinkBulk(recs: SatRec[]) {
 export type StarlinkBulk = Awaited<ReturnType<typeof createStarlinkBulk>>;
 
 /** Row j of the bulk output goes to object rows[j] of `out`. */
-export function writeBulkSample(bulk: StarlinkBulk, rows: Int32Array, ctx: PropagationContext, out: Float32Array): void {
+export function writeBulkSample(
+  bulk: StarlinkBulk,
+  rows: Int32Array,
+  ctx: PropagationContext,
+  out: Float32Array,
+): void {
   bulk.setDates([ctx.date]);
   bulk.run(); // single-thread runtime: synchronous
   const { eci, shadowFraction } = bulk.getRawOutput(); // views on WASM memory: read now, never keep or post
@@ -371,7 +390,7 @@ M3's `updateEphemerisFrame` does the full chain for every object on every frame:
    - The first frame after playing stops runs the loop once in full, even though M3's "nothing changed, skip the loop" check would skip it. Otherwise a paused view keeps half the dots one frame behind: at 600× one frame is 10 s of sim time, about 75 km.
    - On an interleaved frame, if the row is below the cut-off in both samples a and b, skip it entirely. The cone of rows below −3° is convex, so linear interpolation (up to 60×) between two points inside it stays inside it. Hermite at 600× can overshoot slightly, but the cut-off sits 0.43° below the lowest drawable horizon, and the row is fully recomputed on the next frame.
    - Rebuild the class flat arrays every frame from the per-index arrays.
-3. Keep M3's write path: one `MultiPoint` per group and class, written in place with one `changed()` per geometry ([architecture.md](../verification/architecture.md) claims 2–3). M3 creates each class `VectorSource` empty and lets `writeClassPoints` add the feature, which is safe. Never pass the array the layer code indexes as `features` to a `VectorSource`. If a source must start with features, pass a copy (`features: [...classes]`) (gotcha 4).
+3. Keep M3's write path: one `MultiPoint` per group and class, written in place with one `changed()` per geometry (`verification/architecture.md` claims 2–3). M3 creates each class `VectorSource` empty and lets `writeClassPoints` add the feature, which is safe. Never pass the array the layer code indexes as `features` to a `VectorSource`. If a source must start with features, pass a copy (`features: [...classes]`) (gotcha 4).
 
 Measured `overhead:frame` with Starlink at 60×, in ms:
 
@@ -381,7 +400,7 @@ Measured `overhead:frame` with Starlink at 60×, in ms:
 | + sky cut-off | 4.2 / 5.4 / 5.7, 60.0 | 14.0 / 16.9 / 23.2, 59.2 (16 frames > 20 ms) |
 | + interleave | 3.6 / 4.6 / 5.2, 60.0 | 9.4 / 11.8 / 14.7, 60.0 (0 frames > 20 ms) |
 
-The second run reproduced every row within 0.5 ms on p50 and p95, for example M3 path at 4× 15.5 / 18.4 / 24.1 ms at 55.3 fps, and both rules at 4× 9.4 / 11.8 / 13.3 ms at 60.0 fps. At 600× with both rules the frame measured 4.1 / 4.6 / 4.8 ms unthrottled and 11.5 / 12.5–13.0 / 15.0–20.9 ms at 4×, both at 60.0 fps. Rendering both maps (`renderSync`) took a p95 of 1.0–1.2 ms unthrottled. The sky view stays a canvas layer: about 340–450 Starlinks were above the horizon ([architecture.md](../verification/architecture.md) claim 30).
+The second run reproduced every row within 0.5 ms on p50 and p95, for example M3 path at 4× 15.5 / 18.4 / 24.1 ms at 55.3 fps, and both rules at 4× 9.4 / 11.8 / 13.3 ms at 60.0 fps. At 600× with both rules the frame measured 4.1 / 4.6 / 4.8 ms unthrottled and 11.5 / 12.5–13.0 / 15.0–20.9 ms at 4×, both at 60.0 fps. Rendering both maps (`renderSync`) took a p95 of 1.0–1.2 ms unthrottled. The sky view stays a canvas layer: about 340–450 Starlinks were above the horizon (`verification/architecture.md` claim 30).
 
 ### Step 5. React commit audit
 
@@ -433,6 +452,7 @@ The second run's traces were 52.9 MB and 42.1 MB raw, and 3.4 MB and 3.2 MB gzip
    - It calls `navigator.clipboard.writeText(shareUrl(store.getState(), location.href))` inside the click handler.
    - On success, a `role="status"` text reads "Link copied".
    - On rejection, show the URL in a read-only, selected `<input>` labelled "Link to this view".
+   - When `navigator.clipboard?.writeText` is undefined, show that input at once. That is the case on `http://parthjain.ca/Overhead/`, which GitHub Pages serves without redirecting to https (M0 step 15): an http page is not a secure context, and headless Chromium 156 had no `navigator.clipboard` there.
 4. Invalid parameters keep M1/M3 behaviour: `console.warn`, then the defaults.
 
 ### Step 9. Keyboard map
@@ -458,7 +478,7 @@ The tour opens on the recorded 2026-10-11 ISS clip, camera `subaru-2026-10-11-is
 
 **The two paths.**
 
-1. **Clip path.** `DemoContext.clip` is `{ startUtcMs }` once the registry's `subaru-2026-10-11-iss` entry has a non-null `source.videoUrl` and `source.startUtcMs`. M5's `loadClipFromSidecarUrl` sets both, with step 14's Range probe. Production serves the clip (step 14), so `?demo=1` on `https://<project>.pages.dev` takes this path.
+1. **Clip path.** `DemoContext.clip` is `{ startUtcMs }` once the registry's `subaru-2026-10-11-iss` entry has a non-null `source.videoUrl` and `source.startUtcMs`. M5's `loadClipFromSidecarUrl` sets both, with step 14's Range probe. Production serves the clip and its element sets (step 14), so `https://parthjain.ca/Overhead/?demo=1` takes this path.
 2. **Computed-sky path.** `DemoContext.clip` is null when the entry is not enabled, when its sidecar answered "This clip is not part of this build", or when the clip failed. The tour then works from `anchorMs` (below).
 
 **Clip timing.** Media 0 is 2026-10-11T15:08:30.183Z (`startUtcMs` 1791731310183). Step 1 seeks to media 60 s (`DEMO_CLIP_SEEK_MS` = 60,000, private to `demo.ts`). That is 18.7 s before the ISS enters at the right edge (media 78.7 s) and inside M8's 60 s look-ahead, so the incoming chip names the ISS before it appears. Playing at 1×, the clip reaches media 105 s at the end of step 1 and 150 s at the end of step 2. It holds 150 s through steps 3 and 4 (paused), then reaches 190 s after step 5 and 225 s after step 6. The ISS is in view throughout, until it goes behind the large dome at media 228.0 s.
@@ -596,18 +616,18 @@ Rules for the runner and the captions:
    - the tour changes steps without animation.
 4. Meaning never rides on colour alone. Lit and shadowed satellites differ in shape (M3). Camera statuses (M4), "behind terrain" (M6), "Imagery as of" (M7) and the incoming chip (M8) are text. Review the step 12 screenshots in grayscale (`html { filter: grayscale(1) }` through `page.addStyleTag`).
 5. Landmarks. Keep one `<main>` (M0) and named `<section>` regions. Map containers keep their `aria-label` (M1, M2, M5).
-6. Lighthouse 13.5.0, run by hand, not a dependency (it needs Node ≥ 22.19). With `npm run build && npm run preview` running, run this for each URL and preset (executed as written: score 100 on the prototype):
+6. Lighthouse 13.5.0, run by hand, not a dependency (it needs Node ≥ 22.19). With `npm run build && npm run preview` running, run this for each URL and preset (executed on the prototype, which was served at the root before the `/Overhead/` base: score 100):
 
 ```sh
 mkdir -p lighthouse # Lighthouse does not create it: "--output-path ... cannot be written to"
 export CHROME_PATH="$(node -p "require('playwright-core').chromium.executablePath()")"
-npx --yes lighthouse@13.5.0 "http://localhost:4173/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z" \
+npx --yes lighthouse@13.5.0 "http://localhost:4173/Overhead/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z" \
   --only-categories=accessibility --preset=desktop \
   --output=json --output=html --output-path=./lighthouse/a11y-default-desktop \
   --chrome-flags="--headless=new" --quiet
 ```
 
-   - Run three URLs: the one above, the same with `&sel=sat:25544`, and `/?demo=1`.
+   - Run three URLs: the one above, the same with `&sel=sat:25544`, and `http://localhost:4173/Overhead/?demo=1`. Keep the `/Overhead/` base: `vite preview` serves nothing else (M0 step 3).
    - Run each URL with `--preset=desktop` and without it (mobile).
    - The score is `categories.accessibility.score × 100` in `<path>.report.json`.
    - Measured on a page with two OpenLayers maps: 84 on desktop and 95 on mobile without a `<main>` and without the 24 px rule; 100 on both with them.
@@ -702,12 +722,12 @@ flowchart LR
    - A camera is a map projection: rectilinear is gnomonic, fisheyes are azimuthal. The closed forms match proj4 to < 1e-9.
    - Same math as ISR video annotation.
    - Space domain awareness: a ground sensor checked against the catalogue.
-   - Two-step calibration: stars move 15.04°/h and fix pointing; the ISS crosses about 0.99°/s at a 76.9° pass and fixes time ([architecture.md](../verification/architecture.md) claim 21).
+   - Two-step calibration: stars move 15.04°/h and fix pointing; the ISS crosses about 0.99°/s at a 76.9° pass and fixes time (`verification/architecture.md` claim 21).
    - Performance by design: the step 2, 4 and 5 numbers.
    - OGC standards: WMTS with a Time dimension, and GeoPose 1.0 validated against the vendored schema.
-   - Sky over video: the sky map is drawn on the YouTube player and on the recorded clip, light by design (the ISS, the visual group, a few bright stars, the Moon and planets); the ground map carries the dense data. The player keeps its controls through `pointer-events: none` and `ol/Overlay` hit targets.
+   - Sky over video: the sky map is drawn on the YouTube player and on the recorded clip, light by design (the ISS and the other stations and visual satellites, a few bright stars, the Moon and planets); the ground map carries the dense data. The player keeps its controls through `pointer-events: none` and `ol/Overlay` hit targets.
    - Measured on the recorded pass: with a star fit (73 stars, 0.029° rms) and the burned-in clock, the ISS marker sits 1.2 px rms from the ISS on the 1920 × 1080 frame when the element set is 20 h old (the clip sidecar's `timingSource`; README section 8, "Recorded clips").
-   - Engineering constraints: Pages serves files of at most 25 MiB and ignores `Range`, so the deployed clip is a 22.4 MiB copy read into a Blob (step 14); the YouTube stream runs about 50 s behind real time; GIBS keeps GOES imagery for 90 days.
+   - Engineering constraints: the site is static on GitHub Pages under `/Overhead/`, so the recorded clip ships as a 22.4 MiB copy with the element sets from near its pass (step 14); a clip served without byte ranges is read into a Blob so it can seek; the YouTube stream runs about 50 s behind real time; GIBS keeps GOES imagery for 90 days.
 5. Performance: the tables from steps 2, 4 and 6 with machine and browser, and how to reproduce them (`npm run perf`).
 6. Keyboard shortcuts: the step 9 table.
 7. Accessibility: what step 11 guarantees, and the Lighthouse scores.
@@ -720,34 +740,37 @@ flowchart LR
    - Cameras, each `credit.text` with its `termsNote` exactly as in `cameras.json`:
      - "Computed sky (no camera image)" (both synthetic cameras; empty `termsNote`);
      - "Nānā ao all-sky image © CFHT" (GFDL-1.3-or-later), "GNU Free Documentation License 1.3 or later";
-     - "NAOJ & Asahi Shimbun" and "CFHT & Asahi Shimbun in collaboration with Subaru Telescope, NAOJ", each with "YouTube embed; non-commercial use with credit" (the O1 wording, [M1](M1-ground-map.md) step 5);
+     - "NAOJ & Asahi Shimbun" and "CFHT & Asahi Shimbun in collaboration with Subaru Telescope, NAOJ", each with "Non-commercial use only", the `termsNote` M5 step 2 commits (M1's provisional string is replaced there);
      - the recorded clip `subaru-2026-10-11-iss`: "NAOJ & Asahi Shimbun" (its sidecar's credit) with the `termsNote` its entry carries;
      - `local-replay`: its `credit.text` and `termsNote` exactly as M5 commits them;
      - ASK053 only with the owner's written permission.
    - GeoPose schema: © 2022 Open Geospatial Consortium, Apache-2.0 (`PROVENANCE.md`).
    - Code: OpenLayers 10.11.0 (BSD-2-Clause); React 19.3.0, zustand 5.0.15, satellite.js 7.1.0, astronomy-engine 2.1.19, ajv 8.20.0, proj4 2.22.0 for tests only (all MIT).
-9. Development: requirements (Node 26 arm64), scripts (including `build:dev`, `build:pages` and `perf`), how to regenerate fixtures, how to record a clip (`scripts/find-passes.ts`, `scripts/record-clip.ts`), and how to deploy, including step 14's clip copy and release.
+9. Development: requirements (Node 26 arm64), scripts (including `build:dev`, `build:pages` and `perf`), how to regenerate fixtures, how to record a clip (`scripts/find-passes.ts`, `scripts/record-clip.ts`), and how to deploy (GitHub Pages from `deploy.yml`, production at `https://parthjain.ca/Overhead/`), including step 14's clip copy, release and element sets.
 10. Milestones: the M0–M8 sections already written, plus M9.
 
-### Step 14. Production deploy and the recorded clip
+### Step 14. Production deploy, the recorded clip and its element sets
 
-The deployed build serves the 2026-10-11 clip from its own origin, so `?demo=1` opens on it in production. The clip is never committed (O2). A 22.4 MiB H.264 copy is published as a GitHub release asset, and the Cloudflare Pages build copies it into `dist/recordings/`. The app reads it whole into a Blob, because Pages does not serve byte ranges.
+The deployed build serves the 2026-10-11 clip from its own origin, so `https://parthjain.ca/Overhead/?demo=1` opens on it. The clip is never committed (O2). A 22.4 MiB H.264 copy is published as a GitHub release asset, and `deploy.yml` copies it into `dist/recordings/` before it uploads the Pages artifact. GitHub Pages serves byte ranges, so the video streams and seeks from its URL. The element sets the clip replays with ship next to it (14f).
 
-**Why this plan.** All of these were measured on 2026-10-11.
+**Why this plan.** All of these were measured or read on 2026-10-11.
 
-1. **Size.** Cloudflare Pages takes at most 25 MiB (26,214,400 bytes) per file, both through Git builds and through `wrangler` uploads. That comes from Cloudflare's limits page (last updated 2026-09-05) and its Direct Upload page. The recorded clip is 148,643,811 bytes, so a smaller copy is needed.
-2. **No Range on Pages.** Two `pages.dev` sites answered ranged requests (a script, a font and an MP4) with 200, the full body and no `Accept-Ranges` (M0 step 15). Headless Chromium 156 cannot seek a video served that way.
+1. **Size and bandwidth.** GitHub Pages limits a site to 1 GB and sets a soft bandwidth limit of 100 GB a month; its limits page states no per-file limit (M0 step 15). The clip never goes through git, so git's 100 MB file limit does not apply.
+   - The 148,643,811-byte master would fit, but one full play costs 148.6 MB of the month's 100 GB: about 670 plays.
+   - The 23,515,809-byte copy costs a sixth of that, about 4,250 full plays, and the overlay lines up on it as on the master (14a).
+2. **GitHub Pages serves byte ranges.** `curl -H "Range: bytes=0-1"` got 206 with `content-range` and `accept-ranges: bytes` from files on `parthjain.ca` and from three `video/mp4` files on `mdn.github.io`. A mid-file range of the 22,306,323-byte one (`bytes=20000000-20000009`) also answered 206. So the deployed clip plays and seeks from its URL, and the 14d probe takes its 206 branch.
+3. **A server that ignores Range still needs a fallback.** Playwright's `route.fulfill` ignores `Range` (gotcha 20), so every e2e run serves clips that way, and so may any other host. Headless Chromium 156 cannot seek a video served without ranges:
    - The test served this step's 23,515,809-byte copy from a local server that ignores `Range`.
    - `video.seekable` was `[0, 0]`, and seeks to 60, 400 and 150.84 s all left `currentTime` at 0.
    - That did not change after waiting 60 s: playback stopped buffering at 74.9 s, and `seekable` stayed `[0, 0]`.
    - The same file from a server that honours `Range` was seekable over `[0, 480]` at `loadedmetadata`, and seeks took 27–101 ms at 2 MB/s.
    - Playwright's WebKit 2370 coped with either server.
-3. **A Blob fixes it.** Reading the same 200 response into a Blob and playing `URL.createObjectURL(blob)` gave `seekable` `[0, 480]` and seeks of 32–62 ms. Seeking to 0.81 s showed frame 24 and seeking to 0.84 s showed frame 25: the burned-in seconds digit, compared with ffmpeg's decode of those frames, differed by 1.3 against 24.8 per channel. `requestVideoFrameCallback` stepped by 1/30 s. The download took 11.7 s at 2 MB/s (16 Mbit/s).
-4. **Same origin keeps the canvas clean.** `ImageCanvas` draws the video into a canvas (M5 step 11).
+4. **A Blob fixes it.** Reading the same 200 response into a Blob and playing `URL.createObjectURL(blob)` gave `seekable` `[0, 480]` and seeks of 32–62 ms. Seeking to 0.81 s showed frame 24 and seeking to 0.84 s showed frame 25: the burned-in seconds digit, compared with ffmpeg's decode of those frames, differed by 1.3 against 24.8 per channel. `requestVideoFrameCallback` stepped by 1/30 s. The download took 11.7 s at 2 MB/s (16 Mbit/s).
+5. **Same origin keeps the canvas clean.** `ImageCanvas` draws the video into a canvas (M5 step 11).
    - Played from another origin without CORS, the frame drew, but `getImageData` and `toDataURL` threw `SecurityError`. The canvas is tainted.
    - With `crossOrigin = "anonymous"` and no `Access-Control-Allow-Origin` header, the video failed with MediaError 4 and logged 2 console errors, which fail the e2e guard.
-   - Serving from the Pages origin avoids both, and `sidecarUrl` stays the relative `"recordings/subaru-2026-10-11-iss.json"` (README section 2, camera registry).
-5. **Alternative, not chosen: object storage.** Cloudflare's limits page points larger assets to R2. A public R2 bucket would keep the 148.6 MB master and serve ranges. It needs a CORS rule for every Pages origin, the clip `<video>` created with `crossOrigin = "anonymous"`, and an absolute or redirected `sidecarUrl` (a README contract change). Use it only if Parth wants the full-quality master online.
+   - Serving from the app's own origin avoids both, and `sidecarUrl` stays the relative `"recordings/subaru-2026-10-11-iss.json"`, resolved against `BASE_URL` (README section 2, camera registry).
+6. **Alternative, not chosen: the master on Pages.** The 148.6 MB master fits the 1 GB site limit and needs no encode. But each full play costs 6.3 times as much bandwidth, and it needs 2.5 Mbit/s to play in real time against 0.39 Mbit/s for the copy. Whether Pages accepts one 148.6 MB file in an artifact was not tested. Use it only if Parth wants full quality online.
 
 **14a. Make the deploy copy (by hand, once per clip).** The settings are a two-pass x264 encode at a fixed average rate, with the size, frame rate, timing and GOP of the master kept. Run from the project root with ffmpeg 7.1 (`$FFMPEG`; a static arm64 build was used):
 
@@ -764,36 +787,37 @@ rm recordings/web/x264*
 shasum -a 256 recordings/web/subaru-2026-10-11-iss.*
 ```
 
-- **Rate.** `-b:v` is about 90 % of the Pages limit spread over the clip: 0.9 × 209,715 kbit ÷ `durationS`, which is 393 kbit/s for 480 s, rounded down to 390k. Two-pass keeps the average within 0.3 %: the result was 389 kbit/s of video.
-- **Measured on the 2026-10-11 clip.** The two passes took 125 s on the M2. The output is 23,515,809 bytes (22.43 MiB, 2,698,591 bytes under the limit).
+- **Rate.** `-b:v` aims at about 90 % of the 25 MiB ceiling that `fetchDeployClip` enforces (`DEPLOY_CLIP_MAX_BYTES`, chosen for bandwidth, point 1): 0.9 × 209,715 kbit ÷ `durationS`, which is 393 kbit/s for 480 s, rounded down to 390k. Two-pass keeps the average within 0.3 %: the result was 389 kbit/s of video.
+- **Measured on the 2026-10-11 clip.** The two passes took 125 s on the M2. The output is 23,515,809 bytes (22.43 MiB, 2,698,591 bytes under the ceiling).
   - It is H.264 High at level 4.0 (`avc1.640028`), 1920 × 1080, 30 fps, 14,400 frames, starting at 0.000 with the moov atom first. 97 frames are I-frames, and it uses B-frames.
-  - Its sha256 is `5c0ac96b3e9bbb749a8b70fa3ccea911670046bbcdaa55e05ab147134c6d100c`. A second run gave the same bytes.
+  - Its sha256 is `5c0ac96b3e9bbb749a8b70fa3ccea911670046bbcdaa55e05ab147134c6d100c`. A second run, and a run of exactly these commands for this review, gave the same bytes.
 - **Quality against the master.** SSIM over all frames is 0.957 (Y 0.940), and PSNR averages 40.2 dB (minimum 34.5 dB). Most of the difference is sensor noise, which the encode smooths.
-  - Side-by-side crops at media 56 s (Jupiter) and 150 s (the ISS, the clock) were checked by eye. The ISS, Jupiter and the brighter stars are intact, and the clock text is sharp.
+  - Crops of both at media 56 s (Jupiter) and 150 s (the ISS, the clock) were compared by eye. The ISS, Jupiter and the brighter stars are intact, and the clock text is sharp.
   - The ISS centroid moved at most 0.41 px against the master at media 90, 120, 150, 180, 210 and 280 s, so the overlay lines up as on the master.
   - The burned-in seconds digit still changes between frames 24 and 25, so media time and `startUtcMs` are unchanged.
-- **The sidecar is copied unchanged.** The copy keeps `width` 1920, `height` 1080, `fps` 30 and `videoFile` `subaru-2026-10-11-iss.mp4`. On 2026-10-11 it was 6,846 bytes with sha256 `ada14ce51fc99539313d1045a3a6e0a33ad5147bb03615ee0390ff23b3b1d761`. Recompute that hash whenever the sidecar changes, for example after the satellite check (M5) moves `startUtcMs`.
+- **The sidecar is copied unchanged.** The copy keeps `width` 1920, `height` 1080, `fps` 30 and `videoFile` `subaru-2026-10-11-iss.mp4`. On 2026-10-11 it was 6,846 bytes with sha256 `ada14ce51fc99539313d1045a3a6e0a33ad5147bb03615ee0390ff23b3b1d761`. Recompute that hash whenever the sidecar changes, for example after "Save sidecar" stores a new calibration or a timing check (M5 "Recording a clip" step 6) moves `startUtcMs`.
 - A 1280 × 720 encode at the same rate was 23,466,738 bytes, no smaller. Keep 1920 × 1080: the sidecar stays valid and calibration clicks keep their precision.
 
-**14b. Publish both files as release assets.** The repository is public (README "Assumed until Parth confirms"), so a release asset downloads without credentials. A release asset is not part of git history, so `recordings/` stays out of the repository.
+**14b. Publish both files as release assets.** `FalconXYX/Overhead` is public (H1), so a release asset downloads without credentials. A release asset is not part of git history, so `recordings/` stays out of the repository.
 
 ```sh
 gh release create clips-2026-10-11 recordings/web/subaru-2026-10-11-iss.mp4 recordings/web/subaru-2026-10-11-iss.json \
-  --title "Recorded clips, 2026-10-11" --notes "Deploy copies of recordings/subaru-2026-10-11-iss (step 14 of M9)."
+  --repo FalconXYX/Overhead --title "Recorded clips, 2026-10-11" --notes "Deploy copies of recordings/subaru-2026-10-11-iss (step 14 of M9)."
 ```
 
-The download URL `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>` answers 302 to `release-assets.githubusercontent.com`. On 2026-10-11, Node 26's `fetch` followed that redirect, and the script below accepted a real asset (`cli/cli` v2.60.0's checksums file, 1,856 bytes, sha256 match). If the repository stays private, host the two files at any public URL instead (an R2 public bucket works at build time without CORS) and change `RELEASE`. Never add a token: the Pages project has no secrets (M0).
+The download URL `https://github.com/FalconXYX/Overhead/releases/download/<tag>/<file>` answers 302 to `release-assets.githubusercontent.com`. On 2026-10-11, Node 26's `fetch` followed that redirect, and the script below accepted a real asset (`cli/cli` v2.60.0's checksums file, 1,856 bytes, sha256 match). Never add a token: the deploy needs no secret (M0 step 15).
 
-**14c. Copy them into the Pages build.** Add `"build:pages": "npm run build && tsx scripts/fetch-deploy-clips.ts"` to `package.json`. In Cloudflare Pages → Settings → Build, set the build command to `npm run build:pages`. CI keeps `npm run build`, so CI never downloads the clip (README section 8, CI). Every Pages build, previews included, downloads 23.5 MB.
+**14c. Copy them into the Pages build.** Add `"build:pages": "npm run build && tsx scripts/fetch-deploy-clips.ts"` to `package.json`. In `.github/workflows/deploy.yml`, change the build job's `run: npm run build` to `run: npm run build:pages`. `ci.yml` keeps `npm run build`, so CI never downloads the clip (README section 8, CI). Every deploy downloads 23.5 MB from the release, inside GitHub.
 
 ```ts
-// scripts/fetch-deploy-clips.ts — run by `npm run build:pages` on Cloudflare Pages only, never in CI.
-// Copies each deploy clip file from its release asset into dist/recordings/ and checks size and sha256.
+// scripts/fetch-deploy-clips.ts — run by `npm run build:pages` in deploy.yml only, never in CI.
+// Copies each deploy clip file from its release asset into dist/recordings/, and each clip's element sets
+// from the repository into dist/recordings/<clip>.gp/, checking size and sha256.
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 
-/** Cloudflare Pages refuses any single asset over 25 MiB. */
-export const PAGES_MAX_FILE_BYTES = 26_214_400;
+/** Ceiling for one deploy copy: 25 MiB, a sixth of the 148.6 MB master per full play (step 14, "Size"). */
+export const DEPLOY_CLIP_MAX_BYTES = 26_214_400;
 
 export interface DeployClipFile {
   readonly name: string; // written to dist/recordings/<name>, the path cameras.json's sidecarUrl names
@@ -802,7 +826,7 @@ export interface DeployClipFile {
   readonly sha256: string; // lowercase hex
 }
 
-const RELEASE = "https://github.com/<owner>/<repo>/releases/download/clips-2026-10-11";
+const RELEASE = "https://github.com/FalconXYX/Overhead/releases/download/clips-2026-10-11";
 
 export const DEPLOY_CLIP_FILES: readonly DeployClipFile[] = [
   {
@@ -819,14 +843,21 @@ export const DEPLOY_CLIP_FILES: readonly DeployClipFile[] = [
   },
 ];
 
-/** Throws, naming the file, on any failure; the Pages build then fails and production keeps its last deploy. */
+/** Each clip's element sets (step 14f): a committed GP directory, copied to dist/recordings/<clip>.gp/. */
+export const DEPLOY_CLIP_GP: readonly { readonly clip: string; readonly fromDir: string }[] = [
+  { clip: "subaru-2026-10-11-iss", fromDir: "tests/fixtures/gp" },
+];
+
+const GP_GROUPS = ["stations", "visual", "starlink"] as const;
+
+/** Throws, naming the file, on any failure; the deploy then fails and production keeps its last deploy. */
 export async function fetchDeployClip(
   file: DeployClipFile,
   outDir: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<void> {
-  if (file.bytes > PAGES_MAX_FILE_BYTES) {
-    throw new Error(`${file.name}: ${file.bytes} bytes is over the 25 MiB Pages limit`);
+  if (file.bytes > DEPLOY_CLIP_MAX_BYTES) {
+    throw new Error(`${file.name}: ${file.bytes} bytes is over the 25 MiB deploy-copy ceiling`);
   }
   const res = await fetchFn(file.url, { redirect: "follow" });
   if (res.status !== 200) throw new Error(`${file.name}: HTTP ${res.status} from ${file.url}`);
@@ -843,8 +874,31 @@ export async function fetchDeployClip(
   console.log(`${file.name}: ${data.byteLength} bytes, sha256 ok`);
 }
 
+/** Copies stations, visual, starlink and meta.json; each group file must match meta.json's sha256 for it. */
+export async function copyClipGp(fromDir: string, toDir: string): Promise<void> {
+  const metaText = await readFile(`${fromDir}/meta.json`, "utf8");
+  const meta: Partial<Record<string, { sha256?: unknown }>> = JSON.parse(metaText);
+  await mkdir(toDir, { recursive: true });
+  for (const group of GP_GROUPS) {
+    const data = await readFile(`${fromDir}/${group}.json`);
+    const sha256 = createHash("sha256").update(data).digest("hex");
+    const expected = meta[group]?.sha256;
+    if (sha256 !== expected) {
+      throw new Error(
+        `${fromDir}/${group}.json: sha256 ${sha256}, meta.json says ${String(expected)}`,
+      );
+    }
+    await writeFile(`${toDir}/${group}.json`, data);
+  }
+  await writeFile(`${toDir}/meta.json`, metaText);
+  console.log(`${toDir}: ${GP_GROUPS.join(", ")} and meta.json, sha256 ok`);
+}
+
 async function main(): Promise<void> {
   for (const file of DEPLOY_CLIP_FILES) await fetchDeployClip(file, "dist/recordings");
+  for (const { clip, fromDir } of DEPLOY_CLIP_GP) {
+    await copyClipGp(fromDir, `dist/recordings/${clip}.gp`);
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -855,11 +909,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 ```
 
-Replace `<owner>/<repo>` once the repository exists. Checked on 2026-10-11 with Node 26.11.1:
+The repository and tag in `RELEASE` are final. Checked on 2026-10-11 with Node 26.11.1:
 
 - The script passes `tsc -b` (`tsconfig.node.json` includes `scripts/`) and `biome ci`.
-- `npm run build:pages` with the placeholder URL built, then exited 1 with "subaru-2026-10-11-iss.mp4: HTTP 404 from https://github.com/<owner>/<repo>/…".
-- Against a local server that answers 302 like GitHub, both files landed in `dist/recordings/` with their sizes and hashes. A wrong hash, a wrong size, a 404 and a size over 25 MiB each threw with the file's name.
+- `npm run build:pages` built, then exited 1 with "subaru-2026-10-11-iss.mp4: HTTP 404 from https://github.com/FalconXYX/Overhead/releases/download/clips-2026-10-11/subaru-2026-10-11-iss.mp4", because the release did not exist yet. A deploy run fails the same way, and production keeps its last deploy.
+- Against a local server that answers 302 like GitHub, both files landed in `dist/recordings/` with their sizes and hashes. A wrong hash, a wrong size, a 404 and a size over 25 MiB each threw with the file's name and wrote nothing.
+- `copyClipGp("tests/fixtures/gp", …)` wrote `stations.json` (9,293 bytes), `visual.json` (65,247), `starlink.json` (4,694,428) and `meta.json` (464). A `visual.json` that did not match `meta.json`'s sha256 threw with its path.
 
 **14d. Play a clip whole when its server ignores Range.** The Range probe goes into M5's `loadClipFromSidecarUrl` (`src/app/clip.ts`) as a module-private function; no new export is added. After the sidecar parses, it resolves `clipVideoUrl(sidecarAbsUrl, sidecar)`, then:
 
@@ -872,9 +927,9 @@ export interface PlayableClip {
 
 /**
  * One request with `Range: bytes=0-1`. A 206 answer means the server streams byte ranges, so the <video>
- * plays and seeks from the URL itself. A 200 answer is the whole file (Cloudflare Pages and Playwright's
- * route.fulfill ignore Range); a <video> on such a URL cannot seek, so the body is read into a Blob.
- * Anything that is not a video (the SPA's index.html for a file this build lacks) gives null.
+ * plays and seeks from the URL itself (GitHub Pages, Vite's dev server). A 200 answer is the whole file
+ * (Playwright's route.fulfill ignores Range); a <video> on such a URL cannot seek, so the body is read into
+ * a Blob. Anything that is not a video (index.html or a 404 page for a file this build lacks) gives null.
  */
 export async function playableClipUrl(
   videoUrl: string,
@@ -897,26 +952,58 @@ export async function playableClipUrl(
 In `clip.ts` drop the two `export` keywords. They are there because the block was checked as its own module: under tsc 7.0.2 and Biome, with 4 Vitest tests (206 keeps the URL, 200 `video/mp4` gives a `blob:` URL, 200 `text/html` gives null, and the request carries `Range: bytes=0-1`).
 
 1. `null` takes M5's "This clip is not part of this build" path: video status `error`, camera status `offline`, no console error.
-2. Otherwise `clipCamera(entry, sidecar, clip.url, registry)` as in M5. While the body downloads, `video.status` stays `loading` and the VideoPanel shows M5's loading text.
+2. Otherwise `clipCamera(entry, sidecar, clip.url, registry)` as in M5. While a Blob downloads, `video.status` stays `loading` and the VideoPanel shows M5's loading text.
 3. An object URL lives for the session. An entry whose `source.videoUrl` is already set is not loaded again, so Restart tour and returning to the camera cost nothing. Revoke it only when that entry's clip is replaced.
-4. The dev server answers ranged MP4 requests with 206 (README section 8, "Serving clips"), so `npm run dev` streams the 148.6 MB master from `recordings/` without reading it whole.
-5. The e2e route for `**/recordings/**` is fulfilled by Playwright, which also ignores `Range`. It answered a media request with 200, and the routed clip was not seekable until it went through the Blob (gotcha 20). So M9's e2e runs exercise this path.
-6. Run end to end in scratch: the release download went through `fetchDeployClip` into a copy of `dist/`, served with no Range and with the SPA fallback. In headless Chromium the sidecar loaded (200, `startUtcMs` 1791731310183) and the probe took the Blob path. `seekable` was `[0, 480]`, and a seek to 150 s put the ISS where the clip analysis has it: red 239 at (1090, 476) against 94 on the sky beside it. A missing sidecar came back as `text/html` with status 200, and a missing video as null.
+4. GitHub Pages (point 2) and the dev server answer ranged MP4 requests with 206, so production and `npm run dev` stream the clip without reading it whole. The dev server did so under the `/Overhead/` base on 2026-10-11 (`/Overhead/recordings/<clip>.mp4`, 206 `video/mp4`).
+5. The e2e route for `**/recordings/**` is fulfilled by Playwright, which ignores `Range`. It answered a media request with 200, and the routed clip was not seekable until it went through the Blob (gotcha 20). So M9's e2e runs exercise the Blob path, and production the 206 path.
+6. Run end to end in scratch: the release download went through `fetchDeployClip` into a copy of `dist/`, served with no Range and with an `index.html` fallback, as Playwright's route and `vite preview` behave. In headless Chromium the sidecar loaded (200, `startUtcMs` 1791731310183) and the probe took the Blob path. `seekable` was `[0, 480]`, and a seek to 150 s put the ISS where the clip analysis has it: red 239 at (1090, 476) against 94 on the nearby sky. A missing sidecar came back as `text/html` with status 200, and a missing video as null.
 
 **14e. Deploy and check.**
 
-1. Merge after `check` is green. Cloudflare Pages builds `main` with `npm run build:pages` to `https://<project>.pages.dev` (M0 step 15).
-2. Check the production URL by hand and paste the results into the pull request:
-   - `curl -sI https://<project>.pages.dev/recordings/subaru-2026-10-11-iss.mp4` shows 200, `content-type: video/mp4` and `content-length: 23515809`, and the `.json` shows 200 `application/json`;
+1. Merge after `check` is green. `deploy.yml` builds `main` with `npm run build:pages` and publishes `https://parthjain.ca/Overhead/` (M0 step 15). Allow up to 10 minutes for `cache-control: max-age=600`.
+2. Check production by hand and paste the results into the pull request:
+   - `curl -sI https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.mp4` shows 200, `content-type: video/mp4`, `content-length: 23515809` and `accept-ranges: bytes`; the same request with `-H "Range: bytes=0-1"` shows 206;
+   - the `.json` shows 200 `application/json; charset=utf-8`, and `…/recordings/subaru-2026-10-11-iss.gp/stations.json` shows 200 with `content-length: 9293`;
    - `?demo=1` opens on the clip: "Step 1 of 8", the ISS enters from the right about 19 s into step 1, and the tour ends on the live StarCam with the overlay on the player (or goes to the end at once when the stream is not playing);
    - no console errors (DevTools);
    - credits visible, including "NAOJ & Asahi Shimbun" on the clip and on the live camera;
    - today's true-colour tiles load, and GOES shows "Imagery as of";
    - `subaru-starcam` plays with the overlay, or shows its embed-blocked state;
-   - `curl -sI https://<project>.pages.dev/` shows no `cross-origin-opener-policy`, no `cross-origin-embedder-policy` and no `referrer-policy: no-referrer` (M0 step 15; the YouTube embed needs a Referer).
-3. Run Lighthouse (step 11) against the production URL, desktop preset, and record the score in the README.
-4. `fetch-gp.yml` keeps committing data. Each commit rebuilds Pages, at about 124 builds a month out of 500 (M0), and each build downloads the clip again (about 2.9 GB a month from GitHub).
-5. A new clip: repeat 14a and 14b under a new tag, add its two entries to `DEPLOY_CLIP_FILES`, and add its `local-video` entry to `cameras.json` (M5).
+   - `curl -sI https://parthjain.ca/Overhead/` shows no `cross-origin-opener-policy`, no `cross-origin-embedder-policy` and no `referrer-policy` (M0 step 15; the YouTube embed needs a Referer).
+3. Run Lighthouse (step 11) against `https://parthjain.ca/Overhead/`, desktop preset, and record the score in the README.
+4. `fetch-gp.yml` keeps committing data, and each data commit dispatches Deploy (M0 step 15): about 124 deploys a month at 4 a day. Each one downloads the clip from the release again, about 2.9 GB a month inside GitHub. The Pages limit of 10 builds an hour does not apply to an Actions deploy.
+5. A new clip: repeat 14a and 14b under a new tag, add its two entries to `DEPLOY_CLIP_FILES` and its GP directory to `DEPLOY_CLIP_GP` (14f), and add its `local-video` entry to `cameras.json` (M5).
+
+**14f. Element sets from near the pass.**
+
+Why: the app propagates whatever element sets it loads, so a clip's ISS marker is only as good as their distance from the pass (README section 8, "Recorded clips").
+
+- On the 2026-10-11 pass the ISS ran 0.08 s, 0.30 s and 0.88 s behind the clip with element sets 20 h, 11 h and 40.3 h old, and 2.9 s behind with a NASA ephemeris made on 2026-10-07. The ISS crosses this frame at up to 0.53°/s, so 2.9 s is up to about 1.5°, over M5's 1° acceptance.
+- Production's `data/gp/` is refreshed every 6 h by `fetch-gp.yml`, so it moves further from 2026-10-11 every day. Replaying the clip with it would put the ISS marker off by more each week.
+
+What ships: `copyClipGp` (14c) copies the committed `tests/fixtures/gp/` into `dist/recordings/subaru-2026-10-11-iss.gp/`. That is `stations.json`, `visual.json`, `starlink.json` and `meta.json`, 4,769,432 bytes in all, fetched 2026-10-11T03:50:21Z (11.3 h before the pass; ISS epoch 2026-10-09T22:48:38Z). They are the element sets of M5's acceptance check, for which M5's prototype of the check gave a maximum of 0.543° with the clip's star calibration. The directory name follows M5 step 17.8 (`recordings/<name>.gp/`).
+
+App rule, in `ephemeris.ts`, with `clipGpBaseUrl`, a new export of `clip.ts` (README section 6 lists `clip.ts`'s exports and needs this one):
+
+```ts
+// src/app/clip.ts, new export [M9]: where a sidecar-URL clip's own element sets live (step 14f).
+/** ".../recordings/<clip>.json" → ".../recordings/<clip>.gp/" (absolute, no query or hash). */
+export function clipGpBaseUrl(sidecarAbsUrl: string): string {
+  const url = new URL(sidecarAbsUrl);
+  url.pathname = url.pathname.replace(/\.json$/, ".gp/");
+  url.search = "";
+  url.hash = "";
+  return url.href;
+}
+```
+
+1. The GP source is `clipGpBaseUrl(sidecarAbsUrl)` while the active camera is a `local-video` camera with a `sidecarUrl`, its clip has loaded (`source.videoUrl` set), and `<clip>.gp/meta.json` answered OK with a JSON content type. Otherwise it is `` `${import.meta.env.BASE_URL}data/gp/` ``. Probe `meta.json` once per clip and keep the answer for the session.
+2. When the source changes, `ephemeris.ts` terminates the propagation worker and starts a new one as at startup: `init` with the active site, then `loadGroup` for `stations` and `visual`, and for `starlink` when `layers.starlink` is on, each with the new source's URL. Every `data.gp` entry goes to `loading`, and the catalogue and sample buffers are rebuilt from the new `groupLoaded` replies. The worker protocol does not change: `loadGroup` already takes an absolute URL, and a restart avoids appending to a catalogue that only grows (README section 5).
+3. The selection survives, because object ids are NORAD ids. The Layers status line shows the clip set's fetch time ("elements fetched 2026-10-11 03:50 UTC"), so the viewer can see which set is in use.
+4. In the tour the source switches to the clip set when step 0 loads the clip, back to `data/gp/` at step 7 (the camera changes to Walenstadt), and to the clip set again on Restart tour.
+5. Where the directory is missing, the probe fails and the app uses `data/gp/`, as before: `npm run dev`, `vite preview` and the unrouted e2e path answer `index.html` with 200, so nothing is logged. On Pages a missing directory would 404 and log a console error, so every clip in `DEPLOY_CLIP_FILES` has a `DEPLOY_CLIP_GP` entry (`fetchDeployClips.test.ts`).
+
+`clipGpBaseUrl` passes tsc 7.0.2 and Biome. Run on 2026-10-11: `https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.json` gave `https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.gp/`, and a query and hash on the sidecar URL were dropped.
 
 ### Step 15. Docs
 
@@ -939,24 +1026,26 @@ Unit tests (Vitest, Node, no network):
 | `url.test.ts` | `?demo=1` → true; absent or `0` → false. `shareUrl` in replay while playing carries the current `t` and `sel` and never `demo`; in live mode no `t`. Round trip through `parseUrlState`. | inline | exact |
 | `keyboard.test.ts` | Esc order: tour, then pending point, then selection, one effect per press | store | exact |
 | `store.test.ts`, `actions.test.ts` | M0's list of throwing actions is now empty. `startDemo` → `{ active: true, step: 0, paused: false }`; `setDemoStep` clamps to 0–9 (`DEMO_STEPS.length − 1`); `setDemoPaused`; `stopDemo` resets. | store | exact |
-| `fetchDeployClips.test.ts` | `fetchDeployClip(file, tmpDir, fakeFetch)`: a 200 with the right bytes writes `<tmpDir>/<name>`. A wrong sha256, a wrong length, a non-200 status and `bytes` over `PAGES_MAX_FILE_BYTES` each throw a message that starts with the file name and write nothing. Every `DEPLOY_CLIP_FILES` entry has `bytes` ≤ 26,214,400 and a 64-character lowercase hex `sha256`, and every `name` is the `sidecarUrl` file name or that sidecar's `videoFile`. | inline (`node:fs` temp dir) | exact |
-| `clip.test.ts` (extended) | `loadClipFromSidecarUrl(store, "subaru-2026-10-11-iss", fakeFetch)`: the sidecar answers 200 JSON, then the video request carries `Range: bytes=0-1`. A 206 `video/mp4` answer keeps the clip URL as `source.videoUrl`. A 200 `video/mp4` answer gives a `blob:` URL. A 200 `text/html` answer gives video status `error` and camera status `offline`. Activating the camera again once `videoUrl` is set makes no request. | inline `Response` objects | exact |
+| `fetchDeployClips.test.ts` | `fetchDeployClip(file, tmpDir, fakeFetch)`: a 200 with the right bytes writes `<tmpDir>/<name>`. A wrong sha256, a wrong length, a non-200 status and `bytes` over `DEPLOY_CLIP_MAX_BYTES` each throw a message that starts with the file name and write nothing. Every `DEPLOY_CLIP_FILES` entry has `bytes` ≤ 26,214,400 and a 64-character lowercase hex `sha256`, and every `name` is the `sidecarUrl` file name or that sidecar's `videoFile`. Every sidecar in `DEPLOY_CLIP_FILES` has a `DEPLOY_CLIP_GP` entry with the same clip name. `copyClipGp("tests/fixtures/gp", tmpDir)` writes the four files byte-identical; with a `visual.json` changed in a copy, it throws a message naming that file. | inline (`node:fs` temp dir), `tests/fixtures/gp/` | exact |
+| `clip.test.ts` (extended) | `loadClipFromSidecarUrl(store, "subaru-2026-10-11-iss", fakeFetch)`: the sidecar answers 200 JSON, then the video request carries `Range: bytes=0-1`. A 206 `video/mp4` answer keeps the clip URL as `source.videoUrl`. A 200 `video/mp4` answer gives a `blob:` URL. A 200 `text/html` answer gives video status `error` and camera status `offline`. Activating the camera again once `videoUrl` is set makes no request. `clipGpBaseUrl("https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.json")` is `"https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.gp/"`, also with `?v=1#x` on the input. | inline `Response` objects | exact |
 | `readme.test.ts` | `README.md` contains every `Credit.text` exported by `credits.ts`, every `TERRAIN_SOURCE_STATEMENTS` line, and every enabled `cameras.json` credit and `termsNote` | committed files | exact substring |
 
 End-to-end tests (CI, shared fixture, no third-party requests, no console errors):
 
 | Spec | Test | Expectation |
 | ---- | ---- | ----------- |
-| `demo.spec.ts` | Clip path: `/?demo=1` with the shared routes. The `**/recordings/**` route serves M5's test pattern as `subaru-2026-10-11-iss`; Playwright fulfils it with 200, so it goes through step 14d's Blob path | Region "Tour" shows the intro caption; the camera is `subaru-2026-10-11-iss`; "Start the tour" becomes enabled and takes focus |
+| `demo.spec.ts` | Clip path: `./?demo=1` with the shared routes. The `**/recordings/**` route serves M5's test pattern as `subaru-2026-10-11-iss`; Playwright fulfils it with 200, so it goes through step 14d's Blob path | Region "Tour" shows the intro caption; the camera is `subaru-2026-10-11-iss`; "Start the tour" becomes enabled and takes focus |
 | | "Start the tour" | "Step 1 of 8"; the camera is still `subaru-2026-10-11-iss`; `time-utc`, read within 3 s, lies in [2026-10-11T08:00:00Z, 08:00:07Z]. The 60 s seek stops at the 7 s test pattern's end |
-| | "Next" 7 times | "Step 8 of 8": the camera is `subaru-starcam` in Live; `window.__ytStub` shows one player created with `playerVars.fs` 0; `[data-testid="sky-map"]` has computed `pointer-events: none`; the Tour region does not intersect `[data-testid="sky-stage"]` |
+| | Element sets (step 14f), same run: before `goto`, a `context.route("**/recordings/subaru-2026-10-11-iss.gp/*.json")` fulfils from `tests/fixtures/gp/` (`meta.json` as `application/json`), and `page.on("request")` records every URL containing `/gp/`; worker fetches show up in both (checked with Chromium 156) | Within 5 s of "Start the tour" becoming enabled (`expect.poll`), `stations.json` and `visual.json` have been requested under `…/recordings/subaru-2026-10-11-iss.gp/`. After the "Next" that enters step 7 (Walenstadt), the next `stations.json` request is under `…/data/gp/` |
+| | "Next" until "Step 8 of 8" | The camera is `subaru-starcam` in Live; `window.__ytStub` shows one player created with `playerVars.fs` 0; `[data-testid="sky-map"]` has computed `pointer-events: none`; the Tour region does not intersect `[data-testid="sky-stage"]` |
 | | "Next" | "End of the tour." and "Restart tour" |
 | | Esc | Region gone, URL without `demo` |
 | | Computed-sky path: a `page.route("**/recordings/subaru-2026-10-11-iss.json")` answers 200 `text/html`, as `vite preview` does | The intro status reads "The recorded clip is not part of this build, so the tour runs on the computed sky." |
 | | "Start the tour" | Camera `synthetic-maunakea`; `time-utc`, read within 3 s, lies in [2026-10-10T15:53:58Z, 15:54:30Z] (10×); "Step 1 of 8" |
 | | "Next" | Inspector shows "ISS (ZARYA)", URL has `sel=sat:25544` and `demo=1` |
 | | "Pause tour" | `aria-pressed="true"` |
-| `share.spec.ts` | Copy link while playing | `context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP_ORIGIN })`. Open `?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544`, play 2 s at 1×, click "Copy link". The clipboard URL has `t` between 15:09:51Z and 15:09:54Z, plus `cam` and `sel`. Opening it in a new page shows the same camera, that `t`, and "ISS (ZARYA)". |
+| `share.spec.ts` | Copy link while playing | `context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP_ORIGIN })`. Open `./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544`, play 2 s at 1×, click "Copy link". The clipboard URL starts with `http://localhost:4173/Overhead/?` and has `t` between 15:09:51Z and 15:09:54Z, plus `cam` and `sel`. Opening it in a new page shows the same camera, that `t`, and "ISS (ZARYA)". |
+| | No clipboard (as on the http URL) | `page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { value: undefined }))`, then "Copy link": the read-only input "Link to this view" appears holding the link, and no error is logged |
 | `a11y.spec.ts` | Focus ring | Tab through every stop until focus returns, at most 120: each has a non-`none` outline or box-shadow and a non-empty bounding box |
 | | Control size | Every `.ol-control button` is at least 24 × 24 |
 | | Reduced motion | `test.use({ reducedMotion: "reduce" })`: the Trails toggle reads "(off: reduced motion)" |
@@ -980,7 +1069,7 @@ Perf (by hand on a native laptop, `npm run perf`, never in CI):
 2. `npm run perf -- starlink` passes both cases on a native arm64 laptop.
    - Attach `trace-1x.json.gz`, `trace-4x.json.gz`, both result JSON files and the machine, browser and GPU line.
    - Reference: 59.9–60.0 / 59.1–59.3 fps and frame p95 3.5 / 14.4–14.9 ms.
-3. `propagation.perf.ts`: Starlink sample p95 ≤ 10 ms. Paste its output beside M3's baseline.
+3. `propagation.perf.ts`: Starlink sample p95 ≤ 10 ms. Paste its output next to M3's baseline.
 4. `commits.perf.ts`: 31–41 commits in 10 s on the dev build. Paste the output.
 5. Lighthouse accessibility ≥ 90 on all 6 runs (3 URLs × 2 presets), plus production on desktop. Attach the JSON and HTML reports.
 6. `?demo=1` runs the whole tour without console errors in two places:
@@ -988,22 +1077,24 @@ Perf (by hand on a native laptop, `npm run perf`, never in CI):
    - in a local `npm run build && npm run preview`, on the computed sky.
    - Attach a screen recording of the production run, ≤ 10 MB or as a link (GitHub's free-plan video limit).
 7. The recorded clip ships (step 14):
-   - the release `clips-2026-10-11` holds both files with the sizes and hashes in `DEPLOY_CLIP_FILES`;
-   - the Pages build log for `main` shows both "sha256 ok" lines;
-   - on production, the step 14e `curl` checks pass, and scrubbing the clip in Chrome lands on the chosen time;
+   - the release `clips-2026-10-11` on `FalconXYX/Overhead` holds both files with the sizes and hashes in `DEPLOY_CLIP_FILES`;
+   - the Deploy run log for the merge commit shows both "sha256 ok" lines and the `subaru-2026-10-11-iss.gp` line;
+   - on production, the step 14e `curl` checks pass (200 and 206 for the MP4);
+   - on production, `https://parthjain.ca/Overhead/?cam=subaru-2026-10-11-iss&sel=sat:25544` stepped to 2026-10-11T15:11:00Z (media 150 s) shows the burned-in clock at 05:11:00 HST and the ISS marker on the ISS, and the Layers panel's element-set line reads "elements fetched 2026-10-11 03:50 UTC" (14f);
+   - M5's `scripts/check-clip-pass.ts --cam subaru-2026-10-11-iss --url https://parthjain.ca/Overhead/` with M5's track, without `--gp`, passes: every sample within 1.0°;
    - paste the step 14a output (size and sha256).
 8. Visual design: the final screenshot set (4 viewports) is attached and approved by Parth in the pull request, and the "Visual design" lines are in DECISIONS.
 9. README: `readme.test.ts` passes. Attach a screenshot of the rendered architecture diagram on GitHub.
-10. Production: the step 14e checklist results and the production URL are in the pull request and the README.
+10. Production: the step 14e checklist results and the production URL `https://parthjain.ca/Overhead/` are in the pull request and the README.
 11. The [definition of done](README.md#definition-of-done) holds.
 
 ## 7. Gotchas
 
-1. **The default headless shell renders WebGL on SwiftShader.** The probe saw "ANGLE (Google, Vulkan 1.3.0 (SwiftShader …))", and the benchmark ran at about 4 fps. `channel: "chromium"`, or `--enable-gpu`, or `--use-angle=metal`, gave "ANGLE Metal Renderer: Apple M2". The perf spec asserts the renderer string. (Measured here; [architecture.md](../verification/architecture.md) claim 14 used Chrome for Testing on Metal.)
+1. **The default headless shell renders WebGL on SwiftShader.** The probe saw "ANGLE (Google, Vulkan 1.3.0 (SwiftShader …))", and the benchmark ran at about 4 fps. `channel: "chromium"`, or `--enable-gpu`, or `--use-angle=metal`, gave "ANGLE Metal Renderer: Apple M2". The perf spec asserts the renderer string. (Measured here; `verification/architecture.md` claim 14 used Chrome for Testing on Metal.)
 2. **CDP CPU throttling slows the main thread only.** Worker `computeMs` was the same at 4× (full loop p50 5.5 → 5.9 ms; culled 1.9 → 2.3 ms). The 4× trace says nothing about the worker on a slow laptop; that needs a real slower machine. (Measured.)
 3. **React's Profiler counts nothing in a production build.** `vite build --mode development` still ships production React (0 commits/s). Only `NODE_ENV=development` gives the development build (4.0/s). ([README section 9](README.md#9-performance-budgets); measured.)
 4. **`new VectorSource({ features: arr, useSpatialIndex: false })` adopts `arr` as its collection's backing array.** `removeFeature` then removes from `arr`. In the prototype, the sky's shadowed Starlink class emptied at 600×, `classes[1]` became `undefined`, and every later frame threw. Pass a copy (`[...classes]`). With the spatial index on, the array is left alone. (Measured with ol 10.11.0.)
-5. **`EcfVelocityCalculator` is not the Earth-fixed velocity.** It matched the GMST-rotated velocity to 3e-15 and differed from `rotated − ω × r` by up to 0.507 km/s. Hermite needs the latter ([architecture.md](../verification/architecture.md) claim 12; M3 gotcha 9). Compute it in JS as in step 3. (Measured.)
+5. **`EcfVelocityCalculator` is not the Earth-fixed velocity.** It matched the GMST-rotated velocity to 3e-15 and differed from `rotated − ω × r` by up to 0.507 km/s. Hermite needs the latter (`verification/architecture.md` claim 12; M3 gotcha 9). Compute it in JS as in step 3. (Measured.)
 6. **BulkPropagator API.**
    - `createWasmModule` does not exist.
    - `run()` is synchronous on the single-thread runtime.
@@ -1011,8 +1102,8 @@ Perf (by hand on a native laptop, `npm run perf`, never in CI):
    - `dispose()` is mandatory.
    - `GeodeticPositionCalculator` swaps lat and lon in 7.1.0.
    - `createMultiThreadRuntime` needs COOP/COEP.
-   - [satellite-js.md](../verification/satellite-js.md) claim 1.
-7. **Worker numbers swing with machine load.** The plain Starlink loop measured p95 5.8–8.5 ms here and 17.8–18.0 ms in M3's runs. That is why culling is always on, not switched by a threshold. ([satellite-js.md](../verification/satellite-js.md) claim 3.)
+   - `verification/satellite-js.md` claim 1.
+7. **Worker numbers swing with machine load.** The plain Starlink loop measured p95 5.8–8.5 ms here and 17.8–18.0 ms in M3's runs. That is why culling is always on, not switched by a threshold. (`verification/satellite-js.md` claim 3.)
 8. **Far Starlinks move by extrapolation between slices.** A non-candidate's row is its last slice row plus velocity × elapsed time.
    - The max error was 0.39 km at 10×, 13.9 km at 60× and 1,332 km at 600×. Holding the row still would give 70.9, 425.6 and 4,155 km.
    - At 600×, far dots on the ground map visibly correct once a second. That is accepted: at that rate a Starlink crosses the map in about 9 s.
@@ -1030,27 +1121,26 @@ Perf (by hand on a native laptop, `npm run perf`, never in CI):
     - The elements stay within two days of their epoch.
     - The anchor is always inside GIBS's 90-day window while `fetch-gp.yml` runs.
     - Visible ISS passes are rare (4 of 37 in 30 days), so the rule prefers the Sun ≤ 0°, not "visible".
-15. **Cloudflare Pages ignores `Range`, and Chromium cannot seek such a video.** Ranged requests to `pages.dev` came back 200 with the whole file. A `<video>` on such a URL had `seekable` `[0, 0]` and stayed at 0 on every seek, even after 60 s. Read the file into a Blob first (step 14d). Playwright's WebKit 2370 coped either way, so test seeking in Chromium. (Measured.)
-16. **The clipboard needs a user gesture and a secure context.** `localhost` and `pages.dev` qualify. Headless Chromium 156 round-tripped `writeText`/`readText` only after `grantPermissions(["clipboard-read", "clipboard-write"])`. Keep the read-only input fallback.
+15. **Chromium cannot seek a video whose server ignores `Range`.** A `<video>` on such a URL had `seekable` `[0, 0]` and stayed at 0 on every seek, even after 60 s. GitHub Pages answers ranges with 206, but Playwright's routes do not (gotcha 20), so read such a file into a Blob first (step 14d). Playwright's WebKit 2370 coped either way, so test seeking in Chromium. (Measured.)
+16. **The clipboard needs a user gesture and a secure context.** `localhost` and `https://parthjain.ca` qualify. `http://parthjain.ca/Overhead/` is served without a redirect and does not: `navigator.clipboard` is undefined there (M0 step 15). Headless Chromium 156 round-tripped `writeText`/`readText` only after `grantPermissions(["clipboard-read", "clipboard-write"])`. Keep the read-only input fallback, and show it at once when the clipboard is missing.
 17. **The address bar's `t` is stale while playing,** by M1's design (writes only when paused). Build shared links from the store (`shareUrl`), never from `location.href`.
 18. **Every 4× trace holds one long task that is not app work.** All three 4× traces taken for this doc (two by the first run, one by the second) held exactly one main-thread task of 129–147 ms, 1.2–2.6 s after tracing started. It is one animation-frame callback, and about 100 ms of it is `V8.InvokeApiInterruptCallbacks`. No 1× trace had it. The in-page `overhead:frame` maximum stayed at 23–26 ms, so the spec's gates do not see it. Treat it as a throttling or tracing artifact. Any other main-thread task over 50 ms is a real failure. (Measured.)
 
-19. **Pages takes at most 25 MiB per file, through Git builds and `wrangler` alike.** The recorded clip is 148,643,811 bytes. A file over the limit fails the deploy, so `fetchDeployClip` checks `PAGES_MAX_FILE_BYTES` before it downloads. (Cloudflare's limits page, last updated 2026-09-05.)
+19. **GitHub Pages states limits for the site, not for a file.** A site may be at most 1 GB, with a soft 100 GB a month of bandwidth and a 10-minute deploy timeout; the limits page names no per-file limit. A full play of the 148.6 MB master would use 6.3 times the bandwidth of the copy, so deploy copies stay under 25 MiB, which `fetchDeployClip` checks (`DEPLOY_CLIP_MAX_BYTES`) before it downloads. (GitHub's "GitHub Pages limits" page, read on 2026-10-11.)
 20. **Playwright's `route.fulfill({ path })` ignores `Range` too.** A routed WebM was requested with `bytes=0-` and answered with 200 and the whole file. Played from its URL, it had `seekable` `[0, 0]`, and a seek to 5 s stayed at 0. Through a Blob it seeked to 5 s. Any e2e test that seeks a routed clip depends on step 14d. (Measured with Chromium 156.)
 21. **A clip from another origin taints the canvas, or fails outright.** Served cross-origin without CORS, the frame drew into a canvas, but `getImageData` and `toDataURL` threw `SecurityError`. With `crossOrigin = "anonymous"` and no `Access-Control-Allow-Origin`, the video failed with MediaError 4 and two console errors. Serving from the app's own origin (step 14) avoids both. (Measured.)
 22. **The deploy copy is reproducible, but its hash is tied to the encoder.** Two runs of step 14a on the same machine gave byte-identical files (sha256 `5c0ac96b…6d100c`). A different ffmpeg or x264 build can change the bytes, so take `bytes` and `sha256` for `DEPLOY_CLIP_FILES` from the file actually uploaded, never from this text.
-23. **Release assets need a public repository, and never a token.** The Pages build downloads them anonymously. A private repository would need a credential in the build, and the Pages project has no secrets (M0), so host the files at another public URL instead.
+23. **Release assets download anonymously because `FalconXYX/Overhead` is public (H1).** `fetchDeployClip` sends no token, and the deploy has no secret (M0 step 15). If the repository ever goes private, the download fails with a 404 and the deploy stops; host the files at another public URL then, never with a token.
+24. **A clip replays with the element sets it ships with.** While a clip camera is active the worker propagates `recordings/<clip>.gp/`, not `data/gp/` (step 14f). The Layers panel's element-set line shows which; a marker that drifts along-track on a clip usually means the clip's `.gp/` directory was not deployed. M5's `check-clip-pass.ts --gp <dir>` routes both `data/gp/` and `recordings/<clip>.gp/` to `<dir>`; without `--gp` it routes nothing, which is how acceptance 7 checks production's own set. (Design rule; the along-track numbers are in step 14f.)
 
 ## 8. Decisions to append to `docs/DECISIONS.md`
 
-`DECISIONS.md` already holds M9's contract lines under "Contract changes from the implementation docs": Starlink always culled and BulkPropagator only if faster, the perf gates and the development-build commit count, and `ui.demo.paused` in the store. Append the rest, and record step 3's BulkPropagator measurement either way.
+`DECISIONS.md` already holds M9's contract lines under "Contract changes from the implementation docs": Starlink always culled and BulkPropagator only if faster, the perf gates and the development-build commit count, and `ui.demo.paused` in the store. Its section "Revisions for O1, O2, O4 and H1" holds the deploy copy of the clip, the Range probe and the clip's own element sets. Append the rest, and record step 3's BulkPropagator measurement either way.
 
 - Starlink ground positions update at 30 Hz, interleaved by index parity, except the selected and hovered objects. The sky skips Starlink rows below −3° geometric in both samples. Reason: the 4× trace went from 55 fps (p95 18.4 ms) to 60 fps (p95 11.8 ms).
 - The tour opens on the recorded clip `subaru-2026-10-11-iss`: step 1 seeks to media 60 s at 1×, and the video keeps the light overlay while the ground map shows the dense layers. It ends on the live `subaru-starcam` with the overlay on the player. A build without the clip runs the same steps on the computed sky. Reason: O1 and O2, while CI and local previews stay deterministic.
 - The live step ends at once on `embed-blocked` or `error`, and after 15 s if the player is still not playing. Reason: the stream can be down or blocked, and the tour must not hang on it.
 - The computed-sky anchor is the best ISS pass in the 48 h before `stations.fetchedAtMs`: ≥ 30°, Sun ≤ 0° preferred, minus 180 s. Reason: deterministic in CI, imagery available, elements fresh.
-- The deployed clip is a two-pass x264 copy at 390 kbit/s, 1920 × 1080, GOP 150 (23,515,809 bytes for the 2026-10-11 clip). It is published as a GitHub release asset and copied into `dist/recordings/` by `npm run build:pages`, which checks size and sha256. Reason: Pages' 25 MiB per-file limit; recordings are never committed (O2); the same origin needs no CORS and keeps the canvas clean.
-- A sidecar-URL clip whose server answers a `Range: bytes=0-1` probe with 200 is read whole into a Blob, and 206 streams from the URL. Reason: Chromium cannot seek a video served without byte ranges (Cloudflare Pages, Playwright's `route.fulfill`).
 - Lighthouse 13.5.0 runs through `npx`, by hand, on 3 URLs × 2 presets plus production. Reason: it is large and needs the network; it is not a test dependency.
 - OpenLayers control buttons are 24 × 24 CSS px. Reason: Lighthouse `target-size`.
 - `build.chunkSizeWarningLimit` is set just above the measured entry chunk. Reason: OpenLayers, React and astronomy-engine are all needed for first paint, and splitting out ajv saves 35 kB gzipped at the cost of import rule 3.
