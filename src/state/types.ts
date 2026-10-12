@@ -172,6 +172,8 @@ export interface UiState {
   panel: "calibration" | "layers" | null;
   demo: { active: boolean; step: number; paused: boolean };
 }
+/** [M9] DEMO_STEPS.length (src/app/demo.ts, lazy-loaded): setDemoStep clamps to [0, DEMO_STEP_COUNT − 1]. */
+export const DEMO_STEP_COUNT = 10;
 
 export interface StateData {
   clock: ClockState;

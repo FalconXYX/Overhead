@@ -2,7 +2,7 @@
 
 Oct 10, 2026 · @Parth
 
-Revised 2026-10-11 after verification ([docs/verification/](docs/verification/README.md)), then again the same day for Parth's decisions O1, O2, O4 and H1 ([docs/DECISIONS.md](docs/DECISIONS.md)).
+Revised 2026-10-11 after verification (`docs/verification/`, kept locally), then again the same day for Parth's decisions O1, O2, O4 and H1 ([docs/DECISIONS.md](docs/DECISIONS.md)).
 
 Working title. A live sky-camera overlay with a linked ground map, built with React, TypeScript, OpenLayers and Zustand. Written to be handed to a coding agent. Where this brief and `docs/DECISIONS.md` disagree, DECISIONS wins. Contracts (store, types, file layout, worker messages, fixtures) and per-milestone build steps are in [docs/implementation/](docs/implementation/README.md).
 
@@ -22,7 +22,7 @@ Two views share one clock:
 - **O1, decided:** the OpenLayers overlay is drawn on top of the YouTube player: light on the video, dense on the ground map (Feature spec).
 - **O2, decided:** replay clips are recorded from the StarCam stream with yt-dlp + ffmpeg and kept in `recordings/` (gitignored); the first is `subaru-2026-10-11-iss`, a sunlit ISS pass across the Subaru StarCam frame.
 - **O4, decided:** Node 26 (26.11.1, arm64).
-- **H1, decided:** hosting on GitHub Pages, deployed from Actions, at `https://parthjain.ca/overhead/` (public repository `FalconXYX/overhead`, Vite `base: "/overhead/"`, every runtime URL through `import.meta.env.BASE_URL`). Production deploys from `main` only; there are no per-branch previews.
+- **H1, decided:** hosting on GitHub Pages, deployed from Actions, at `https://parthjain.ca/Overhead/` (public repository `FalconXYX/Overhead`, Vite `base: "/Overhead/"`, every runtime URL through `import.meta.env.BASE_URL`; GitHub Pages paths are case-sensitive). Production deploys from `main` only; there are no per-branch previews.
 - **O3, open — see docs/DECISIONS.md:** the store shape below. This brief assumes it is approved.
 - Smaller assumptions that also need Parth's yes (`fetch-gp.yml` data commits bypassing the required CI check on a protected `main`, a 33 m mast at the CFHT point, no "sunlit now" filter for incoming alerts, and the 4× CPU performance gates) are listed in `docs/implementation/README.md` §1.
 
@@ -39,7 +39,7 @@ Two views share one clock:
 
 - A 3D globe. This is a 2D OpenLayers project on purpose.
 - Accounts, auth or a database.
-- Committing video to the repository. Recorded clips stay in `recordings/` (gitignored, O2); how one reaches a deployed build is an engineering call in M9.
+- Committing video to the repository. Recorded clips stay in `recordings/` (gitignored, O2). The deployed build gets a 22.4 MiB copy of the 2026-10-11 clip from a GitHub release asset at build time (M9).
 - Survey-grade astrometry. The goal is a convincing, honest overlay.
 
 ## How it maps to the role
@@ -65,7 +65,7 @@ Each requirement in the job description maps to one feature the demo can show in
 
 ## Tech stack
 
-A static Vite app with no backend. Every API named in this brief was re-checked on 2026-10-11 against these exact versions installed from npm, by running code ([docs/verification/](docs/verification/README.md)).
+A static Vite app with no backend. Every API named in this brief was re-checked on 2026-10-11 against these exact versions installed from npm, by running code (`docs/verification/`, kept locally).
 
 | Package                | Version       | Used for                                                                                                                                                                                                                                       |
 | ---------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -410,14 +410,14 @@ type CameraConfig = SyntheticCamera | StillImageCamera | YoutubeCamera | LocalVi
 2. Start from the camera's defaults. Overlay stars to V ≤ 4, the planets and the Moon.
 3. **Manual:** sliders with numeric inputs, plus keyboard nudges, for azimuth, altitude, roll, focal length, k1 and principal point.
 4. **Assisted:** click a star in the image, then its catalog marker (or pick from the 3 nearest), to make a pair; mark at least 3 pairs as held out. Pairs need clicks on the picture, so they work on still images, clips and the synthetic sky. Over a YouTube player, clicks off a hit target go to the player, so align a YouTube camera with the sliders, or start from the fit made on a recorded clip of the same camera. With 4 or more usable pairs, fit azimuth, altitude, roll, f, cx, cy and k1 by Levenberg–Marquardt on pixel residuals (a zenith fisheye fits roll instead of azimuth and altitude, unless "Fit tilt" frees its axis: Nānā ao is tilted about 1.7°), keeping the distortion constraint at every accepted step. Drop pairs beyond 3σ and refit. Show RMS in pixels and degrees and each pair's residual.
-5. **Acceptance:** at least 10 named stars at altitude ≥ 10° (≥ 20° on all-sky cameras), RMS ≤ 0.25°, every star within 0.5°, plus one planet and 3 held-out stars within 0.5°. For scale, f = 2742 px gives 47.9 px per degree at the centre.
+5. **Acceptance:** at least 10 named stars at altitude ≥ 10° (≥ 20° on all-sky cameras), RMS ≤ 0.25°, every star within 0.5°, plus one planet and 3 held-out stars within 0.5°. For scale, the Subaru StarCam's fitted f of 2525.93 px gives 44.1 px per degree at the centre of its 3840 px frame (47.9 at the nominal 2742 px).
 6. **Stream delay:** the Subaru default is 50 s, and the slider covers 0–120 s with ±10 s fine control. The quickest estimate is the burned-in HST clock in the video: delay ≈ now − (clock + 10 h). Confirm it by dragging the delay until a bright satellite or the ISS sits on its moving dot, and re-check whenever the stream restarts. `getMediaReferenceTime()` may suggest a value, but it is undocumented: feature-detect it and keep the slider.
 7. Persist per camera in `localStorage` under `overhead.calibration.v1` (inside `try/catch`), with JSON export and import. The pose part exports as GeoPose.
 
 ### GeoPose export
 
 - Use the OGC GeoPose 1.0 Data Exchange Standard (21-056r11), Basic-YPR form. It is an export-only view: it cannot hold the intrinsics or the stream delay.
-- Schema: `https://schemas.opengis.net/geopose/1.0/schemata/GeoPose.Basic.YPR.Schema.json`, vendored in `src/domain/camera/schemas/` (sha256 `5508d26a…765640`) and never fetched at runtime or in CI. All six keys are required, angles are in degrees and h is in metres above the WGS-84 ellipsoid. The Subaru StarCam's default pose exports as `{"position": {"lat": 19.82552, "lon": -155.47587, "h": 4172.32}, "angles": {"yaw": 8.8, "pitch": -19.6, "roll": 0}}`. Do not use the Euler schema or the GitHub draft that says `location`.
+- Schema: `https://schemas.opengis.net/geopose/1.0/schemata/GeoPose.Basic.YPR.Schema.json`, vendored in `src/domain/camera/schemas/` (sha256 `5508d26a…765640`) and never fetched at runtime or in CI. All six keys are required, angles are in degrees and h is in metres above the WGS-84 ellipsoid. The Subaru StarCam's published pointing (az 81.2°, alt 19.6°, roll 0) exports as `{"position": {"lat": 19.82552, "lon": -155.47587, "h": 4172.32}, "angles": {"yaw": 8.8, "pitch": -19.6, "roll": 0}}`. Do not use the Euler schema or the GitHub draft that says `location`.
 - Validate every export with ajv (the default draft-07 `Ajv`). The schema has no ranges and allows extra properties, so `geopose.ts` also checks finite numbers, lat in [−90, 90] and lon in [−180, 180].
 - Rotation: an intrinsic z-y′-x″ sequence from the local East-North-Up frame. Rotate by yaw about Up, then by pitch about the new y′ axis, then by roll about the new x″ axis: R = Rz(yaw)·Ry(pitch)·Rx(roll), whose columns are the body axes in ENU. OGC's reference `YPRAngles.ToQuaternion` is the test oracle.
 - The standard does not say which camera axis is body x. Convention, documented in `geopose.ts`: x = optical axis, y = image-left, z = image-up. Export yaw = wrap180(90 − azDeg), pitch = −altDeg, roll = wrap180(rollDeg); a zenith fisheye exports (90, −90, roll). Round-trip tests compare rotation matrices or reprojected pixels, never raw angles, which are ambiguous at pitch −90. The official example instances use radians: use them only as schema fixtures.
@@ -515,17 +515,17 @@ Everything is free and needs no API key. CelesTrak is the only source that block
   "imageSize": { "widthPx": 3840, "heightPx": 2160 },
   "lens": "rectilinear",
   "defaults": {
-    "azDeg": 81.2,
-    "altDeg": 19.6,
-    "rollDeg": 0,
-    "focalPx": 2742,
+    "azDeg": 81.2322,
+    "altDeg": 19.6185,
+    "rollDeg": 0.7698,
+    "focalPx": 2525.93,
     "cxPx": 1920,
     "cyPx": 1080,
-    "k1": 0,
+    "k1": -0.00992,
     "k2": 0,
     "flipX": false,
     "streamDelayMs": 50000,
-    "rmsDeg": null,
+    "rmsDeg": 0.0294,
     "updatedAtMs": 0
   },
   "credit": {
@@ -538,8 +538,8 @@ Everything is free and needs no API key. CelesTrak is the only source that block
 }
 ```
 
-- Site and pointing come from arXiv 2508.00245: the camera is 13 m above DEM ground of about 4,135 m (so `heightM` 4148), and its field is centred at az 81.2°, alt 19.6° (Table 2.3). Calibrate on night frames: the field shifts slightly in daytime as the handrail warms.
-- `focalPx` 2742 gives a 70° horizontal view at 3840 px; the vertical view it implies (43°) is close to the published 40°. The lens (24 mm on a 35.6 mm-wide sensor) suggests about 2589 px. Calibration settles it: a star fit on the 2026-10-11 clip (73 stars, rms 0.03°) gave az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px (74.5° wide) and k1 −0.00992, and the clip's sidecar carries it. With the defaults, the ISS marker on that pass is up to 3.0° off.
+- The site comes from arXiv 2508.00245: the camera is 13 m above DEM ground of about 4,135 m (so `heightM` 4148). The paper centres the field at az 81.2°, alt 19.6° (Table 2.3), and a 70° view gives f 2742 px; M1 commits those as provisional defaults. Calibrate on night frames: the field shifts slightly in daytime as the handrail warms.
+- The defaults above are a star fit on the 2026-10-11 clip (73 stars, rms 0.03°): az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px (74.5° wide, against the nominal 70°) and k1 −0.00992. M5 settles them, and the clip's sidecar carries the same fit. With the published values the ISS marker on that pass was up to 3.0° off. The lens (24 mm on a 35.6 mm-wide sensor) suggests about 2589 px.
 - `streamDelayMs` 50,000: the default embed plays 45–57 s behind real time, and 23 s even at the live head.
 - `youtubeVideoId` is the last known ID; the app resolves the current one from `resolverUrl` at runtime.
 
@@ -554,8 +554,8 @@ The background depends on the camera kind:
 - **synthetic:** no image. The computed sky in an equidistant zenith fisheye (M2), the default camera.
 - **still-image:** an `ImageStatic` layer in the pixel projection with extent `[0, 0, W, H]`. `ImageStatic` has no `setUrl` and `refresh()` does not refetch, so every `refreshSec` (60 s minimum) create a new source with a cache-busting query, and start the next only after `imageloadend` or `imageloaderror`. On an error keep the old image; the status becomes offline (404 means the hatch is closed), or daytime while the Sun is up at the site. Set `crossOrigin` only when `corsEnabled`. Overlay time is the image's capture time, never the fetch time. Exposures over 1 s draw satellites as arcs. Pan and zoom are allowed.
 - **youtube (O1):** the YouTube IFrame Player itself, with the transparent sky map drawn on top of it in one sky stage. Overlay time is the player's media clock minus the stream delay.
-  - Pointer pass-through: `pointer-events: none` on the map target element itself (on `.ol-viewport` alone it still blocks the iframe), so the player's controls stay usable. Each drawn object except Starlink (the ISS, visual-group satellites, stars, the Sun, Moon and planets, and the selected object) gets a DOM hit target, a button placed with `ol/Overlay` and `stopEvent: false`, at least 24 × 24 px.
-  - Fullscreen: create the player with `playerVars.fs: 0`, because YouTube's own fullscreen shows the video without the overlay. A Fullscreen button outside the stage calls `stage.requestFullscreen()`, so player and overlay go fullscreen together.
+  - Pointer pass-through: `pointer-events: none` on the map target element itself (on `.ol-viewport` alone it still blocks the iframe) and on the hover card's overlay container, so the player's controls stay usable. Each drawn object except Starlink (the ISS and the other stations and visual satellites, stars, the Sun, Moon and planets, and the selected object) gets a DOM hit target, a button placed with `ol/Overlay` and `stopEvent: false`, at least 24 × 24 px.
+  - Fullscreen: create the player with `playerVars.fs: 0`, because YouTube's own fullscreen shows the video without the overlay. A Fullscreen button outside the stage calls `stage.requestFullscreen()`, so player and overlay go fullscreen together. `fs: 0` removes the player's button but not its `f` key, so a `fullscreenchange` guard exits the player's own fullscreen.
   - Content box: the overlay tracks the video's content box exactly (16:9 on both StarCams), including the letterboxing inside the iframe (for example fullscreen on a 16:10 screen), and refits on every resize: `view.fit([0, 0, W, H], { size })` gives exactly that centred box.
   - States: loading, playing, buffering, paused, ended, error and embed-blocked (errors 101, 150 and 153). Error 150 also comes back for an ended or unknown id, so the app re-resolves the id once before showing the blocked state. Error 153 means no Referer was sent, so never set `Referrer-Policy: no-referrer`. If embedding is blocked, fall back to replay: the recorded clip of this camera, or a local clip.
   - The iframe is cross-origin, so never try to read its pixels.
@@ -573,7 +573,7 @@ Layers, top to bottom (the stacking order; how each looks is settled from screen
 
 **Over video** (youtube and local-video cameras) the sky view draws a light set by default, readable on moving video:
 
-- the ISS and the visual-group satellites in the frame;
+- the ISS and the other satellites of the stations and visual groups in the frame;
 - labels only for the ISS, the selected or hovered object, the Sun, the Moon and the planets;
 - stars to V ≤ 2 as small marks, each named on hover (V ≤ 4 while calibrating);
 - the selected object's halo, its 30 s trail and its next 2-minute path, and no other trails;
@@ -615,7 +615,7 @@ An "incoming" chip appears when a satellite will enter the camera frame within 6
 
 Ten milestones, each shippable and demoable on its own; the first three already make a respectable demo, so build in order and deploy after every one. M7 needs only M1 and may run in parallel. Each milestone has a stage file in `docs/implementation/` with numbered steps and tests; the milestone map in its README (§2) is authoritative.
 
-- [ ] **M0 · Scaffold.** Vite, React, TypeScript 7 strict with four project references, the full store types and initial state, the replay clock loop, Biome, Vitest, Playwright (Chromium, `vite preview` under the `/overhead/` base), Node 26 (`.nvmrc` `26`, `engines.node` `>=26`), CI on every push, the GitHub Pages deploy from Actions (H1).
+- [ ] **M0 · Scaffold.** Vite, React, TypeScript 7 strict with four project references, the full store types and initial state, the replay clock loop, Biome, Vitest, Playwright (Chromium, `vite preview` under the `/Overhead/` base), Node 26 (`.nvmrc` `26`, `engines.node` `>=26`), CI on every push, the GitHub Pages deploy from Actions (H1).
   - `npm run typecheck`, `lint`, `test`, `build` and `e2e` exit 0 in CI, and the smoke e2e loads the app with no console errors. CI never runs `npm run dev`: the dev server never exits.
 - [ ] **M1 · Ground map.** GIBS VIIRS true colour (KVP, from the capabilities snapshot) with the coastline and label overlays, the camera site marker, `cameras.json` with every known camera (only `synthetic-maunakea` enabled), the live clock for synthetic cameras, Timeline, Layers panel, Credits, `?cam=` and `?t=`, the StrictMode-safe map lifecycle.
   - An e2e test asserts that after a date change every true-colour tile request carries the new Time and none carries the old one.
@@ -628,8 +628,8 @@ Ten milestones, each shippable and demoable on its own; the first three already 
   - Clicking the ISS in the sky view, or loading `?sel=sat:25544`, highlights it on the ground map on the next frame and fills the Inspector.
 - [ ] **M4 · Camera model and still images.** All five lens models with the k1/k2 tail and the inverse, proj4 cross-check tests, the calibration panel (manual and assisted fit), the Nānā ao still camera as background, persistence, the camera picker, the site wedge, GeoPose export validated by ajv.
   - On the committed star-pair fixture, the calibration acceptance above holds (RMS ≤ 0.25°, every star ≤ 0.5°, one planet and 3 held-out stars ≤ 0.5°), and the exported GeoPose validates.
-- [ ] **M5 · Live video.** The computed sky drawn on both YouTube StarCams (O1): the player under the sky map with pointer pass-through and `ol/Overlay` hit targets, stage fullscreen with `fs: 0`, the light overlay set and its toggles. Runtime video-ID resolution, the video panel with its states and the embed-blocked fallback to replay, the live clock from the player's media time, the stream-delay control. Clip cameras from a `ClipSidecar` (`subaru-2026-10-11-iss` from `recordings/`, `local-replay` picked at runtime), `scripts/find-passes.ts` and `scripts/record-clip.ts` (O2).
-  - On the recorded 2026-10-11 ISS pass, with the star calibration from the clip's sidecar and the committed snapshot's element sets (`tests/fixtures/gp/`, ISS epoch 2026-10-09T22:48:38Z, 40.3 h before the pass, copied into `public/data/gp/` for the check and not committed), the ISS marker is within 1° of the ISS wherever the ISS is visible on the video: media 78.7–228.0 s, 238.0–241.5 s, 256.0–258.4 s and 260.8–290.43 s (the domes hide it in between). A manual check: click the ISS every 2 s of clip time over those spans, every residual ≤ 1.0°, with a short screen clip in the pull request. With the default pointing the marker is up to 3.0° off.
+- [ ] **M5 · Live video.** The computed sky drawn on both YouTube StarCams (O1): the player under the sky map with pointer pass-through and `ol/Overlay` hit targets, stage fullscreen with `fs: 0`, the light overlay set and its toggles. Runtime video-ID resolution, the video panel with its states and the embed-blocked fallback to replay, the live clock from the player's media time, the stream-delay control. Clip cameras from a `ClipSidecar` (`subaru-2026-10-11-iss` from `recordings/`, `local-replay` picked at runtime), `scripts/find-passes.ts`, `scripts/record-clip.ts` and `scripts/check-clip-pass.ts` (O2).
+  - On the recorded 2026-10-11 ISS pass, with the star calibration from the clip's sidecar and the committed snapshot's element sets (`tests/fixtures/gp/`, ISS epoch 2026-10-09T22:48:38Z, 40.3 h before the pass), the ISS marker is within 1° of the ISS wherever the ISS is visible on the video: media 78.7–228.0 s, 238.0–241.5 s, 256.0–258.4 s and 260.8–290.43 s (the domes hide it in between). A script run by hand checks it: `scripts/check-clip-pass.ts` steps the clip to each of the 94 media seconds of the committed ISS track, reads the drawn marker and compares it with the measured ISS by angle; every sample must be ≤ 1.0° (the prototype gave max 0.54°). Its report and a short screen clip go in the pull request. With the published pointing the marker is up to 3.0° off.
   - The e2e test with the YouTube stub passes, including a click on an empty part of the overlay reaching the player and a click on a hit target selecting its object.
 - [ ] **M6 · Terrain.** Horizon worker, skyline, behind-terrain dimming, visibility against the profile, the sun-lit hillshade, terrain credits, `synthetic-walenstadt`.
   - The wall formula gives 5.672 ± 0.001° and the plateau march 5.67 ± 0.05°; a flat sea from 4,204 m gives −1.94 ± 0.01° at 248 ± 2 km.
@@ -638,12 +638,12 @@ Ten milestones, each shippable and demoable on its own; the first three already 
   - Scrubbing across a 10-minute boundary changes Time exactly once (unit test) and gives exactly 2 distinct Time values in tile requests (e2e).
 - [ ] **M8 · Footprint and alerts.** The orbit-height footprint polygon (spherical model, Earth-hit rejection, horizon clip), its height dropdown and the "incoming" chip.
   - A straight-up ray gives t = H − h and hits the site within 10⁻⁹°; a −3° ray from 4,204 m is rejected.
-  - On the 2026-10-11 clip, with the M5 element sets, the chip shows the ISS before it enters the frame: before media 78.7 s with the clip's fitted calibration, and before its predicted entry at 15:09:54.955Z (media 84.8 s) with the Subaru defaults.
-- [ ] **M9 · Polish and ship.** Demo mode (it opens on the recorded 2026-10-11 ISS clip with the overlay and ends on the live StarCam), a performance pass, an accessibility pass, a README with the architecture diagram, talking points and credits, how (or whether) a recorded clip, and element sets from near its pass, reach the deployed build (recordings are never committed, and the 2026-10-11 clip is 148.6 MB, over git's 100 MB per-file limit; a GitHub Pages site must stay under 1 GB), then a production deploy.
+  - On the 2026-10-11 clip, with the M5 element sets and the clip's fitted calibration, the chip shows the ISS before it enters the frame (it appears at media 78.7 s; the fitted model predicts 79.8 s). A check by hand.
+- [ ] **M9 · Polish and ship.** Demo mode (it opens on the recorded 2026-10-11 ISS clip with the overlay and ends on the live StarCam), a performance pass, an accessibility pass, a README with the architecture diagram, talking points and credits, then a production deploy that carries the clip and the element sets from near its pass: a 22.4 MiB H.264 copy of the 148.6 MB master, published as a GitHub release asset and copied into the Pages build by `npm run build:pages` (recordings are never committed; GitHub Pages serves byte ranges, has a 1 GB site limit and a soft 100 GB a month of bandwidth).
   - Chrome performance traces with Starlink loaded, attached to the pull request: unthrottled ≥ 59 fps with a frame p95 ≤ 6 ms, and at 4× CPU throttling ≥ 55 fps with a frame p95 ≤ 16 ms.
   - Lighthouse accessibility score of 90 or more.
 
-Recorded clips never run in CI: the M5 and M8 clip checks are manual, and e2e uses the generated test-pattern clip.
+Recorded clips never run in CI: the M5 and M8 clip checks are run by hand, and e2e uses the generated test-pattern clip.
 
 Stretch goals, in any order: the tracking-mount simulator; pygeoapi serving `cameras.json` as OGC API – Features; camera frames modelled in the SensorThings API; Meteosat imagery for European cameras (no GIBS geostationary layer covers Walenstadt; EUMETSAT's WMS at `https://view.eumetsat.int/geoserver/wms`, layer `mtg_fd:ir105_hrfi`, does).
 
@@ -663,7 +663,7 @@ All math is pinned by fixtures, CI never calls a third-party service, and app co
 
 ### End-to-end tests (Playwright)
 
-- Chromium only, headless, against `vite preview` under the `/overhead/` base (H1). Every spec uses the shared fixture in `tests/e2e/fixtures.ts`. It mocks GIBS (tiles, DescribeDomains, HEAD probes; the capabilities snapshot is same-origin), Terrarium tiles, the YouTube IFrame API (a stub player), the astroasahi resolver pages, camera images and `data/gp/*.json`. It aborts and fails on any other third-party request, and fails on any console error or uncaught exception.
+- Chromium only, headless, against `vite preview` under the `/Overhead/` base (H1); specs navigate base-relative (`./?t=…`). Every spec uses the shared fixture in `tests/e2e/fixtures.ts`. It mocks GIBS (tiles, DescribeDomains, HEAD probes; the capabilities snapshot is same-origin), Terrarium tiles, the YouTube IFrame API (a stub player), the astroasahi resolver pages, camera images and `data/gp/*.json`. It aborts and fails on any other third-party request, and fails on any console error or uncaught exception.
 - The app loads and both maps render.
 - A date change changes Time in every true-colour tile request (decode `%3A` before matching).
 - Selecting the ISS (click or `?sel=sat:25544`) highlights it in both views and fills the Inspector.
@@ -689,10 +689,10 @@ Moving satellites are one `MultiPoint` per group and style class (`WebGLVector` 
 
 ### Gotchas
 
-- **Overlay on the YouTube player:** `pointer-events: none` goes on the map target element itself; on `.ol-viewport` alone the map still blocks the iframe. The page gets no pointer events over the cross-origin iframe, so pass-through cannot be switched on hover: clickable objects get `ol/Overlay` hit targets with `stopEvent: false`. YouTube's own fullscreen hides the overlay, so set `playerVars.fs: 0` and fullscreen the stage. The player letterboxes inside its iframe, so fit the sky map to the same contain box on every resize.
+- **Overlay on the YouTube player:** `pointer-events: none` goes on the map target element itself; on `.ol-viewport` alone the map still blocks the iframe. The page gets no pointer events over the cross-origin iframe, so pass-through cannot be switched on hover: clickable objects get `ol/Overlay` hit targets with `stopEvent: false`. YouTube's own fullscreen hides the overlay, so set `playerVars.fs: 0`, fullscreen the stage, and exit the player's own fullscreen when its `f` key starts it. The player letterboxes inside its iframe, so fit the sky map to the same contain box on every resize.
 - **YouTube embeds:** live IDs change when a stream restarts. A channel can disable embedding (errors 101 and 150; 150 also means an ended or unknown ID), and a page that sends no Referer gets error 153. Fall back to replay.
 - **Recording clips:** cut the window from the DVR window after the pass, while its start is still inside the window (3,600 s on 2026-10-11). Never record at the live edge and stop with Ctrl-C: on 2026-10-11 that left MPEG-TS under an `.mp4` name, which Chromium cannot play. yt-dlp's `--download-sections` does not help: with `--live-from-start` it aborts, and without it it silently records the live edge instead of the asked window. Remux to MP4 with `-movflags +faststart`, and take media 0 from the burned-in clock.
-- **Element sets on replay:** the app propagates whatever `public/data/gp/` holds, so a recorded clip is only as accurate as the element set's distance from its pass. On the 2026-10-11 pass the ISS ephemeris ran 0.08 s, 0.30 s and 0.88 s behind the clip with element sets from 20 h, 11 h and 40.3 h before, and 2.9 s behind with a NASA ephemeris made on 2026-10-07; day-old Starlink sets were off by −16.3 to +7.8 s along track. Replay a clip with element sets from near its pass: the M5 check uses the committed snapshot, and M9 settles what a deployed tour uses.
+- **Element sets on replay:** a recorded clip is only as accurate as the element sets' distance from its pass. On the 2026-10-11 pass the ISS ephemeris ran 0.08 s, 0.30 s and 0.88 s behind the clip with element sets from 20 h, 11 h and 40.3 h before, and 2.9 s behind with a NASA ephemeris made on 2026-10-07; day-old Starlink sets were off by −16.3 to +7.8 s along track. So each clip keeps the element sets of its day in `recordings/<clip>.gp/` (the committed snapshot for the 2026-10-11 clip): the M5 check routes them in, and from M9 the app and the deploy use them whenever that clip plays, instead of the 6-hourly `public/data/gp/`.
 - **Stream delay:** live overlays are wrong by seconds until the delay is calibrated. YouTube latency grows with every rebuffer and never catches up, so live time follows the player's media clock, not `Date.now()` alone. For still images, use the capture time.
 - **proj4 2.22.0:** `gnom` and `laea` return `NaN` without `+x_0=0 +y_0=0`. Use the spherical source `+proj=longlat +R=1 +no_defs`, and call `forward<[number, number]>(...)` so results are not `number[]`.
 - **OpenLayers pixel space:** y points up, so a pixel (u, v) becomes `[u, H - v]`.
@@ -727,7 +727,7 @@ The demo opens on the recorded 2026-10-11 ISS pass (`subaru-2026-10-11-iss`) wit
 6. **4:00 · OGC.** Export the camera pose as GeoPose and show it passing schema validation.
 7. **4:30 · Architecture.** Two maps, one clock, workers for the math, no React renders per frame. Then switch to the live Subaru StarCam with the overlay on the player, if it is twilight on Maunakea.
 
-`?demo=1` runs this tour automatically with captions, in case the network misbehaves on the day. It runs on the recorded clip wherever `recordings/` is served (dev, or a deploy that carries the clip; M9 settles which), and elsewhere on a picked clip or the computed sky. Keep a screen recording of the full tour as a last-resort backup.
+`?demo=1` runs this tour automatically with captions, in case the network misbehaves on the day. It runs on the recorded clip wherever the clip is served (production, which carries the deploy copy, and `npm run dev`), and on the computed sky elsewhere (`vite preview`, CI). Keep a screen recording of the full tour as a last-resort backup.
 
 ### Working agreement for the coding agent
 

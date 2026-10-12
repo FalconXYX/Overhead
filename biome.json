@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!!**/dist", "!!public/data", "!!tests/fixtures"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!public/data",
+      "!!tests/fixtures",
+      "!!src/domain/camera/schemas"
+    ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "javascript": { "formatter": { "quoteStyle": "double" } },

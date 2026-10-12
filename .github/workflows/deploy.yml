@@ -5,10 +5,10 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # fetch-gp.yml dispatches this after a data push (`gh workflow run deploy.yml --ref main`): pushes made
+  # with GITHUB_TOKEN start no workflow. Never workflow_call: a called workflow builds the caller's commit,
+  # the one before the data push (DECISIONS, Deploy H1).
   workflow_dispatch:
-  # M3's fetch-gp.yml calls this after committing data: pushes made with GITHUB_TOKEN
-  # never trigger other workflows, so new GP data would otherwise never deploy.
-  workflow_call:
 
 permissions:
   contents: read
@@ -31,7 +31,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # [M9] Builds, then downloads the deploy copy of each recorded clip from its release asset (clips-2026-10-11 on
+      # this public repository; no token) into dist/recordings/, checking size and sha256, and copies each clip's
+      # element sets into dist/recordings/<clip>.gp/ (scripts/fetch-deploy-clips.ts). Any mismatch or a missing asset
+      # fails the deploy, and production keeps its last deploy. ci.yml keeps `npm run build` and never downloads clips.
+      - run: npm run build:pages
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

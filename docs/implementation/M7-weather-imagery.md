@@ -1,6 +1,6 @@
 # M7 · Weather imagery
 
-One pull request on branch `m7-weather-imagery`. Contracts: [README.md](README.md). Evidence: [gibs.md](../verification/gibs.md), [openlayers.md](../verification/openlayers.md), [architecture.md](../verification/architecture.md). Everything marked "verified" or "measured" was run on 2026-10-11 between 09:50Z and 10:15Z, against live GIBS and with the pinned packages: ol 10.11.0, zustand 5.0.15, React 19.3.0, TypeScript 7.0.2, Biome 2.5.15, Vitest 5.0.3, Playwright 1.64.0 (headless chromium-1248). Every code block below passed `tsc` (strict, `noUncheckedIndexedAccess`, `moduleResolution: "bundler"`, M0's app options) and `biome ci --error-on-warnings`, and ran in Vitest or in headless Chromium. A review between 10:30Z and 10:45Z re-ran the TypeScript blocks through `tsc` 7.0.2 and Biome 2.5.15 against the installed packages, re-ran the unit fixture values, re-fetched the live URLs and HEAD probes, and repeated the scrub sequence in headless Chromium 156.
+One pull request on branch `m7-weather-imagery`. Contracts: [README.md](README.md). Evidence: `verification/gibs.md`, `verification/openlayers.md`, `verification/architecture.md`. Everything marked "verified" or "measured" was run on 2026-10-11 between 09:50Z and 10:15Z, against live GIBS and with the pinned packages: ol 10.11.0, zustand 5.0.15, React 19.3.0, TypeScript 7.0.2, Biome 2.5.15, Vitest 5.0.3, Playwright 1.64.0 (headless chromium-1248). Every code block below passed `tsc` (strict, `noUncheckedIndexedAccess`, `moduleResolution: "bundler"`, M0's app options) and `biome ci --error-on-warnings`, and ran in Vitest or in headless Chromium. A review between 10:30Z and 10:45Z re-ran the TypeScript blocks through `tsc` 7.0.2 and Biome 2.5.15 against the installed packages, re-ran the unit fixture values, re-fetched the live URLs and HEAD probes, and repeated the scrub sequence in headless Chromium 156.
 
 ## 1. Goal and scope
 
@@ -8,8 +8,8 @@ The ground map gains a semi-transparent GOES-West Band 13 Clean Infrared overlay
 
 Out of scope:
 
-- GOES-East, Himawari and EUMETSAT. GOES-West does not cover Walenstadt: its tiles there are transparent ([gibs.md claim 18](../verification/gibs.md)). There is no "outside coverage" message.
-- Per-tile time fallback (a custom `tileLoadFunction`). It mixes tile sets ([architecture.md claim 32](../verification/architecture.md)).
+- GOES-East, Himawari and EUMETSAT. GOES-West does not cover Walenstadt: its tiles there are transparent (`verification/gibs.md` claim 18). There is no "outside coverage" message.
+- Per-tile time fallback (a custom `tileLoadFunction`). It mixes tile sets (`verification/architecture.md` claim 32).
 - Animating or preloading GOES steps, and retrying a failed step within the session.
 - New URL parameters, new keys or persistence. `layers.goesIr` starts `false` on every load.
 - Visual design: where the caption sits and how ticks, layer and toggle look. It is settled during the build from screenshots. This doc specifies behaviour, content, states, keyboard and accessibility only.
@@ -360,7 +360,7 @@ End-to-end tests (Playwright, the shared fixture, `vite preview`). Record every 
 `tests/e2e/goes-swap.spec.ts`:
 
 1. **"scrubbing across a 10-minute boundary swaps the GOES tile set exactly once"** (the acceptance test). It counts distinct `Time` values among the mocked GOES tile requests, per boundary crossing.
-   1. `goto("/?t=2026-10-10T09:58:00Z")` and wait for quiet. Assert 0 GOES tile, 0 DescribeDomains and 0 HEAD requests.
+   1. `goto("./?t=2026-10-10T09:58:00Z")` and wait for quiet. Assert 0 GOES tile, 0 DescribeDomains and 0 HEAD requests.
    2. Press `L` and check "GOES-West infrared (Band 13, 10 minute)". Expect `goes-asof` to read `Imagery as of 09:50 UTC` and the Credits region to contain `Imagery: GOES-West/ABI, Band 13 Clean Infrared`, then wait for quiet.
    3. Assert:
       - exactly 1 DescribeDomains and 1 HEAD, whose `Time` is `2026-10-11T00:00:00Z`;
@@ -379,11 +379,11 @@ End-to-end tests (Playwright, the shared fixture, `vite preview`). Record every 
 
    Measured with this sequence in a headless-Chromium harness (real OpenLayers 10.11 and React 19, a 768 × 512 map centred on Maunakea at zoom 6, the same routes): 12 tiles at 09:50, 12 new at 10:00 covering all 12, 0 on the way back, 0 on a second forward crossing, at most 1 request per pair, 0 renders in the idle second after each crossing, 1 DescribeDomains, 1 HEAD, 0 console errors. The 240 fills took about 415 ms. The same counts held at zoom 4.
 2. **"a time inside a gap shows the step before it, and the ticks show the gap"**
-   1. `goto("/?t=2026-10-07T19:35:00Z")` and turn the layer on as in test 1.
+   1. `goto("./?t=2026-10-07T19:35:00Z")` and turn the layer on as in test 1.
    2. Expect `Imagery as of 19:20 UTC`. Wait for quiet; at least one GOES request, and every GOES `Time` is `2026-10-07T19:20:00Z`.
    3. `goes-ticks` holds exactly 3 children with `data-from`/`data-to`: `2026-10-07T12:00:00Z`–`2026-10-07T19:20:00Z`, `2026-10-07T19:40:00Z`–`2026-10-07T21:00:00Z`, `2026-10-07T21:20:00Z`–`2026-10-08T07:30:00Z`.
    4. Note the count, then `slider.fill("300")` (19:40:00). Expect `Imagery as of 19:40 UTC`. Wait for quiet; at least one new GOES request, and every new one carries `2026-10-07T19:40:00Z`.
-3. **"before the listed window: the 90-day message and no GOES tiles"**: `goto("/?t=2026-10-06T12:00:00Z")` and turn the layer on. Expect `No GOES-West imagery for this time (NASA GIBS keeps 90 days)`. After quiet, assert 0 GOES tile requests, 1 DescribeDomains and 1 HEAD. The fixture starts 24 h after this time, so the ± 12 h scrubber cannot reach a listed step.
+3. **"before the listed window: the 90-day message and no GOES tiles"**: `goto("./?t=2026-10-06T12:00:00Z")` and turn the layer on. Expect `No GOES-West imagery for this time (NASA GIBS keeps 90 days)`. After quiet, assert 0 GOES tile requests, 1 DescribeDomains and 1 HEAD. The fixture starts 24 h after this time, so the ± 12 h scrubber cannot reach a listed step.
 
 Drive the scrubber with `fill()`: the 240 fills take about 415 ms and set one value per second. M1's scrubber re-renders in its own `onChange` (M1 step 15), so ArrowRight also steps 1 s per press, but `fill()` is faster and does not depend on focus. (In an earlier prototype without that re-render, 240 presses moved the time by only 3 s.)
 
@@ -407,7 +407,7 @@ Drive the scrubber with `fill()`: the 240 fills take about 415 ms and set one va
 Evidence in the pull request:
 
 - The CI log lines with the unit and e2e test names above.
-- A screenshot of `npm run dev` against live GIBS at a Hawaiian night inside the last 90 days (for example `/?t=<date>T08:00:00Z`) with the GOES layer on, showing the caption, the ticks and the credits.
+- A screenshot of `npm run dev` against live GIBS at a Hawaiian night inside the last 90 days (for example `http://localhost:5173/Overhead/?t=<date>T08:00:00Z`) with the GOES layer on, showing the caption, the ticks and the credits.
 - A clip of 20 s or less: scrubbing across a :x0 boundary with DevTools Network filtered by `GOES-West`, showing one burst of new `Time` requests and none on the way back.
 - The Playwright trace of `goes-swap.spec.ts` (`npx playwright test goes-swap --trace on`).
 - The output of the step 1 `curl` and the fixture's `<Domain>` line.
@@ -418,27 +418,27 @@ Evidence in the pull request:
    - KVP: with REST, two thirds of tiles carry no `Time`.
    - `dropLimits`: GIBS's `TileMatrixSetLimits` stop at z5, and OpenLayers keeps only the first range per level, so z6 and everything west of the antimeridian disappear.
    - Measured here: kept limits gave 4 z5 requests at zoom 6; dropped limits gave 12 z6 requests.
-   - ([gibs.md claims 2, 13, 14](../verification/gibs.md), [openlayers.md claims 1, 14](../verification/openlayers.md))
+   - (`verification/gibs.md` claims 2, 13, 14, `verification/openlayers.md` claims 1, 14)
 2. **Never show the layer before a step is chosen.** `optionsFromCapabilities` copies the capabilities `<Default>` into `dimensions`.
    - In the snapshot that is the time it was written. Months later it is outside the 90-day window and returns 404.
    - In a comparison run whose visibility followed the toggle alone, the layer requested 12 tiles at the Default before the domain arrived.
-   - `selectGoesVisible` requires a step. ([gibs.md claim 4](../verification/gibs.md))
+   - `selectGoesVisible` requires a step. (`verification/gibs.md` claim 4)
 3. **OpenLayers never re-requests an errored tile.**
    - The renderer caches tiles by source key. An `ERROR` tile is not enqueued again. When an older key has a loaded tile, OpenLayers draws it and sets `frameState.animate`.
    - Measured with a binding that only reverts to the last good Time (an earlier draft of README Errors rule 6):
      - the caption claimed 10:00 while 09:50 was on screen;
      - returning to 10:00 made 0 requests and rendered 60 frames per second, with no new `tileloaderror`.
-   - Hence: drop the failed step for the session and select through the store. ([openlayers.md claim 6](../verification/openlayers.md); `renderer/canvas/TileLayer.js` `getOrCreateTile`, `enqueueTiles`, `findStaleTile_`)
+   - Hence: drop the failed step for the session and select through the store. (`verification/openlayers.md` claim 6; `renderer/canvas/TileLayer.js` `getOrCreateTile`, `enqueueTiles`, `findStaleTile_`)
 4. **Tiles flap, even for older listed steps.** At 09:53–09:54Z, probes 22 s apart showed:
    - the listed step 09:20 returned 404 at 1 to 2 of z0–z6 over Maunakea, with the failing levels changing between probes;
    - the newer 09:30 returned 200 at all 7.
    - At 10:31Z the newest listed step 10:10 returned 200 on 0/0/0, then 404 on the same tile at 10:32Z, while 6/28/4 stayed 200.
 
-   A HEAD 200 proves little. The tile-error fallback is the real safety net. ([gibs.md claims 5, 9](../verification/gibs.md))
+   A HEAD 200 proves little. The tile-error fallback is the real safety net. (`verification/gibs.md` claims 5, 9)
 5. **DescribeDomains is cached for 30 minutes per URL at GIBS's origin.** It sends `cache-control: public, max-age=1800`.
    - The same URL twice gave `x-cache-detail: "cache hit"` with `age: 12` on the second request.
    - A new window end gave a miss. Flooring the end to the minute makes every 5-minute poll a fresh URL.
-   - `cache: "no-store"` covers the browser cache. ([gibs.md claims 3, 19](../verification/gibs.md))
+   - `cache: "no-store"` covers the browser cache. (`verification/gibs.md` claims 3, 19)
 6. **DescribeDomains format quirks** (all verified):
    - The `/1.0.0/` segment is required; without it the server returns 400.
    - The identifier is lowercase `time`. Never copy it into OpenLayers, whose key is `Time`.
@@ -446,16 +446,16 @@ Evidence in the pull request:
    - Windows are snapped to steps.
    - An empty window returns `<Domain></Domain><Size>0</Size>`.
    - An unbounded query lists purged steps back to 2021, so always send a window.
-   - ([gibs.md claims 4, 17, 19](../verification/gibs.md))
-7. **`Time` strings.** Use `isoUtcSeconds`: `hh:mmZ` without seconds returns 400. A time inside a step snaps down (09:35 returned `layer-time-actual: …09:30:00Z`), but a time in a gap returns 404. Flooring on the client is what stops a refetch every tick. ([gibs.md claim 7](../verification/gibs.md), [architecture.md claim 32](../verification/architecture.md))
-8. **Probe tile 0/0/0, not the site's tile.** Outside the Earth disk, GIBS answers 200 with a 155 B transparent PNG and no `layer-time-actual` header. Measured on Europe tile 4/5/8, which covers Walenstadt (re-checked at 10:33Z for 09:30, 10:00 and 2026-10-10T12:00). A 404 there still means that tile is missing at that time, as for the newest step 10:10 at 10:32Z. ([gibs.md claim 18](../verification/gibs.md))
-9. **Every 404 is a console error in Chromium, tile or HEAD.** Measured: 12 console errors for 12 failed tiles. So e2e mocks never return 404, and the fallback is unit-tested. In production, a HEAD probe that misses also logs one error. ([gibs.md claim 9](../verification/gibs.md))
+   - (`verification/gibs.md` claims 4, 17, 19)
+7. **`Time` strings.** Use `isoUtcSeconds`: `hh:mmZ` without seconds returns 400. A time inside a step snaps down (09:35 returned `layer-time-actual: …09:30:00Z`), but a time in a gap returns 404. Flooring on the client is what stops a refetch every tick. (`verification/gibs.md` claim 7, `verification/architecture.md` claim 32)
+8. **Probe tile 0/0/0, not the site's tile.** Outside the Earth disk, GIBS answers 200 with a 155 B transparent PNG and no `layer-time-actual` header. Measured on Europe tile 4/5/8, which covers Walenstadt (re-checked at 10:33Z for 09:30, 10:00 and 2026-10-10T12:00). A 404 there still means that tile is missing at that time, as for the newest step 10:10 at 10:32Z. (`verification/gibs.md` claim 18)
+9. **Every 404 is a console error in Chromium, tile or HEAD.** Measured: 12 console errors for 12 failed tiles. So e2e mocks never return 404, and the fallback is unit-tested. In production, a HEAD probe that misses also logs one error. (`verification/gibs.md` claim 9)
 10. **Playwright-fulfilled `fetch` responses still apply `Access-Control-Expose-Headers`.** Measured (and re-verified in Chromium 156 with `context.route`): without that header, `headers.get("layer-time-actual")` returned `null`, while a missing `Access-Control-Allow-Origin` went unnoticed. The HEAD `fetch` with `cache: "no-store"` sends no preflight, so the route sees only `HEAD`. GIBS sends both headers on tiles and HEADs (verified with an `Origin` header).
 11. **90 days.** Retention is about 91 days.
     - Clip relative to the newest listed step, so CI keeps passing long after the fixture date.
     - A `?t=` older than the window shows the 90-day text and requests nothing.
-    - A demo clip older than 90 days shows no clouds. ([gibs.md claims 12, 17](../verification/gibs.md))
-12. **Live lag.** The newest listed step was 22 min old at 09:52Z (09:30), 27 min old at 10:07Z (09:40) and 21 min old at 10:31Z (10:10). The gibs record saw the DescribeDomains end up to about 47 min behind (the capabilities document up to 61 min). Add up to 5 min of poll interval. The caption shows the imagery time; never claim the clouds are "now". ([gibs.md claims 5, 12](../verification/gibs.md))
+    - A demo clip older than 90 days shows no clouds. (`verification/gibs.md` claims 12, 17)
+12. **Live lag.** The newest listed step was 22 min old at 09:52Z (09:30), 27 min old at 10:07Z (09:40) and 21 min old at 10:31Z (10:10). The gibs record saw the DescribeDomains end up to about 47 min behind (the capabilities document up to 61 min). Add up to 5 min of poll interval. The caption shows the imagery time; never claim the clouds are "now". (`verification/gibs.md` claims 5, 12)
 13. **One `fetch` wrapper.** A bare `fetch` stored on an object throws "Illegal invocation" in Chromium. Unit tests inject `fetchFn`, because `tests/unit/setup.ts` replaces the global `fetch` with a throwing stub.
 
 ## 8. Decisions to append to `docs/DECISIONS.md`

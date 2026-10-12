@@ -1,12 +1,12 @@
 # Decisions
 
-Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the verification run in [`docs/verification/`](verification/README.md). Where this file and `overview.md` disagree, this file wins until the brief is updated.
+Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the verification run in `docs/verification/` (kept locally). Where this file and `overview.md` disagree, this file wins until the brief is updated.
 
 ## Decided by Parth (2026-10-11)
 
 | # | Decision | Notes |
 | - | -------- | ----- |
-| O1 | **The OpenLayers overlay is drawn on top of the YouTube player.** Drawing over the video is the point of the project. The video overlay is deliberately light: a curated subset of objects and labels, readable on moving video. The dense data (Starlink, tracks, footprint, imagery, terrain) lives on the ground map. | Parth's call, made knowingly: YouTube's Required Minimum Functionality ("Overlays and frames") is not followed. Engineering consequences still apply. Player controls must stay usable, so the map target gets `pointer-events: none` and only DOM hit targets (`ol/Overlay`, `stopEvent: false`) take clicks. A channel can block embedding, so fall back to replay. |
+| O1 | **The OpenLayers overlay is drawn on top of the YouTube player.** Drawing over the video is the point of the project. The video overlay is deliberately light: a curated subset of objects and labels, readable on moving video. The dense data (Starlink, tracks, footprint, imagery, terrain) lives on the ground map. | Parth's call. Engineering consequences still apply. Player controls must stay usable, so the map target gets `pointer-events: none` and only DOM hit targets (`ol/Overlay`, `stopEvent: false`) take clicks. A channel can block embedding, so fall back to replay. |
 | O2 | **The replay clip is recorded from the StarCam stream** with yt-dlp + ffmpeg, from the live edge or the DVR window, and kept locally in `recordings/` (gitignored). The first clip was recorded on 2026-10-11: a sunlit ISS pass crossing the Subaru StarCam frame from about 15:10 to 15:15 UTC. | Parth's call; download terms are not a blocker. Keep the on-screen credit "NAOJ & Asahi Shimbun". How the clip ships with a deploy (size limits per host) is an engineering question settled in M5/M9. |
 | H1 | **Hosting: GitHub Pages, deployed from Actions, at `https://parthjain.ca/Overhead/`** (public repo `FalconXYX/Overhead`). Vite `base: "/Overhead/"` (GitHub Pages paths are case-sensitive and follow the repo name); every runtime URL goes through `import.meta.env.BASE_URL`; e2e serves `vite preview` under the same base. Production deploys from `main` only; there are no per-branch previews. | It matches Parth's other projects: `parthjain.ca` is his GitHub Pages user site (`FalconXYX.github.io`, CNAME `parthjain.ca`), so a project repo with Pages enabled appears at `parthjain.ca/<repo>`. Cloudflare Pages custom domains are whole hostnames and cannot serve a path under a domain hosted elsewhere. This replaces the Cloudflare Pages plan in M0 step 15. GitHub limits: git rejects files over 100 MB, a published site must stay under 1 GB, and bandwidth is soft-capped at 100 GB a month. |
 | O4 | **Latest Node: 26.x (26.11.1, arm64).** Pin `.nvmrc` to `26`, set `engines.node` to `>=26`, use Node 26 in CI, and use `@types/node` 26. Node 26 becomes LTS on 2026-10-28. | Every pinned package accepts it: vitest `>=26.0.0`, vite and rolldown `>=22.12.0`. The machine was cleaned on 2026-10-11 down to a single Node 26.11.1 arm64; every Rosetta (x86_64) install was removed. |
@@ -137,7 +137,7 @@ Every non-obvious choice, with a one-line reason. Seeded on 2026-10-11 from the 
 ## Process
 
 - The visual design (layout, colours, panel placement) is not fixed by the brief. It is settled during the build from screenshots. Reason: Parth asked that the brief's description of the look not be treated as ground truth.
-- Performance claims are benchmarked in headless Chromium (Playwright), not Node. Reason: Node under Rosetta ran propagation about 3× slower than Chrome.
+- Performance claims are benchmarked in headless Chromium (Playwright), not Node. Reason: the app propagates in a browser worker, and Node timings do not transfer (one `collectIncoming` call with Starlink took 14.4–16.5 ms in Node 26.11.1 arm64, against 9.6 ms p95 in a Chromium worker; M8).
 
 ## Contract changes from the implementation docs
 
@@ -145,8 +145,8 @@ Appended on 2026-10-11 by the cross-document consistency pass over `implementati
 
 ### Store and process
 
-- The O3 store shape includes `recenter(timeMs)` (M1), `cancelImagePoint()` (M4), `data.goes.status` with `setGoesStatus` (M7) and `ui.demo.paused` with `setDemoPaused` (M9): 44 actions in all. Reason: `?t=` can lie beyond ± 12 h of now, Esc must cancel a pending calibration point, the DescribeDomains poll needs a load status (README Errors rule 5), and the tour needs a pause.
-- `createActions` returns all 44 actions from M0; an action whose milestone has not landed throws `Error("actions.<name> lands in M<n>")`. Reason: the `Actions` type is complete from M0 (O3), and a silent no-op would hide wiring mistakes.
+- The O3 store shape includes `recenter(timeMs)` (M1), `cancelImagePoint()` (M4), `data.goes.status` with `setGoesStatus` (M7) and `ui.demo.paused` with `setDemoPaused` (M9), plus `setVideoLayer` (M5) for O1: 45 actions in all. Reason: `?t=` can lie beyond ± 12 h of now, Esc must cancel a pending calibration point, the DescribeDomains poll needs a load status (README Errors rule 5), and the tour needs a pause.
+- `createActions` returns all 45 actions from M0; an action whose milestone has not landed throws `Error("actions.<name> lands in M<n>")`. Reason: the `Actions` type is complete from M0 (O3), and a silent no-op would hide wiring mistakes.
 - `cameras.json` holds every known camera from M1; only `ENABLED_CAMERA_IDS` reach the store, and the milestone that enables an entry settles and edits it in place. Reason: the corrected Subaru facts are validated from M1, while earlier milestones still see one camera.
 
 ### Tooling and hosting
@@ -155,7 +155,7 @@ Appended on 2026-10-11 by the cross-document consistency pass over `implementati
 - Biome adds `noNonNullAssertion` and `noConsole` (allowing `error` and `warn`; off in `scripts/` and `tests/`) as errors, and excludes `public/data` and `tests/fixtures`. Reason: `!` defeats `noUncheckedIndexedAccess`, stray logs reach production, and generated JSON is not Biome-formatted.
 - `package.json` `allowScripts` denies the esbuild and fsevents install scripts. Reason: npm 11.19 skips unlisted install scripts with a warning, and both packages work without theirs.
 - CI runs lint, typecheck, unit tests and the build, then installs Chromium 1248 and runs e2e, and uploads the Playwright report and traces. No `postinstall` downloads browsers. Reason: lint and type errors fail before the browser download, and Pages installs dependencies on every build.
-- Hosting is Cloudflare Pages through its Git integration (build `npm run build`, output `dist`, Node from `.nvmrc`, no variables), with `main` protected by the CI `check` job. Confirm: it needs a Cloudflare account, and branch protection needs a public repository on GitHub Free. Fallback: GitHub Pages from Actions (no per-branch previews, `base: "/<repo>/"`). Reason: per-branch preview URLs without secrets, root-path serving, a Referer sent and no COOP/COEP.
+- Hosting is GitHub Pages from Actions (H1): `deploy.yml` builds `main` with `npm ci` and `npm run build` (Node from `.nvmrc`, no secrets or variables) and publishes `dist/` at `https://parthjain.ca/Overhead/`, with `main` protected by the CI `check` job (the repository is public). This replaces the earlier Cloudflare Pages line. Reason: H1. Pages sends no COOP/COEP and no `referrer-policy`, so the YouTube embed gets its Referer, and it answers byte ranges (M0 step 15).
 - `fetch-gp.yml` pushes its data commits straight to the protected `main`: a repository ruleset requires the CI `check` job and lets that workflow's push bypass it, proven on the first manual run (M3). Confirm; the alternatives are a pull-request-based data update or no required check. Reason: pushes made with `GITHUB_TOKEN` never start other workflows, so a data commit never gets the `check` run a required check waits for.
 
 ### Imagery, rendering and the clock
@@ -205,3 +205,362 @@ Appended on 2026-10-11 by M0 (`implementation/M0-scaffold.md` section 8). M0's c
 ### Process
 
 - `ErrorBoundary` does not log in `componentDidCatch`. Reason: React 19.3 already logs each caught error once with `console.error`.
+
+## M1 · Ground map
+
+Appended on 2026-10-11 by M1 (`implementation/M1-ground-map.md` section 8). M1's contract lines (the 13:30 true-colour pass, never reselecting a failed `Time`, `renderSyncAll()` only when sim time changed, `registerMap` as the one map cleanup, `cameras.json` with `ENABLED_CAMERA_IDS`) are already under "Contract changes from the implementation docs".
+
+### GIBS imagery
+
+- True colour uses NOAA-20 only. NOAA-21 stays in the snapshot as the manual alternate; `TRUE_COLOR_LAYER` and `TRUE_COLOR_INSTRUMENT` change together. Reason: both were complete over Hawaii for 20 days; one layer keeps the e2e simple.
+- The snapshot is the `LAYER`-filtered KVP capabilities, trimmed by regex to 5 layers and Level6/Level9. The script falls back to trimming the full document, refuses to write a snapshot that fails its checks, and the app never reads its Time values. Reason: 28.6 KB instead of 5.84 MB; Time values in a committed file are stale.
+- GIBS sources set `crossOrigin: "anonymous"`. Reason: GIBS sends `access-control-allow-origin: *`; pixel reads stay possible.
+- The Layers label keeps the requested true-colour date after a tile-error revert. Reason: showing the displayed date needs new state.
+
+### Ground map
+
+- The ground view starts at zoom 6 (min 2, max 12), centred on the site, and recentres on a camera change. Reason: Level9 overzooms acceptably to 12.
+- The OpenLayers attribution control is off; the always-rendered Credits region is the only credit display; `ol/ol.css` is imported. Reason: one place that is always visible; working controls.
+- `geoidSepM` is EGM96 from PROJ: 24.23 m at the CFHT point, 24.32 m Subaru, 47.08 m Walenstadt. `synthetic-walenstadt` uses `Europe/Zurich`. Reason: same method everywhere; Zurich and Vaduz agreed at every half hour from 2020 to 2030.
+
+### Live clock
+
+- Live mode on a synthetic camera recentres the scrubber with `jumpToNow()` once now leaves ± 12 h. Reason: long live sessions.
+- The app starts live when the URL has no `t`. Reason: the default camera is synthetic, whose live time is `Date.now()`.
+- The scrubber is a controlled range input, so `Timeline` re-renders in its own `onChange`. Reason: with only the 4 Hz re-render, React resets the thumb and keyboard steps on the slider are lost.
+- "Frames where the sim time changed" compares the frame's sim time with the one the maps last rendered, not with the value at the start of the frame. Reason: a seek or step while paused then gets exactly one `renderSyncAll()` on the next frame, and a paused, untouched map still gets none.
+
+### URL and keyboard
+
+- `?t=` must end in `Z`; the URL carries raw colons and `t` only in replay; writes are debounced 250 ms and wrapped in `try/catch`. Reason: zone-less dates parse as local time; readable links; the WebKit limit.
+- The key handler also skips `defaultPrevented` events, Alt/Ctrl/Meta chords and Space on buttons. The ground map container is focusable (`role="application"`, Biome suppression). Reason: OpenLayers keyboard pan and zoom; Cmd+[ is Back; Space must press the focused button.
+
+### Testing
+
+- e2e route mocks live in an auto fixture `routes` that depends on `guard`. Reason: M0's guard stays unedited, and the dependency orders the routes after the catch-all.
+- e2e tile stubs are a real NOAA-20 tile and an empty Reference_Labels tile, chosen by `Format`. Reason: real decodable images, no OSM data committed.
+
+## Revisions for O1, O2, O4 and H1
+
+Appended on 2026-10-11 by the final consistency pass over `overview.md` and `implementation/`, after Parth decided O1, O2, O4 and H1. Each line is a contract in [`implementation/README.md`](implementation/README.md) or a stage file that the revisions settled. The stage files' section 8 lists no longer repeat these lines.
+
+### Video overlay (O1)
+
+- The overlay on a video draws a light set by default: the `satellites` layer's two groups (stations and visual, the ISS emphasised); labels only for the ISS, the selected or hovered object, the Sun, the Moon and the planets; stars to V ≤ 2 (`VIDEO_STAR_MAG_LIMIT`; V ≤ 4 while calibrating) as small marks named on hover; trails only for the selected object; the terrain skyline as a thin line. `layers.video` (`starlink`, `grid`, `denseLabels`) starts all false and gates only the sky view. Reason: O1 keeps the video readable (V ≤ 2 leaves 1–8 stars in the Subaru frame, V ≤ 3 leaves 7–22), while the ground map, the worker and the Inspector keep every object.
+- Over a YouTube player the map target and the HoverCard overlay's container get `pointer-events: none`, and picking moves to `ol/Overlay` button hit targets (`stopEvent: false`, at least 24 × 24 CSS px). Reason: the player's controls stay usable, and OpenLayers sets `pointer-events: auto` on every overlay container.
+- The player is created with `fs: 0`; a Fullscreen button puts the stage (player plus overlay) in fullscreen, and a `fullscreenchange` guard exits the player's own fullscreen. Reason: YouTube's fullscreen hides the overlay, and `fs: 0` leaves the `f` key working (measured); `disablekb: 1` would also remove the player's other keys.
+- The player follows the stage with `setSize`, and the map with `fitSkyFrame`; both contain the 16:9 frame. Reason: the real player letterboxed into the same centred box as `view.fit` (rows 45–854 of a 1440 × 900 stage).
+
+### Cameras and clips (O2)
+
+- `subaru-starcam` defaults are the 2026-10-11 star fit: az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992, `rmsDeg` 0.0294. M1's published-centre values stay provisional until M5, and fixtures that name "the Subaru defaults" keep az 81.2°, alt 19.6°, roll 0, f 2742 inline. Reason: with the published centre and f 2742 the ISS marker was up to 3.0° off on the clip (a scale error no time shift removes), and existing fixture numbers must not move.
+- Both StarCams' `termsNote` is "Non-commercial use only". M5 sets it in place over M1's provisional string, and a clip camera shows its source camera's note. Reason: `readme.test.ts` compares exact strings, and the note is true of a recording too.
+- A clip is `recordings/<clip>.mp4` plus `recordings/<clip>.json`, a `ClipSidecar` (README section 6). The contract fields are required; other keys (provenance) are allowed and ignored; `calibration` is in the source camera's W × H pixels; `startUtcMs` comes from the burned-in clock when the camera shows one, else from the first segment's PROGRAM-DATE-TIME, with `startUncertaintyS` covering the cross-checks. Reason: the clip plays as its source camera, the camera clock is the capture time (PROGRAM-DATE-TIME was 0.144 s earlier on 2026-10-11), and provenance must not break parsing.
+- `record-clip.ts` cuts a clip from the HLS DVR playlist by segment (PROGRAM-DATE-TIME), keeps the concatenation as `<clip>-dvr.ts`, remuxes with `-map 0:v -c copy -movflags +faststart`, and copies `public/data/gp/` (all three groups and `meta.json`) into `<clip>.gp/`. Reason: yt-dlp's section download cannot cut a live DVR window, Chromium cannot play MPEG-TS, and a clip must replay with the elements of its day.
+- `find-passes.ts` runs `frameSpans` over each pass's [riseMs − 60 s, setMs + 60 s]. Reason: `findPasses` works in geometric altitude and `frameSpans` in apparent altitude; refraction kept the ISS up 10 s after its geometric set on 2026-10-11, which the bare window cut off.
+- The M5 acceptance is `check-clip-pass.ts`, run by hand against `npm run dev`: the drawn marker at the 94 media seconds of the committed ISS track, compared by angle through the sidecar's star fit, every sample ≤ 1.0°. `--gp <dir>` routes both `data/gp/` and `recordings/<clip>.gp/` to `<dir>`; without it nothing is routed. Reason: it is repeatable and covers the whole visible pass, an angle is right across the gnomonic frame where a pixel threshold is not, and M9 runs the same tool against production's own element sets.
+- `satelliteCheckSummary` takes `hiddenMs`, the stretches where the object is known to be hidden (from the sidecar's `pass.visibleMediaS`); only the uncovered part of a gap counts against the 2,500 ms rule. Reason: the domes hide the ISS for 10.0 s and 14.5 s on the 2026-10-11 clip, so the plain rule always failed there.
+- `bindHorizonWorker` recomputes a camera's profile when the active camera keeps its id but its site changes (`latDeg`, `lonDeg` or `mastM`). Reason: `local-replay` takes the site of whichever clip loads, and its cached profile would belong to the previous site.
+
+### Deploy (H1)
+
+- The deployed 2026-10-11 clip is a two-pass x264 copy (390 kbit/s, 1920 × 1080, 23,515,809 bytes) published as an asset of the release `clips-2026-10-11` on `FalconXYX/Overhead`, and copied into `dist/recordings/` by `npm run build:pages` in `deploy.yml`, which checks size and sha256; its element sets go to `dist/recordings/<clip>.gp/`. Reason: recordings never enter git (O2); a sixth of the 148.6 MB master's bandwidth per play against GitHub Pages' soft 100 GB a month; the app's own origin keeps the canvas readable without CORS.
+- A sidecar-URL clip whose server answers a `Range: bytes=0-1` probe with 200 is read into a Blob; 206 streams from the URL. Reason: Chromium cannot seek a video served without ranges (Playwright's `route.fulfill`), and GitHub Pages answers 206.
+- From M9 a clip replays with its own element sets: the worker loads `recordings/<clip>.gp/` while that clip camera is active and the directory exists, and restarts when the source changes. Reason: `public/data/gp/` moves every 6 h; on this pass the ISS ran 0.08–0.88 s behind with sets 20–40 h old, and 2.9 s (about 1.5°) with a 3.7-day-old ephemeris; the worker's catalogue only appends.
+- e2e runs under the H1 base: `baseURL` `http://localhost:4173/Overhead/`, and specs navigate base-relative (`./`, `./?t=…`), never `/…`. Reason: Playwright resolves `goto("/…")` against the origin, and under `base: "/Overhead/"` only `/` and `/?…` reach the app (through a 302).
+- `deploy.yml` runs on `push` to `main` and `workflow_dispatch`, never `workflow_call`; `fetch-gp.yml` dispatches it after a data push (`gh workflow run deploy.yml --ref main`, `actions: write`). Reason: pushes made with `GITHUB_TOKEN` start no workflow, and a called workflow builds the caller's commit, which is the one before the data push.
+
+## M1 · Review fixes
+
+Appended on 2026-10-11 by the M1 review pass. These lines belong under "M1 · Ground map" above. They sit here because this file is append-only while other edits are in flight.
+
+### GIBS imagery
+
+- `Reference_Labels` is requested over REST, across both of its snapshot templates; every time-enabled layer stays on KVP. `gibsWmtsOptions` gains a fifth parameter, `encoding: "KVP" | "REST" = "KVP"`, after `dropLimits`. `OVERLAY_ENCODING` in `gibs.ts` picks the encoding per overlay (`Coastlines` stays KVP). A REST call throws when the layer has no tile template or has a Time dimension. Reason: GIBS answers every KVP `GetTile` for `Reference_Labels` with the same 155 B transparent tile, without `layer-identifier-*` headers, so no place label ever drew. REST serves the labels: "Maui" is in tile 6/28/4 (1,729 B, CORS `*`). The REST templates drop only `{Time}`, which this layer does not have. This corrects M1 step 2 ("the Reference_Labels tile over Hawaii at z5 is empty") and step 10 (KVP for every GIBS source).
+- `tests/fixtures/gibs/tile.png` stays. It is GIBS's generic transparent KVP answer (sha256 `1cd99521…`), not a real empty label tile. The e2e `routes` fixture also serves it for `…/best/Reference_Labels/default[/default]/GoogleMapsCompatible_Level9/{z}/{row}/{col}.png`. This corrects the M1 Testing line "an empty Reference_Labels tile".
+- `selectTrueColorDate` takes the date from `min(clock.simTimeMs, Date.now())`. The map binding, the Layers label and the Credits imagery line all read this selector. Reason: when the sim time is ahead of the real clock (the scrubber's right end, or playing at 600×), the 4 h rule picks a pass that has not happened yet. GIBS serves that date as 200 black tiles with no `layer-time-actual` header, so the tile-error revert never fires. The selector reads the real clock only when the state changes, which is every frame in live or while playing. A paused sim time ahead of now therefore keeps an older date, which has imagery, until the next change. This corrects M1 section 1 ("the 4 h rule in step 3 avoids black tiles") and the README selector block.
+- After a tile-error revert, the Credits line "Imagery: NOAA-20 / VIIRS, <date>" also shows the requested date. Reason: the same as for the Layers label: showing the displayed date needs new state.
+
+### Timeline and keyboard
+
+- The "Simulation time" slider handles its keys in its own `onKeyDown`, from the store's clock, and calls `preventDefault()`:
+  - ArrowLeft/Right/Up/Down step ± 1 s.
+  - PageUp/PageDown step ± 8,640 s (Chromium's native step, a tenth of the range).
+  - Home/End seek to ± 12 h from `rangeCenterMs`.
+  - `onChange` (pointer drags and set values) stays an absolute `seek`.
+
+  Reason: the native steps start from the thumb's DOM value. That value lags the clock by up to one 4 Hz render and drops the sub-second part of the offset, so one ArrowRight could add 0–2 s, or move the clock back by up to 150 s at 600×. Acceptance criterion 6 requires exactly 1 s.
+- `handleKeyDown` also returns false when the target is inside a focused keyboard-pannable map, matched with `closest('[role="application"]')` (`MAP_SELECTOR` in `keyboard.ts`). This adds a fifth rule to README Keyboard. Reason: OpenLayers `KeyboardPan` prevents only unmodified arrows, so Shift+arrows, Space, `[`, `]` and `L` reached the window handler from the focused map. Criterion 6 says the keys do nothing on the focused map. README Accessibility rule 5 gives `role="application"` to every map that takes keyboard pan and zoom.
+- `[` at 1× and `]` at 600× do nothing: no `setRate` call with the unchanged rate. Reason: `setRate` switches to replay, so `[` in Live silently left Live.
+- A `?t=` value must also read back as written: `toISOString()` must start with `t` minus its `Z`. Reason: `Date.parse` rolls day overflow forward (`2026-02-30` becomes `2026-03-02`, and `T24:00` becomes the next day). A bad link is rejected, never guessed.
+
+### Files and tests
+
+- `tests/helpers/random.ts` exports `mulberry32(seed)`, and every seeded test (seed 20261011) imports it. Reason: one generator for M1, M2 and M4. README section 3 should list `random.ts [M1] mulberry32(seed)` under `tests/helpers/`, and section 6 should add it to the exports table.
+- `src/ui/gibsStatus.ts` [M1] exports `gibsStatusText(gibs)`, which `GroundView` and `LayerToggles` share. Reason: a component file that also exports a plain function is not a React Fast Refresh boundary. README section 3 should list the file under `src/ui/`.
+- `tests/unit/gibs.test.ts` checks `gibsWmtsOptions` and `createOverlayLayers` against a hand-built parse of the committed snapshot. Reason: Vitest's Node environment has no `DOMParser`.
+- After M1, 28 placeholder actions remain (45 actions in all). M1 step 4.4 and the section 5 `store.test.ts` row still say 27 and 44.
+
+## M2 · Synthetic sky
+
+Appended on 2026-10-11 by M2 (`implementation/M2-synthetic-sky.md` section 8, then the integration pass). The continuous pixel convention is already under "Contract changes from the implementation docs". These lines belong under the Time and astronomy, Rendering, Camera model and Data sources headings above. They sit here because this file is append-only while other edits are in flight.
+
+### Time and astronomy
+
+- The twilight reference is Skyfield 1.55 + DE421 (to the second). USNO's API (to the minute) is a cross-check only. Reason: USNO rounding would use half of the ± 60 s tolerance.
+- The Horizons fixture is one JSON file keyed by `BODY_IDS`, with rows `[isoUtc, azDeg, elDeg]`, 73 per body, and the test needs at least 30 above-horizon rows per body. `fetch-horizons-fixture.ts` also fails when a body returns anything other than 73 rows or the API answer has an `error` key. Reason: an empty or truncated table must not pass vacuously.
+- `formatUtcHhMm` truncates to the minute (as M7 also specifies), and the marker's local time is `formatZonedDateTime(...).slice(11, 16)`, which truncates too. Reason: the UTC and local labels on a marker must agree.
+- `twilightMarkersMs` restarts each search 1 h after a hit. Reason: same-direction crossings are about 24 h apart, and a restart at the hit itself can find it again.
+- `skyCache.bodies` starts as NaN. Reason: zeros would read as eight bodies on the horizon at az 0 before the first pass.
+- Sky passes are measured as `overhead:sky` and cleared at once; tests count them with a `PerformanceObserver`. Reason: user-timing entries would otherwise accumulate at 60 per second.
+
+### Star catalogue
+
+- `stars.json` rows are sorted by `vmag`, then HR. Reason: a magnitude limit is then a prefix, and `rotateStarsAzAltDeg`'s `count` skips the rest (904 of 8,404 at the default limit).
+- Star names come from the IAU-CSN ASCII column, then the Bayer designation (Greek letter, index digit, constellation), then Flamsteed, else `""` shown as "HR n". Reason: BSC5 has no proper names, and ASCII avoids encoding issues (only 15 rows differ, none with an HR number).
+- The star magnitude limit runs from 1 to 6.5 in steps of 0.5. `setStarMagLimit` clamps and ignores non-finite values, and returns the same state when the clamped value is unchanged. Reason: 6.5 is the catalogue's cut, and subscribers must not fire for a no-op (as `setLayer`).
+- `build-stars.ts` warns and still writes when an input's size or sha256 differs from the recorded values. It throws on a duplicate HR in either input, an unknown Bayer abbreviation, a malformed field or a misaligned IAU-CSN row. Its summary line adds the Bayer and Flamsteed counts and both sha256s after the expected text, and an optional `--out <path>` sets the output. Reason: a new upstream file should be inspected rather than block the run, while a parse error must never produce a quietly wrong catalogue.
+
+### Sky view
+
+- Stars are drawn as one `MultiPoint` with a custom `Style.renderer` reading per-star visibility and radius from typed arrays. Reason: magnitude bins cost 5–8 ms per render at 8,404 stars, against 0.7–0.9 ms.
+- The synthetic sky view has no interactions or controls and refits on resize. Its `View` sets `maxResolution` to max(W, H). Reason: the frame must match the camera image (M4 calibration, and from M5 the video under the map, O1), and OpenLayers' default cap of max(W, H)/256 stops the frame from fitting a container shorter than 256 px. M4 adds pan and zoom for still images.
+- Culled stars are written at the frame centre with `visible` 0, never off-frame. When `setCameraModel` changes the frame size, it also calls `setStarCount`, which parks every point at the frame corner (0, 0), hidden, until the pass that the same call forces. Reason: OpenLayers drops off-extent `MultiPoint` coordinates before the custom renderer runs, which shifts the per-star arrays, and old-frame coordinates can lie outside a new, smaller frame.
+- `createCameraModel` throws for anything other than a zenith equidistant fisheye until M4. Reason: M2 has no other camera; a silent fallback would hide a wrong `cameras.json`.
+- The grid has altitude circles 0–80° every 10° and azimuth lines every 10° from alt 0° to 80°, sampled every 1° through the camera model. Letters N, E, S and W sit at alt 5°. Reason: the code is lens-independent, and the letters stay inside the frame.
+- The sky region carries an "Above the horizon" text list as its text alternative, and is `aria-busy` until the star catalogue is `ready` or `error`. Reason: canvas content is invisible to screen readers; the list and the busy flag double as e2e hooks.
+- The list's name comes from an `h3` through `aria-labelledby`. The "No Sun, Moon or planets above the horizon" fallback is a `<p>` after the list. The `role="status"` element is always rendered and is empty while idle or ready. Reason: the fallback is not a body, and a live region must exist before its text changes to be announced.
+- The new Moon's marker is hollow rather than a different colour. Each body feature's id is its `BODY_IDS` string. Reason: the de-emphasis must not rely on colour (README Accessibility), and M3's picking can map a feature straight to an `ObjectId`.
+
+### Timeline and Layers panel
+
+- A twilight marker's visible text is "Dusk" or "Dawn". Its full name, "Civil dusk 04:24 UTC (18:24 local)", is the `aria-label` and the `title`. Reason: on Chromium's default 129 px scrubber the two Maunakea markers are about 62 px apart, so the full labels would overlap. The accessible name contains the visible word, and e2e locates markers by `/Civil dusk/`.
+- Before the catalogue is ready, the magnitude-limit text reads "V ≤ 4.5 (loading star catalogue)" or "V ≤ 4.5 (star catalogue failed to load)" instead of "(0 stars)". A count of 1 says "star". The same text is the slider's `aria-valuetext`. Reason: "0 stars" would misreport a catalogue that has not arrived.
+
+### Files and tests
+
+- `LensModel` and `Calibration` are defined in `src/domain/camera/lens.ts`, and `index.ts` re-exports them. The public import path and shapes are unchanged. Reason: `lens.ts` needs both types, and defining them in `index.ts` would create a `lens.ts` → `index.ts` → `lens.ts` cycle.
+- Exports beyond the README section 6 table: `MAX_STAR_ROWS` (`skyCache.ts`, imported by `createSkyMap.ts` as the stars layer's capacity); `starRadiusPx` and `setStarRadii` (`layers/stars.ts`); `BodyId`, `bodyRadiusPx`, `BodiesLayer`, `createBodiesLayer` and `writeBodies` (`layers/bodies.ts`); the parse helpers of both scripts (`main` runs only when executed directly, as in `fetch-gibs-caps.ts`). README section 6 should list them. Reason: they are shared between the layer, the sky map and the tests.
+- `projectBatch` leaves a culled pair's `outUvPx` entries untouched and writes only `outVisible[i] = 0`. Reason: the caller decides what a culled point holds (the sky map writes the frame centre, gotcha 20).
+- `selectStarMagLimit` lands without its `[M5]` over-video branch; M5 adds that line with `selectSkyOverVideo`. Reason: selectors land with their first user.
+- `sky.spec.ts` adds two cases to M2 section 5: the catalogue's loading and failure states (the grid and bodies still draw), and keyboard access to the sky toggles, the limit slider and the twilight markers (acceptance criterion 8). Reason: both are acceptance requirements that no other test covers.
+- `src/app/cameras.ts` checks each field through a `Fields<T>` table (one Check per key of Calibration, CameraSite and Credit, and per source kind), so a field added to a type must be validated; the messages and their order are unchanged. Reason: the hand-written checks could miss a new field silently.
+- After M2, 27 placeholder actions remain (45 actions in all).
+
+## M3 · Satellites
+
+Appended on 2026-10-11 by M3 (`implementation/M3-satellites.md` section 8, then the integration pass). M3's contract lines (the positional docking rule; tracks rebuilt per request, with a flush on a group-mask change) are already under "Contract changes from the implementation docs". These lines belong under the Satellites, Rendering, Tooling and Process headings above. They sit here because this file is append-only while other edits are in flight.
+
+### Satellites
+
+- Stale elements: |sim time − epoch| > 7 days, shown in the Inspector and hover card, still drawn. Before the epoch the Inspector reads "Elements X days ahead of this time". Reason: DECISIONS asks for a flag, not removal.
+- Stations and visual are always propagated; Starlink only while its toggle is on. Reason: the Inspector stays live, and Starlink's tick is far costlier (p50 5.1 ms against 0.1 ms, measured below).
+- Interpolation clamps to [t_a, t_b]; a late sample holds the newest position. `sunlitAt` and the per-frame Sun altitude take the earlier sample on a tie or a non-finite time; interpolation holds the earlier sample for a non-finite time or span. Reason: README section 5 forbids extrapolation; one rule, never NaN.
+- `parseGpFile`'s guard is stricter than step 3 lists: the optional string fields must be strings, `REV_AT_EPOCH` a string or number, numeric strings must look like decimals, and NORAD id strings must be all digits. Errors name the record index, the NORAD id and the reason. Reason: a sound type guard for `OMMJsonObject`; the whole snapshot passes.
+- `parseOmmEpochMs` accepts only `YYYY-MM-DDThh:mm:ss[.fff…][Z]` and returns NaN for impossible dates (`2026-02-30`) and hour 24; digits past the millisecond are truncated, as `json2satrec` does. Reason: `Date.parse` rolls overflow forward (the same rule as `?t=`, M1).
+- If `meta.json` fails or has no entry for a group, the group still loads with `fetchedAtMs` null and one `console.warn`, not a `groupError`. The worker fetches `meta.json` once. Reason: a broken stamp file must not hide satellites.
+- A failed propagation logs one `console.warn` per object per session, with the NORAD id and `satrec.error`. Reason: README Errors rule 3. Four station objects (66052, 67686, 67687, 67688) fail by 2027-01-01; none fails at the e2e instant.
+- Sky-path replies are dropped only for an older `requestId` or a request sent before the last `init`/`setSite`; tracks only for an older `requestId`. Reason: ENU paths depend only on the observer, and dropping them on every flush (seek, rate, mask) would starve a paused view.
+- `SampleClient.resize` to the same byte size keeps its 3 buffers and only flushes; a resize to a new size drops the held samples. Reason: same-size stale replies would otherwise push the pool past 3.
+- A worker `error` event (the script itself failed) logs `console.error` and sets every group still `loading` to `error`. Starlink is requested once per session, after stations and visual, and again only when its toggle is turned on after a `groupError`; a site change does not resend it. A camera switch to a site with the same latitude, longitude and height sends no `setSite` and no flush. Reason: nothing loading would ever arrive; no retry loop (step 11); nothing moved.
+- The worker posts with `postMessage(msg, { transfer })`. Reason: the options form also type-checks under the DOM lib, so Node unit tests import the worker with stubbed globals.
+- The ISS fixture is generated with Skyfield 1.55 and sgp4 2.27 (numpy 2.5.4, jplephem 2.24, CPython 3.12.13), DE421 cached in `~/.cache/skyfield`. It is one line of compact JSON (angles to 1e-5°, range to 1e-4 km), 7,783 bytes rather than the doc's 7,769, and `passes[].maxAltDeg` is the highest altitude on the 10 s grid (28.84°, 12.67°, 44.83°), not the altitude at `culminationMs` (28.8597°, 12.6756°, 44.8445°). Reason: step 4 fixes the fields but not the layout; a rerun in the integration pass was byte-identical; no test reads `maxAltDeg`.
+- `public/data/gp/` is seeded from the verification snapshot (sha256s as in M3 step 1). Reason: the first deploy needs data without an extra CelesTrak download.
+- The e2e instant is 2026-10-11T15:09:50Z (ISS at az 123.8°, alt 28.9°, 795 km, sunlit, Sun at −16.2°). Reason: inside the fixture pass, visible to the eye, a deterministic list of 8 satellites.
+
+### fetch-gp
+
+- `fetch-gp.ts` sends `User-Agent: overhead-fetch-gp/1.0 (+<repo URL>)`, uses `redirect: "manual"` and a 60 s timeout, treats a non-OMM 200 as an error, rewrites a group file only when its sha256 changes, and always refreshes the stamp. Reason: CelesTrak counts 301s and asks for a contact; unchanged data should not churn files.
+- The workflow commits after a stop too (`if: !cancelled()`). Reason: groups fetched before the stop are valid.
+- "Rewrite only on a sha256 change" compares against the bytes on disk, not `meta.json`'s hash. The body is hashed and written as raw bytes (`arrayBuffer()`, so CelesTrak's trailing CRLF is kept), and group files and `meta.json` go through a temp file and a rename. Reason: a missing or edited file is repaired, and a crash never leaves half a file.
+- `shouldFetch` counts a stamp up to 2 h in the future as fresh (clock skew); a stamp further ahead is treated as wrong and the group is fetched. Reason: a corrupt future stamp would otherwise block fetching forever.
+- `meta.json` is validated before any request: an object, known groups only, finite `fetchedAtMs`, a non-negative integer `count`, a 64-character lowercase hex `sha256`. `GP_CONTACT_URL` must be an http(s) URL with no credentials, `@`, whitespace or parentheses. Reason: a corrupt stamp file fails before CelesTrak sees a request, and the User-Agent never carries a personal e-mail address.
+- CLI exit codes: 0 when every group was fetched or skipped; 1 after a stop (`Stopped: <error>`) or a corrupt `meta.json`; 2 on bad arguments or a missing or invalid `GP_CONTACT_URL`. The CLI logic is `runCli(args, env, deps)`; the entry-point block only sets `process.exitCode`. Reason: unit tests drive it in-process behind `setup.ts`'s fetch block.
+- `fetch-gp.yml` dispatches `deploy.yml` only when it runs on `refs/heads/main`; a manual run from another branch pushes its data there and deploys nothing. `deploy.yml` loses the `workflow_call` trigger M0 had added for M3. Reason: production deploys from `main` only, and the Deploy H1 line says "never `workflow_call`".
+- The first manual `fetch-gp` run (M3 acceptance criterion 5) happens right after merge, not before: GitHub runs a `workflow_dispatch` only for a workflow file on the default branch. That run also proves the assumed ruleset bypass (gotcha 6); if the push is rejected, report it to Parth instead of weakening the protection.
+
+### Store, URL and keyboard
+
+- Esc also clears the selection inside a focused map (an exception to M1's focused-map rule); inputs, prevented events and modifier chords still ignore it. Reason: OpenLayers never reads Escape, and a click on the ground map both selects and focuses it.
+- `select`, `hover`, `setFollow` and `setGroupData` return the same state for a no-op, and `setGroupData` ignores keys whose value is `undefined`. Reason: subscribers must not fire for a no-op (as `setLayer` and `setStarMagLimit`).
+- `frameCount()` never resets, also across clock-loop restarts. Reason: the ephemeris's once-per-frame cache compares against it.
+- After M3, 23 placeholder actions remain (45 actions in all). The M3 doc's deliverables row says 22; 27 − 4 = 23.
+
+### Rendering and picking
+
+- The sky draws satellites with apparent altitude > 0 (the horizon profile from M6); the ground map draws every valid object. Reason: the ground map is global.
+- The ISS, selected and hovered objects are drawn only as canvas `Point`s with labels, never in the class `MultiPoint`s. Reason: WebGL lags a frame and cannot draw text.
+- An empty WebGL class feature is removed from its source and re-added when it has points. Every class, trail and marker write compares before writing and fires no change when nothing moved; `writeClassPoints` returns whether it changed anything. Reason: gotcha 10, and a paused map must make 0 renders per idle second.
+- Picking radius 6 CSS px (README section 9), nearest candidate wins; a click on empty space clears the selection; the ground map uses `singleclick`. Reason: double-click zoom must not deselect.
+- Markers are redrawn inside `bindSelection`'s listener (`SkyMapHandle.setSelection` [M3], and the ground map's own listener), not only in the frame updater. Reason: while paused, a frame-updater change would render one frame too late (N + 2).
+- The selected and hovered satellites are marked and pickable whatever their layer toggle; the ISS label follows `layers.satellites`. Reason: a selection from the URL, the list or the other view must stay visible.
+- Trails cover the last 30 s of sim time for drawn stations/visual satellites plus the selected one (cap 100), from worker `skyPaths` on an absolute 2 s grid; the selected satellite gets a dotted 2-minute path; reduced motion hides trails. The dotted path is not a trail: it shows with Trails off and under reduced motion, and with Trails off sky paths are requested for the selected satellite only. Reason: only the worker owns satrecs, and future positions need propagation.
+- Ground tracks for the other satellites follow `layers.satellites`; the selected track always shows. Track and sky-path requests share `RequestGate`: one empty request after a non-empty one so stale lines clear, then none while nothing is tracked, and a change within 100 ms of the last request waits. Reason: at most 10 requests per second (gotcha 23).
+- Follow and "Show on map" centre on the world copy nearest the view centre; Follow skips frames while the view animates or is being dragged, and a drag turns Follow off only when it is on. "Show on map" is a local function in `Inspector.tsx`. Reason: the ground view is not wrapped; the two must not fight; it has one caller and no README API.
+- The satellite list's "drawn" means valid, not docked, apparent alt > 0 with the satellites layer on, plus the selected satellite while above the horizon, read from the ephemeris flags rather than the sky projection. Reason: identical for M3's zenith fisheye; M4's partial-sky lenses may need the projection test.
+- Placeholder looks until the design pass: lit satellites a filled circle, shadowed ones a square (canvas `RegularShape`, WebGL `shape-points` 4); the selected marker a solid ring with a bold label, the hovered one a dashed ring; trails thin grey lines, the next path dotted; the selected ground track wider with a halo. Reason: Accessibility, lit and shadowed differ in shape; the look is settled from screenshots.
+
+### UI
+
+- The Inspector sits in its own `ErrorBoundary`, not a `Pane`. Reason: a `Pane` would name a second region "Inspector" and break e2e strict mode.
+- A `sat:` id missing from the catalogue shows "Loading orbital elements…" while stations or visual (or a requested Starlink) is still loading, and the "not in the loaded groups" text only after that. A selected docked vehicle shows its own name and NORAD id, "Docked to <host> (NORAD n), shown at its position", and the host's live fields. Reason: no false "missing" during load; the doc did not cover docked selections.
+- The Satellites toggle's status sums stations and visual and shows the older fetch stamp. Each status is a `role="status"` span outside the label, tied to the checkbox by `aria-describedby`. Reason: one toggle covers two groups, and the checkbox names stay fixed.
+- The text and details shared by the Inspector, HoverCard and LayerToggles live in `src/ui/objectText.ts` [M3]. Reason: a component file that also exports functions is not a Fast Refresh boundary (as `gibsStatus.ts`, M1).
+
+### Files and tests
+
+- Test hooks exist only when `navigator.webdriver` is true. `highlight()` reports the selected id only while its marker is drawn (in the frame, valid, and on the ground map a `sat:` id), so it reads null before `readyFrame`. `readyFrame` comes from the hooks' own frame updater (the first `updateEphemerisFrame(t).ready`), `selectionFrame` from a `store.subscribe` on `selectedId`. `OverheadTestHooks` has only its M3 members. Reason: e2e needs positions and draw frames without reading pixels; `ephemeris.ts` never imports the hooks.
+- The e2e `routes` fixture serves same-origin `**/data/gp/*.json` from `tests/fixtures/gp/` and records any other file name as blocked. Checked: with `dist/data/gp/` removed, `selection.spec.ts` still passes. Reason: positions must not move when `fetch-gp.yml` commits new data.
+- Exports beyond the README section 6 table, which should list them: `createTestHooks(sources)` → `{ hooks, dispose }`, `TestHookSources`, `SatPositionsView` (`testHooks.ts`); `CELESTRAK_GP_URL`, `FETCH_TIMEOUT_MS`, `DEFAULT_OUT_DIR`, `FetchLike`, `StoredGpMeta`, `FetchGpOptions`, `FetchGpResult`, `CliDeps`, `parseGpMeta`, `userAgentFor`, `runCli` (`fetch-gp.ts`); `SkyMapHandle.setSelection`; the layer modules' names (`sky/layers/satellites.ts`: `TRAIL_MS`, `CLASS_COUNT`, `litImage`, `shadowedImage`, `SatClass`, `SkySatellites`, `SkySatelliteIds`, `createSkySatellites`, `writeSkySatellites`, `trackedSkyIndices`, `LineWriter`, `appendPathPoints`, `writeTrails`, `SkySatelliteList`, `skySatelliteList`; `sky/layers/selection.ts`: `NEXT_PATH_MS`, `MarkerRole`, `MarkerShape`, `MarkerSlot`, `MarkerLayer`, `markerStyle`, `placeMarker`, `hideMarker`, `createMarkerLayer`, `SkySelection`, `createSkySelection`, `SelectionTargets`, `SkyPositions`, `writeSkySelection`, `writeNextPath`; `ground/layers/satellites.ts`: `satelliteWebglStyle`, `GroundClass`, `GroundSatellites`, `createGroundSatellites`, `writeGroundSatellites`, `writeGroundMarkers`; `ground/layers/tracks.ts`: `GroundTracks`, `createTracksLayer`, `writeTracks`; `bindTracks.ts`: `MIN_REQUEST_INTERVAL_MS`, `MAX_TRACKED`, `RequestGate`, `framedTrackIndices`, `TrackDeps`, `bindTracks(store, tracks, deps?)`; `bindFollow.ts`: `FollowDeps`, `bindFollow(store, map, deps?)`); and `objectText.ts` (`azText`, `altText`, `rangeText`, `litText`, `GROUP_LABELS`, `isStale`, `elementAgeText`, `visibilityText`, `dockedText`, `missingSatelliteText`, `satelliteGroupsPending`, `groupStatusText`, `objectDetails` and its view types, `starMagnitudeText`, `bodyMagnitudeText`). `ephemeris.ts` has every README name except `heightKmOf` and `Ephemeris.incoming`, which wait for M8. README section 3 should list `src/ui/objectText.ts [M3]` and `tests/helpers/satFrame.ts [M3]`. Reason: shared between the two maps, the panels and the tests.
+- Unit-test files beyond the M3 section 5 table: `visibility`, `propagationWorker`, `ephemeris`, `classPoints`, `bindTracks`, `groundTracks`, `bindFollow`, `skySatellites`, `skySelection`, `groundSatellites`, `testHooks`, `objectText`. Reason: unit tests cover all of `src/domain` and the bindings (README section 8).
+- Measured in the integration pass (`npm run perf`, Chromium 156.0.8078.4 headless shell, native arm64, launched from Node 26.11.1 arm64 on an Apple M2, 600 samples at 1× after 5 dropped): ISS + visual (175 objects) p50 0.10 ms, p95 0.20 ms, max 0.30 ms against the 4 ms budget; with Starlink (11,277 objects) p50 5.10 ms, p95 5.40 ms, max 10.0 ms, recorded and not gated. Reason: README section 9 and M3 acceptance criterion 4.
+- `vite build` warns that `node:module` and `node:worker_threads` are externalized for satellite.js's WASM build; that code never reaches `dist/` (checked), so the warnings are harmless. The worker chunk is 31.45 KB (the doc says 28 KB) and the startup chunk 248.5 KB gzipped; OpenLayers' WebGL text worker (38 KB gzipped) is a separate on-demand chunk that M3 never loads. Reason: M9 owns the bundle budget.
+- Correction to the two lines above, from the final gate run after them: a second `npm run perf` gave ISS + visual p50 0.10 ms, p95 0.20 ms, max 0.40 ms and with Starlink p50 5.10 ms, p95 5.60 ms, max 11.2 ms (it shared the machine with `sky.perf.ts`, load average 14), so the Starlink p95 is 5.4–5.6 ms over two runs. `vite build` itself reports the startup chunk as 251.1 kB gzipped (the 248.5 KB above is `gzip -c`); compare that figure with M2's 204 KB. Reason: the numbers in this file must match the evidence in the pull request.
+
+## M4 · Camera model and still images
+
+Appended on 2026-10-11 from section 8 of [`implementation/M4-camera-model.md`](implementation/M4-camera-model.md), then the lines settled while building M4.
+
+- All five lenses use one oblique-azimuthal code path around (A₀, h₀); a zenith-locked fisheye is A₀ = 0, h₀ = 90 with exact trig. Reason: tilted all-sky cameras come free, and cos 90° ≠ 0 culled horizon points.
+- Fisheye `rMaxUnit` = min(horizon radius, undistorted corner radius), with ∞ when the corner has no preimage. Reason: a circular fisheye's corners lie outside its image circle.
+- `normalizeCalibration` keeps `azDeg` 0 on a locked fisheye, folding any azimuth into roll (`roll − az`). Reason: a stale azimuth made unlocking jump 353 px.
+- The fit uses body-axis rotation increments, two stages (axis held, then free), a central-difference Jacobian with one-sided fallback, Marquardt scaling from λ 1e-3, and no frame cull in its cost. Reason: (az, alt, roll) is singular at the zenith, and rough starts failed otherwise.
+- 3σ rejects one pair per round when its residual exceeds 3 × the RMS of the other pairs, up to 10 rounds. Reason: the overall-RMS rule cannot catch one outlier with ≤ 9 pairs; a median rule rejected good pairs.
+- 3σ rejection never leaves fewer than 4 active pairs. Reason: rejection alone must never turn a fit into "fewer than 4 pairs".
+- The stars layer uses `renderBuffer: 1_000_000`. Reason: with pan and zoom OpenLayers drops stars outside the buffered view before the custom renderer runs, which misaligns the per-star arrays (1–7 of 1,000 points reached the renderer at resolution 0.125 with the default, all 1,000 with this value).
+- Acceptance: `minAltDeg` 20 for fisheyes and 10 for rectilinear lenses; "named" means a non-empty `stars.json` name; RMS and the per-star limit cover the non-rejected fit pairs. Reason: one shared function for the panel and the fixture test.
+- `cfht-nanaao` is `fisheye-equidistant` with defaults from the two archived 2025 frames, `captureLagMs` 40,000 and `exposureSec` 0 until step 18 refits them. Reason: equidistant needed k1 0.003 against 0.054 for equisolid at the same RMS.
+- Manual capture time: Nānā ao stamp + 30 s; ASK053 stamp + `exposureSec`/2, to be checked against a trail in M6. Reason: Nānā ao stamps to the minute; ASK053 exposes 60 s at night.
+- Still-image status: a load gives "live"; an error gives "daytime" if the Sun is above 0° at the site by the wall clock, else "offline". Only the active camera is polled. Reason: Nānā ao runs sunset to sunrise and returns 404 while closed.
+- The still image is frozen while the panel is open, opening the panel on a still camera switches to live, and pairs are cleared on a new image or camera. Reason: pairs belong to one frame and one time.
+- The image cameras' sky view allows pan, and zoom from the fitted frame in to `minResolution` 0.125 (OpenLayers snaps it to 4–8 screen px per image px), with a new view per refit; pair clicks use `singleclick`. Reason: 0.25° is about 1.6 px on Nānā ao; double-click must still zoom; view limits are fixed at construction.
+- The background layer and the `layer` parameters of `startStillImageRefresh` and `bindBackground` are `ImageLayer<ImageSource>`. Reason: M5 puts an `ImageCanvas` source on the same layer, which `ImageLayer<ImageStatic>` rejects (TS2739).
+- The still-image loop builds each source in the active camera's pixel projection and, when stopped mid-request, puts the shown source back. Reason: a stale projection throws "No transform available", and an in-flight image would replace the frozen frame without `onLoad`.
+- GeoPose export adds `"x-overhead"` (camera id, lens, convention, height datum); import applies angles only, from the rotation matrix, warning beyond 0.01° or 100 m. Reason: OGC's own examples use another convention (`verification/geopose.md` claim 3).
+- `validateGeoPose` compiles on first call. Reason: ajv stays out of bundles that never validate (2.3 kB against 122.3 kB).
+- Calibration files are `overhead.calibration` version 1; localStorage is written on every calibration change, and invalid stored entries are dropped. Reason: small data; no throttle needed.
+- Exposure arcs: a worker `arc` message on a 5 s grid over the exposure, sunlit segments only, live mode only. Reason: 5 s chords stay within 0.1 px of the ISS path.
+- The e2e CFHT and AllSkyKamera mocks serve `tile.jpg`; a test that expects console errors removes exactly those from the shared guard at its end. Reason: no new image fixture, and M0's guard stays unedited.
+- Real-frame calibration acceptance runs on `tests/fixtures/calibration/subaru-clip-pairs.json` until a clear Nānā ao night: 350 star and Jupiter pairs at 3 epochs of the 2026-10-11 Subaru StarCam clip (rectilinear, 1920 × 1080, alt ≥ 10°, continuous pixel coordinates), rebuilt byte for byte by `scripts/fixtures/clip-pairs.ts`; holdouts ψ UMa, Chertan, λ Hya and Jupiter at every epoch. From the provisional defaults (scaled to 1920 px) the fit gives RMS 0.0245° (0.647 px), worst kept fit pair 0.071°, worst holdout 0.038°, Jupiter 0.009°, and the same result to 6e-12° from roll + 3° and f × 1.02; the 3σ rule rejects 10 frame-edge pairs (2.4–4.4 px, the same stars at every epoch). `cfht-nanaao-pairs.json` stays a TODO for step 18. Reason: Nānā ao's hatch has been closed at every check, and the clip is a real frame with a known time.
+- Saturated stars and planets are measured as the centroid of the whole blob, not a 5 × 5 window. Reason: the window put Jupiter about 5 px off; the blob centroid is within about 0.3 px.
+- The Subaru star fit's RMS is 0.0415° (0.915 px at 1920) per pair; the 0.0294° (0.65 px) in "Revisions for O1, O2, O4 and H1" divided by 2n, so it was per axis. The clip sidecar, the M1, M5 and M9 docs, `implementation/README.md` and the inline test copies now say 0.0415, and M5 writes `rmsDeg` 0.0415. Reason: the project defines `rmsDeg` per pair.
+- This supersedes M2's "`createCameraModel` throws for anything other than a zenith equidistant fisheye until M4": every lens and pointing is now built. Reason: M4 step 1–6.
+- `store.test.ts` expects 11 placeholder actions after M4, not the 10 its M4 row says: 12 of the 23 left after M3 landed, and the 11 left are M5's `setStreamDelayMs`, `setVideoLayer`, `setVideoStatus`, M6's `setHorizon`, M7's `setGoesDomain`, `setGoesStatus`, M8's `setFootprintHeightKm` and M9's four demo actions. Reason: the doc's arithmetic was off by one.
+- Exposure arcs are requested only when `exposureArcGrid` gives at least 2 steps (`exposureSec` ≥ 5); shorter exposures keep their dots. Reason: one step has no segment, and arcs hide the dots.
+- The arc is re-requested on a new `frameTimeMs`, a group load, a Starlink toggle and a site change; on a group load or Starlink toggle the old arc stays until the reply, otherwise it is dropped at once. Requests are also sent in replay, and only drawing is limited to live mode (`drawableExposureArc`). Reason: a reply covers only the rows that existed when asked, the first image usually arrives before any group loads, and switching back to live shows the arc at once.
+- While arcs show, `writeSkySatellites` draws no dots and `writeTrails` no trails, and only the selected satellite's path is requested; picking uses the position at `frameTimeMs` (the arc midpoint), and the ISS, selected and hovered markers stay at the midpoint. The arc style (a dark line on a light casing, 2, 1.5 and 1 px for stations, visual and Starlink) is a placeholder until screenshots. Reason: one mark per satellite; the look is settled from screenshots.
+- `src/domain/camera/schemas/` is excluded from Biome (`"!!src/domain/camera/schemas"`). Reason: formatting would change the vendored schema's bytes and its sha256 pin.
+- Exports beyond the README section 6 table, which should list them: `ExposureArc`, `Ephemeris.arc` and `drawableExposureArc` (`ephemeris.ts`); `writeSkyArcs` and `SkySatellites.arcsShown` (`sky/layers/satellites.ts`); `NANAAO_CREDIT` and `NANAAO_TERMS_NOTE` (`credits.ts`). Reason: shared by the sky map and the tests.
+- In live mode only the wall clock recentres the scrubber (`jumpToNow` when `Date.now()` is more than 12 h from `rangeCenterMs`); a live time beyond the range, such as a still image's burned-in stamp entered with the wrong date, is clamped to the range edge. Reason: recentring on now while following an image time a day away ran `jumpToNow` and a store write on every frame (found by the M4 check).
+- The sky view adds `SkyMapHandle.fitFrame()`, `setPendingPoint()` and, for image cameras, a focusable `role="application"` map named "Sky map over the image from <name>" with a "Fit frame" button; selection on pan-and-zoom cameras also moves to `singleclick`. Exports beyond README section 6: `PAN_ZOOM_MIN_RESOLUTION`, `cameraPansAndZooms`, `fittedSkyResolution`, `createPanZoomSkyView`, `isFittedSkyView` (`createSkyMap.ts`); `calibrationClickAt`, `applyPairClick` (`sky/calibrationClick.ts`); `bindBodiesVisible`, `bindPendingPoint` (`sync/bindCalibrationView.ts`); `SITE_WEDGE_RADIUS_M` (100 km, a placeholder), `WEDGE_CIRCLE_VERTICES`, `WEDGE_ARC_STEP_DEG` (`ground/layers/site.ts`); `WEDGE_SAMPLES_PER_EDGE`, `cameraWedgeGeometry` (`sync/bindSite.ts`). Reason: a double-click zoom must not select, and the maps, panel and tests share these.
+- The image-size notice is a plain paragraph, not a second `role="status"`. Reason: `sky.spec`'s strict `region.getByRole("status")` locator.
+
+## M5 · Live video
+
+Appended on 2026-10-11 from section 8 of [`implementation/M5-live-video.md`](implementation/M5-live-video.md) (the lines it says are already in "Revisions for O1, O2, O4 and H1" are not repeated), then the lines settled while building M5.
+
+- Clip cameras load a ClipSidecar from `sidecarUrl` on activation; anything that is not JSON means "not part of this build" (camera status `offline`), and a successful load sets `live`. `local-replay` takes picked files and needs the sidecar. Reason: `vite preview` and `npm run dev` answer `index.html` (200) for a missing file and GitHub Pages answers 404, and either means the clip is absent; a clip without a clock-derived start has no time; the picker reads `camera.status`, as for stills.
+- The ISS track on the 2026-10-11 clip is committed as a fixture (`tests/fixtures/video/subaru-2026-10-11-iss-track.json`, numbers only); the clip is not. Reason: the acceptance must be repeatable; recordings stay local. Re-measured on the clip: median 0.08 px, max 0.93 px over the 94 samples.
+- A local clip plays in a detached, muted `<video>`, drawn by `ImageCanvas` (`ratio: 1`) after each frame callback and each `seeked`; the video is the master clock, and a change of `simTimeMs` that the loop did not write seeks the video. Reason: frame and overlay come from the same media time.
+- With a clip the rates are 1× and 10× only (Live is `aria-disabled`: "A clip has no live mode."; `[` and `]` cycle the same rates). Clips are at most 12 h, and loading one calls `recenter(startUtcMs)`. Reason: `playbackRate` ≤ 16; the ±12 h scrubber.
+- The Range-probe/Blob rule lands in M5 (`loadClipFromSidecarUrl`), not M9. Reason: Playwright's `route.fulfill` ignores Range, and the e2e clip must seek.
+- The e2e test clip `tests/fixtures/video/test-pattern.webm` is generated by `scripts/fixtures/make-test-clip.ts` with ffmpeg (lavfi, libvpx-vp9, one thread, bitexact): 7,365 bytes, 320 × 180, 25 fps, 7.00 s, byte-identical over two runs. Reason: reproducible, unlike Playwright's video recording.
+- Picked files on `local-replay` always import their sidecar's calibration. Reason: picked files are a new clip, possibly of another camera (step 10.4.7 imported only when none was stored).
+- On loading a clip the video seeks to the store's time, clamped to the clip; a loaded clip camera activated again with the clock outside it recentres on its start; only the first clip loaded on a page, and only when `?cam=` names its camera, keeps `?t=`. An initial `?cam=` local-video camera starts in paused replay. Reason: a kept `?t=` and switching cameras keep a usable time.
+- "Copy pointing" and the Satellite check sit in the Calibration panel and report through its single polite live region; for local-video cameras the one `data-testid="video-status"` element is rendered by ClipControls. The Satellite check's samples clear on a new selection, a camera change or a new clip. Reason: one live region (`calibration-export.spec`, the panel test); e2e test 20.
+- `clip.ts` takes the base URL from its caller instead of reading `import.meta.env`, and `loadClipFromSidecarUrl` takes an optional 4th `options` argument (abort signal, keepTime, probe, base URL, object-URL functions, now). Reason: the node tsconfig compiles `clip.ts` for the scripts, and the loader is tested without a DOM.
+- `check-clip-pass.ts` also accepts a Satellite check export (format `overhead.satcheck`) as a track. Reason: a check made in the app can be replayed by the tool.
+- e2e test 17 turns off "Terrain horizon". Reason: M6's skyline crosses the test pattern's lower quadrants.
+- Exports beyond README section 6: from `clip.ts` `LOCAL_REPLAY_ID`, `CLIP_RATES`, `offeredRates`, `clipHiddenMs`, `sidecarFileName`, `sidecarToSave`, `formatClipDuration`, `VideoProbe`, `cannotPlayText`, `checkVideoProbe`, `SatelliteCheckRow`, `SatelliteCheckExport`, `satelliteCheckFileName`, `CLIP_TEXT`, `LoadedClip`, `ClipLoadState`, `getClipLoadState`, `subscribeClipLoads`, `claimUrlTime`, `probeVideo`, `ClipLoadOptions`, `copyClipPointing`; `startLocalVideo`, `LocalVideoDeps`, `StartLocalVideo` (`bindBackground.ts`); `createVideoSource`, `onVideoFrames` (`background.ts`); `setSatelliteCheckClicks`, `satelliteCheckClickAt` (`calibrationClick.ts`); `ClipControls`, `ClipControlsView`, `clipStatusText`, `CopyClipPointing`, `SatelliteCheck`; and the scripts' helpers. Reason: shared by the panels and the tests.
+- The UI shows the delay plus the stall as "behind real time now". A rebuffer of ≥ 1 s shows a "check the delay" prompt; the delay is never changed automatically; `getMediaReferenceTime` is only a suggestion with an "Apply suggestion" button. Reason: DECISIONS "Live clock".
+- On error 100, 101 or 150, or on ENDED, the id is re-resolved once with `cache: "no-cache"` before giving up, falling back to the current id (not the registry's last known one); `mountYoutubePlayer` takes a 6th optional argument `{ mayReResolve, env }`, and App passes `mayReResolve: !restarted`. Errors 101, 150 and 153 set `embed-blocked` and `offline`, switch to replay, destroy the player, and offer "Watch on YouTube", the camera's recorded clips and "Replay a local clip". Reason: dead and nonexistent ids report 150, live ids change on restart, and a failed lookup must give up instead of looping between ids.
+- ENDED with no new id keeps status "ended", sets the camera offline and switches to replay, with "The stream ended, and no new video id was found." and Retry; an IFrame API that fails to load, or an invalid id, gives status "error", offline, replay and "The YouTube player could not start." with Retry. Reason: `embed-blocked` would misreport an ended stream.
+- The player is muted with `mute()` in `onReady` and autoplays at most once per player, when the stage is more than half visible. Reason: a hidden page does not start the stream, and a user's pause sticks.
+- A burned-in clock reading gets +500 ms. Reason: the clock shows whole seconds.
+- Star pairs are off for YouTube cameras; pointing comes from the defaults, alignment by eye against the video, or "Copy pointing" from a clip of the same camera. Reason: clicks on the video belong to the player.
+- `cfht-starcam` defaults (az 270°, alt 20°, f 2742 px, the CFHT site, `mastM` 33) are guesses until aligned. Reason: no clip of that camera yet; record the aligned values.
+- Activating a camera goes through `activateCamera(store, id)` (`src/app/activateCamera.ts`): a youtube camera does `jumpToNow` then `setMode("live")`; a local-video camera goes to replay, paused, at 1× if the rate was 60× or 600×. `setActiveCamera` also resets `video`. Reason: one rule for the picker, the video panel and clip loading.
+- Hit targets (`createHitTargets(map, store, drawn?, makeTarget?)`) are made only inside the frame [0, W] × [0, H] and are updated at the end of `updateFrame` and `setSelection`, from the sky map's own drawn list (the same arrays and checks as `pick`). Reason: the letterbox bars hold the player's controls, and the targets must read this frame's positions.
+- `selectSkyDenseLabels` has no consumer yet: outside the light set the sky draws no extra labels, so "All labels on the video" changes nothing until a layer draws more. Reason: M2/M3 label only the ISS, selected and hovered markers.
+- The two Apply buttons are "Apply video clock" and "Apply suggestion", and the clock input is "Video clock (<time zone>)". Reason: distinct accessible names.
+- Over a video the stage is `width: 100%`, `max-width: calc(60vh × W/H)`, aspect W:H, a layout placeholder until screenshots; its fullscreen note's `role="status"` exists only for video cameras. Reason: `sky.spec.ts` requires one status element in the sky region on other cameras.
+- The `bindSite` wedge for the settled Subaru defaults is 37.47505°–125.17394° (the M5 doc rounds it to 37.48°–125.17°).
+- Exports beyond README section 6: `activateCamera`; `HIT_TARGET_MIN_PX`, `HitTargets`, `createHitTargets`; `bindSkyLayerVisible`; `StreamDelaySection`, `streamDelayText.ts`, `videoPanelText.ts`; `setMediaClock`, `getMediaClock`, `rememberedSimTimeMs` (`clockLoop.ts`). Reason: shared by the panels, the maps and the tests.
+
+## M6 · Terrain
+
+Appended on 2026-10-11 from section 8 of [`implementation/M6-terrain.md`](implementation/M6-terrain.md), then the lines settled while building M6. Step 15 (`ask053-walenstadt`) is not done: it waits for written permission.
+
+- `synthetic-walenstadt` is enabled with M1's entry unchanged; its provisional `heightM` 467.6 is confirmed by the Terrarium z14 ground (467.63 m). Reason: M1 commits every entry and the enabling milestone settles it.
+- Behind-terrain objects are dimmed by the skyline fill drawn above them, not by per-object style classes; the selection layer stays on top. Reason: one layer covers stars, bodies and satellites with no per-frame work.
+- The `horizon` toggle hides only the drawing; visibility and the Inspector flag always use a ready profile. Reason: hiding a layer must not change what counts as visible.
+- Any failed tile fails the whole profile (status `error`, geometric horizon). Reason: a partial profile would invent gaps in real ridges.
+- The worker drops decoded tiles after each compute; the HTTP cache serves repeats. Reason: 11 MB per site, and S3's 2017 `Last-Modified` gives long heuristic freshness.
+- `imagerySources` stores dataset prefixes (`eudem`, `srtm`, …), and the Credits region always shows the full "Required attribution" block while terrain is in use (`terrainInUse`). Reason: hillshade tiles load through `<img>`, whose headers are not readable, so a per-view list would be incomplete.
+- The hillshade is lit by the Sun at the active camera's site, from `computeBodies` (apparent altitude); below 0° it switches to 315°/45° (`NIGHT_SUN_AZ_DEG`, `NIGHT_SUN_ALT_DEG`) and shows the night badge. `bindHillshadeSun` also watches the active site. Reason: the map is centred on the site, the badge and the sky view agree, and the registry's arrival or a `local-replay` site change must relight the relief.
+- The hillshade source uses `interpolate: false`. Reason: band offsets then land on whole texels; linear filtering of packed bytes gave gradient errors up to 0.14 on Apple Metal.
+- The hillshade layer is drawn at opacity 0.5 until screenshots settle it. Reason: the verified opaque grey hides the true colour.
+- Brave's canvas noise is not worked around. Reason: DECISIONS mandates the `createImageBitmap` decode; the canvas-free decoder is the fix if Brave matters.
+- Terrain fixtures: Walenstadt's full plan (45 tiles, 5.58 MB), the Subaru StarCam's azimuth-0 ray (10 tiles, 1.15 MB) and `flat.png`. Reason: the full Walenstadt set drives the e2e skyline; one open-ocean ray is enough for Maunakea.
+- Frame flag bit 2 ("above horizon") uses the terrain horizon, as `isVisible` does; the sky still draws objects at apparent alt > 0, and `VisibilityFacts` gains `altDeg`, so "behind terrain" means not above the horizon but above 0°. Reason: the Inspector's reason comes from the flag and the altitude, with no second lookup.
+- The horizon worker clears its canvas before each draw, creates its context lazily (`willReadFrequently`), answers one compute at a time and uses `addEventListener`. The Inspector shows terrain lines only for an object with a live position. Reason: no stale pixels between tiles; a line without a position has nothing to compare.
+- `cfht-nanaao` and `cfht-starcam` take `mastM` 33 like `synthetic-maunakea`; no measured mount height was recorded. Reason: the same summit ridge; to be replaced by a measured value.
+- Exports beyond README section 6: `HorizonWorkerLike`, `bindSkyHorizon` (`sync/bindHorizon.ts`); `buildSkylineCoords`, `writeSkyline`, `SkylineCoords` (`sky/layers/horizon.ts`); `SkyMapHandle.horizonLayer`, `setHorizonProfile`; `NIGHT_SUN_*`, `HILLSHADE_SUN_INTERVAL_MS`; `terrainInUse`, `TERRAIN_CREDIT`; `behindTerrain`, `terrainLines`, `horizonStatusText` (`objectText.ts`). Reason: shared by the maps, the panels and the tests.
+
+## M7 · Weather imagery
+
+Appended on 2026-10-11 from section 8 of [`implementation/M7-weather-imagery.md`](implementation/M7-weather-imagery.md), then the lines settled while building M7.
+
+- GOES `Time` is the latest step ≤ floor10(sim time) that DescribeDomains lists and that is ≤ the HEAD-confirmed newest step; a null newest step means no cap. Reason: the rule above; README leaves the null case open.
+- DescribeDomains is fetched over `[floor10(now − 90 d), now floored to the minute]` once when the layer turns on and every 5 min while it stays on, never while it is off. Reason: about 1 KB per poll, and each URL misses GIBS's 30-minute origin cache.
+- Merged availability keeps the largest end ever seen and is clipped 90 days before the newest listed step. Reason: replicas lag and flap, and the clip must not depend on the client clock.
+- The probe is a HEAD on tile 0/0/0. A step is confirmed only by a 200 plus `layer-time-actual` equal to the step; otherwise the newest step falls back one listed step, without a second probe. Reason: tiles outside the Earth disk return 200 without the header.
+- After 3 automatic fallbacks in a row, the 4th failure sets `data.goes.status = "error"` and hides the layer until the next successful poll; a successful poll does not reset the tile guard's failure count, so after an error clears one more tile failure sets it again (bounded: one more step per poll). Reason: it bounds the walk-back (48 requests when everything fails).
+- The GOES layer is hidden until a step exists. Reason: the source starts on the snapshot's Default time.
+- The GOES layer sits above true colour and hillshade and below coastlines and labels, at the brief's 60 % opacity (`GOES_OPACITY`, settled from screenshots). Reason: geography stays readable over cloud.
+- The caption follows the step 3 table, with the UTC date first when the step falls on another day. Reason: gaps last up to 51 steps, so the step can be on another date.
+- Timeline ticks are the listed steps inside the ±12 h range, capped at the confirmed newest step, from a segment's first step to its last with a 1 px minimum, and `aria-hidden`; the caption is the accessible equivalent. Reason: meaning by position, not colour.
+- The e2e fixture is the DescribeDomains window 2026-10-07T12:00:00Z--2026-10-11T00:00:00Z. Reason: it contains two real gaps and the bare-date form of midnight.
+- `setGoesDomain` and `setGoesStatus` return the same state for a no-op (same array and step; same status). Reason: as `setLayer` and `select`, subscribers never fire for a no-op.
+- `tests/e2e/fixtures.ts` exports `recordGibsRequests(page)`, M1's wait-for-quiet rule over every GIBS request (HEAD and DescribeDomains included); `gibs-time.spec.ts` keeps its local copy. Reason: M7 counts HEAD and DescribeDomains too.
+- `dataCredits` takes `goesIr`, and the Credits region shows "Imagery: GOES-West/ABI, Band 13 Clean Infrared" while the layer is on. Reason: the GIBS acknowledgement covers GOES; the instrument is named.
+
+## M5–M7 · Review fixes
+
+Appended on 2026-10-11 after the single integration check over M5, M6 and M7.
+
+- `startLocalVideo` defers its store writes (the reset of `frameTimeMs` and pairs in `stop()`, and the pause when the Calibration panel opens) to a microtask. Reason: both run inside `bindBackground`'s listener, and a nested write handed later listeners (`bindPendingPoint`, the URL sync) the older state, so a cleared pending point was redrawn (README binding rule 4).
+- The Fullscreen note renders inside the sky region's one `role="status"` element. Reason: as for M4's image-size notice, a second status element would break a strict `region.getByRole("status")` locator.
+- `video.spec` test 3 checks "Nothing selected." in the Inspector instead of the URL. Reason: the URL write is debounced 250 ms, so the URL check could not fail.
+- `video.spec` test 6 polls `document.fullscreenElement` for up to 1 s, and test 13 scrolls the stage back into view after each camera switch before waiting for "playing". Reason: `exitFullscreen()` is asynchronous, and the picker click scrolls the stage out of view, where the autoplay gate (step 5.5) rightly holds the player in "loading".
+
+## M8 · Footprint and alerts
+
+Appended on 2026-10-11 from section 8 of [`implementation/M8-footprint-alerts.md`](implementation/M8-footprint-alerts.md), then the lines settled while building M8.
+
+- An incoming entry is the first 5 s sample at which a satellite is inside the frame, sunlit and above the terrain horizon. Docked objects never alert. Reason: behind-terrain satellites are not about to appear, and docked modules would duplicate the ISS.
+- Alerts cover the groups whose layers are on (`satellites` for stations and visual, `starlink`). They pause while playing at 60× and 600×. Reason: only drawn satellites can appear, and the look-ahead is under a second of wall time at those rates.
+- The chip shows "within N s", with N = ⌈etaSec − sim seconds since the reply⌉, and announces only a new first entry. Reason: 5 s sampling gives an upper bound; 1 Hz announcements would flood screen readers.
+- The footprint walks 16 samples per edge and replaces each run below the clip with the clip curve between bisected crossings. Reason: per-sample clamping put vertices up to 358 px outside the frame.
+- The clip is max(geometric dip, geometric terrain profile) + 1e-6°, compared in geometric altitude. Reason: footprint rays are geometric; a ray exactly at the dip is a tangent Earth hit.
+- Fisheye boundary samples move radially onto the horizon circle. When every sample is below the clip but the zenith is in frame, the footprint is the whole clip curve. Reason: frame corners are not sky; Walenstadt's ridges are higher than its fisheye horizon.
+- The default footprint height is the selected satellite's geodetic height (`geodeticHeightKm`), recomputed when it moves ≥ 1 km. Otherwise it is 420 km. Reason: the ISS sub-point entered the polygon within 3 s of the frame; |P| − R gave up to 5.5 s.
+- Footprint longitudes are unwrapped from the site's longitude, and a ring around a pole returns 0. Reason: geometry tests fail in the neighbouring world; an unclosed ring cannot be drawn.
+- The footprint is a canvas `VectorLayer` directly below the site layer. Reason: `WebGLVector` drops geometry beyond ±180°, and the marker and wedge stay on top.
+- Near the horizon, footprint rays use astronomy-engine refraction even where it disagrees with the terrain κ model. Reason: one refraction model for drawn objects (README); the effect is under 70 km at 420 km.
+- `footprint.ts` inverts refraction with a capped copy of astronomy-engine's `InverseRefraction` (50 iterations, same stopping rule). Reason: the original never returns for about 0.1 % of apparent altitudes in [−90°, −64°] and within 3e-5° of +90°, which would hang the page for a camera whose boundary reaches the zenith or looks steeply down.
+- `setCamera` follows `init` (it arrives inside `loadGroup`'s store write), and nothing is sent before the registry loads; the worker resets its horizon profile on `init` and `setSite`. `bindFootprint` subscribes to the active camera entry, not only its id, and `footprintStatus` is written before the polygon (an empty polygon is not rewritten). Reason: `init` is the worker's first message; a clip replaces `local-replay`'s entry in place; listeners and the label see this ring's values.
+- The chip's live region is visually hidden, keeps its last text while the list is empty, and changes only for a new first NORAD id (state adjusted during render); the chip hides entries in the same render when both satellite layers are off or playback is at 60×/600×. The "nothing to draw" `role="status"` line is always mounted. Reason: no stale entries for a frame; a status region must exist before its text changes.
+- `Ephemeris.incoming` is a readonly getter returning the session's `IncomingClient.latest`, and `incomingClient.ts` takes its message types from `protocol.ts` (`Extract<…, { type: "incoming" }>`). Reason: one client per worker session; M3's protocol has landed.
+- Exports beyond README section 6, which should list them: `src/ui/incomingText.ts` [M8] (`IncomingReplyView`, `IncomingCatalogView`, `IncomingRow`, `INCOMING_SHOWN`, `INCOMING_PAUSED_TEXT`, `incomingSeconds`, `incomingRows`, `incomingButtonText`, `incomingButtonName`, `incomingMoreText`, `incomingAnnouncement`, `inspectorIncomingText`, `IncomingAnnouncement`, `NO_ANNOUNCEMENT`, `nextAnnouncement`, `FOOTPRINT_*` texts, `selectedHeightOptionText`); `IncomingChipView`, `IncomingChipViewProps`; `FootprintLayer`, `footprintLabel`; `IncomingRequest`, `IncomingReply` (`incomingClient.ts`); `FOOTPRINT_PRESETS_KM`; `TestHookSources.footprint` and `.satellites`. Reason: shared by the panels, the map and the tests (a component file that exports functions is not a Fast Refresh boundary).
+- The propagation worker chunk is 38.95 kB (17.9 kB gzipped) against M3's 31.45 KB, and `grep -c "must have required property"` prints 0. Reason: M8 step 5.6–5.7 and M4 acceptance 8.
+
+## M5–M8 · Measured on 2026-10-11
+
+Apple M2; Node 26.11.1 arm64; Chromium headless shell, arm64.
+
+- M5 acceptance (`check-clip-pass.ts` against `npm run dev`, `--gp recordings/subaru-2026-10-11-iss.gp`): 94 samples, max 0.54° at 94 s, median 0.27°, along-track +0.87 s: pass (limit 1.0°). Report in `recordings/subaru-2026-10-11-iss.check.json`.
+- `npm run perf`: incoming `computeMs` with Starlink p50 9.80 ms, p95 12.20 ms, max 13.00 ms (budget p95 ≤ 20 ms); propagation ISS + visual (175 objects) p50 0.10 ms, p95 0.20 ms, max 0.40 ms (budget 4 ms); with Starlink (11,277) p50 5.00 ms, p95 5.30 ms, max 7.20 ms (recorded, gated in M9); sky at V ≤ 6.5 and 600× p50 1.60 ms, p95 1.90 ms, max 3.80 ms (budget 2 ms).
+- `vite build`: the startup chunk is 349.0 kB gzipped (M3: 251.1 kB); ajv (GeoPose export and import) and M5–M8 account for the growth. The propagation worker chunk is 38.95 kB, the horizon worker 4.41 kB. Reason: M9 owns the bundle budget.
+- e2e uses `page.getByRole("region", { name: "Calibration" }).locator('p[aria-live="polite"]')` for the panel's live region. Reason: M8's incoming chip has its own polite live region, so the page now has two.
+- (M8 check) When the incoming check throws, the worker posts an empty `incoming` reply after the `error`, and `IncomingClient` flushes when it turns inactive with a reply in flight. Reason: the client waits for each reply before the next request, so a lost reply froze alerts; a late reply could set `latest` while 60×/600× play paused the alerts.

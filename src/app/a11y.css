@@ -1,0 +1,25 @@
+/* src/app/a11y.css — the accessibility pass (M9 step 11). main.tsx imports it after ol/ol.css, theme.css and
+   layout.css. Colours, layout and type are the visual design pass's (step 12: theme.css, layout.css); this file only
+   holds what the audits require. A focus ring is never removed (README Accessibility rule 1). */
+
+/* OpenLayers sizes .ol-control button at 1.375em, 22 × 22 CSS px, and Lighthouse's target-size audit fails on desktop
+   (gotcha 10). The .ol-viewport prefix outranks ol/ol.css's .ol-control button rule. */
+.ol-viewport .ol-control button {
+  width: 24px;
+  height: 24px;
+}
+
+/* README Accessibility rule 2: with reduced motion, CSS transitions and animations are off (the trails, "Show on map"
+   and Follow are handled in code). !important: these must beat inline styles and ol/ol.css's own transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every other rule */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every other rule */
+    transition: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must override every other rule */
+    scroll-behavior: auto !important;
+  }
+}

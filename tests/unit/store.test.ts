@@ -5,53 +5,63 @@ import type { Actions } from "../../src/state/types";
 
 const T0 = Date.UTC(2026, 9, 11, 3, 20, 0); // 2026-10-11T03:20:00Z
 
-const M0_ACTIONS = ["tick", "play", "pause", "togglePlay"] as const;
-
-// Every action whose milestone has not landed, with that milestone (README section 4, actions).
-// Each milestone removes its own names, test first.
-const UNLANDED: Readonly<Partial<Record<keyof Actions, string>>> = {
-  setMode: "M1",
-  setRate: "M1",
-  stepBy: "M1",
-  seek: "M1",
-  jumpToNow: "M1",
-  recenter: "M1",
-  setRegistry: "M1",
-  setActiveCamera: "M1",
-  setCameraStatus: "M4",
-  setFrameTimeMs: "M4",
-  updateCalibration: "M4",
-  setStreamDelayMs: "M5",
-  resetCalibration: "M4",
-  importCalibration: "M4",
-  select: "M3",
-  hover: "M3",
-  setFollow: "M3",
-  setLayer: "M1",
-  toggleLayer: "M1",
-  setFootprintHeightKm: "M8",
-  setStarMagLimit: "M2",
-  setVideoLayer: "M5",
-  setLoadStatus: "M1",
-  setGroupData: "M3",
-  setHorizon: "M6",
-  setGoesDomain: "M7",
-  setGoesStatus: "M7",
-  addImagePoint: "M4",
-  completePair: "M4",
-  setPairRole: "M4",
-  removePair: "M4",
-  clearPairs: "M4",
-  cancelImagePoint: "M4",
-  applyFit: "M4",
-  setVideoStatus: "M5",
-  openPanel: "M1",
-  togglePanel: "M1",
-  startDemo: "M9",
-  setDemoStep: "M9",
-  stopDemo: "M9",
-  setDemoPaused: "M9",
-};
+const LANDED_ACTIONS = [
+  // M0
+  "tick",
+  "play",
+  "pause",
+  "togglePlay",
+  // M1
+  "setMode",
+  "setRate",
+  "stepBy",
+  "seek",
+  "jumpToNow",
+  "recenter",
+  "setRegistry",
+  "setActiveCamera",
+  "setLayer",
+  "toggleLayer",
+  "setLoadStatus",
+  "openPanel",
+  "togglePanel",
+  // M2
+  "setStarMagLimit",
+  // M3
+  "select",
+  "hover",
+  "setFollow",
+  "setGroupData",
+  // M4
+  "setCameraStatus",
+  "setFrameTimeMs",
+  "updateCalibration",
+  "resetCalibration",
+  "importCalibration",
+  "addImagePoint",
+  "completePair",
+  "setPairRole",
+  "removePair",
+  "clearPairs",
+  "cancelImagePoint",
+  "applyFit",
+  // M5
+  "setStreamDelayMs",
+  "setVideoLayer",
+  "setVideoStatus",
+  // M6
+  "setHorizon",
+  // M7
+  "setGoesDomain",
+  "setGoesStatus",
+  // M8
+  "setFootprintHeightKm",
+  // M9
+  "startDemo",
+  "setDemoStep",
+  "stopDemo",
+  "setDemoPaused",
+] as const satisfies readonly (keyof Actions)[];
 
 const newStore = () => createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
 
@@ -106,19 +116,21 @@ describe("store", () => {
     expect({ mode, playing }).toEqual({ mode: "replay", playing: false });
   });
 
-  it("every later action throws and names its milestone", () => {
+  it("every action has landed: the 45 names, and none throws 'lands in'", () => {
     const { actions } = newStore().getState();
-    const unlanded = Object.entries(UNLANDED);
-    expect(unlanded).toHaveLength(41);
-    expect(Object.keys(actions).sort()).toEqual(
-      [...M0_ACTIONS, ...unlanded.map(([name]) => name)].sort(),
-    );
-    for (const [name, milestone] of unlanded) {
-      expect(milestone).toMatch(/^M[1-9]$/);
-      const action = actions[name as keyof Actions];
-      expect(() => Reflect.apply(action, actions, [])).toThrow(
-        new RegExp(`^actions\\.${name} lands in ${milestone}$`),
-      );
+    // 45 actions: 4 landed in M0, 13 in M1, 1 in M2, 4 in M3, 12 in M4, 3 in M5, 1 in M6, 2 in M7, 1 in M8, 4 in M9
+    expect(LANDED_ACTIONS).toHaveLength(45);
+    expect(Object.keys(actions).sort()).toEqual([...LANDED_ACTIONS].sort());
+    for (const name of LANDED_ACTIONS) {
+      // Fresh store per call: the arguments are nonsense, so only a placeholder's "lands in" throw matters.
+      const fresh = newStore().getState().actions;
+      let message = "";
+      try {
+        Reflect.apply(fresh[name], fresh, []);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message, name).not.toMatch(/ lands in M\d+$/);
     }
   });
 });

@@ -11,7 +11,7 @@ Give every camera a real horizon and give the ground map a relief lit by the rea
 Out of scope:
 
 - The footprint's horizon clip and the incoming chip (M8). They read the same profile through `horizonAltAtAzDeg`.
-- Buildings and domes. The DEM is bare earth ([terrain.md](../verification/terrain.md) claim 9).
+- Buildings and domes. The DEM is bare earth (`verification/terrain.md` claim 9).
 - Per-view terrain credits built from tile headers. M6 shows the full required list (step 12).
 - A canvas-free PNG decoder for Brave (gotcha 6).
 - `ask053-walenstadt`, unless its owner has granted permission in writing (step 15).
@@ -20,7 +20,7 @@ Out of scope:
 ## 2. Prerequisites
 
 - M4 is merged (camera model with all lenses, `unprojectPixel`, `bindSkyCamera`, Inspector, CameraPicker). M5 is merged in build order, so `subaru-starcam`, the two clip cameras and `bindSkyLayerVisible` exist. Nothing here depends on the video itself.
-- No accounts and no keys. Terrarium tiles are public on S3 with `Access-Control-Allow-Origin: *` ([terrain.md](../verification/terrain.md) claim 1).
+- No accounts and no keys. Terrarium tiles are public on S3 with `Access-Control-Allow-Origin: *` (`verification/terrain.md` claim 1).
 - One network task, by hand, once: run `scripts/fetch-terrain-fixture.ts` (step 5) and commit its output (6.7 MB).
 - Decisions ([DECISIONS](../DECISIONS.md)):
   - O3 (open): M6 uses only fields already in the approved store (`data.horizon`, `layers.horizon`, `layers.hillshade`, `setHorizon`). If O3 changes: propose `HorizonData` and `setHorizon` in this pull request.
@@ -91,7 +91,7 @@ Build in this order. For every formula, write the failing test from section 5 fi
 
 ### Step 2. `destinationLatLonDeg` in `src/domain/geo`
 
-Great-circle destination on the sphere of `EARTH_MEAN_RADIUS_KM`: δ = d/R, φ₂ = asin(sin φ₁ cos δ + cos φ₁ sin δ cos θ), λ₂ = λ₁ + atan2(sin θ sin δ cos φ₁, cos δ − sin φ₁ sin φ₂). Write `[latDeg, lonDeg]` with longitude wrapped to [−180, 180). The 1.4 ppm difference from `EARTH_RADIUS_M` is 0.35 m at 250 km and does not matter. Do not step in EPSG:3857 metres: at 47° N that puts the Churfirsten at 23.5° instead of 32.7° ([terrain.md](../verification/terrain.md) claim 7).
+Great-circle destination on the sphere of `EARTH_MEAN_RADIUS_KM`: δ = d/R, φ₂ = asin(sin φ₁ cos δ + cos φ₁ sin δ cos θ), λ₂ = λ₁ + atan2(sin θ sin δ cos φ₁, cos δ − sin φ₁ sin φ₂). Write `[latDeg, lonDeg]` with longitude wrapped to −180, 180). The 1.4 ppm difference from `EARTH_RADIUS_M` is 0.35 m at 250 km and does not matter. Do not step in EPSG:3857 metres: at 47° N that puts the Churfirsten at 23.5° instead of 32.7° ([terrain.md (`docs/verification/terrain.md`, kept locally) claim 7).
 
 ### Step 3. Tile plan and sampler: `tiles.ts`
 
@@ -307,7 +307,7 @@ self.onmessage = (e: MessageEvent<HorizonIn>) => {
 - Any failed tile ends the compute with `error`. Consumers then use the geometric horizon; there is no partial profile.
 - `imagerySources` holds dataset prefixes, not file names: `["eudem", "gmted", "srtm"]` at Walenstadt, `["etopo1", "gmted", "ned13", "srtm"]` at Maunakea.
 - Measured in headless Chromium: Walenstadt 1.0–1.2 s and Subaru 1.2 s from live S3 (45 and 44 tiles), 0.16–0.21 s from the e2e route. The profiles equal the Node run of step 5 exactly.
-- Decoded tiles (256 KB each) are dropped after each compute. Repeat fetches come from the HTTP cache: S3 sends no `Cache-Control`, and `Last-Modified` is from 2017, so browsers cache heuristically ([terrain.md](../verification/terrain.md) claim 1).
+- Decoded tiles (256 KB each) are dropped after each compute. Repeat fetches come from the HTTP cache: S3 sends no `Cache-Control`, and `Last-Modified` is from 2017, so browsers cache heuristically (`verification/terrain.md` claim 1).
 
 ### Step 7. Store wiring: `setHorizon` and `bindHorizonWorker`
 
@@ -326,13 +326,15 @@ export interface HorizonWorkerLike {
    Checked with tsc 7.0.2 (app and test configs): the default factory is assignable to `() => HorizonWorkerLike`, the fake needs no cast, and a test delivers a reply with `fake.onmessage?.(new MessageEvent("message", { data: reply }))` (Node has a global `MessageEvent`). With `Pick<Worker, "postMessage" | "terminate" | "onmessage">` the fake builds, but calling its `onmessage` fails to type-check, because the handler's `this` must be a full `Worker`. Create the worker lazily, on the first compute.
 3. Subscribe to `[camera.activeId, camera.registry[activeId]?.site ?? null]` with `shallow` and `fireImmediately: true`. Do not watch `data.horizon`: the listener writes it ([binding rule 4](README.md#binding-rules)).
 4. When it fires and the camera exists: if its entry is missing, `idle` or `error`, take a new `requestId`, remember it as the latest for that camera, call `setHorizon(id, { status: "loading", profileDeg: null, imagerySources: [] })`, and post `{ type: "compute", requestId, cameraId, latDeg, lonDeg, mastM }` from `site`. A `loading` or `ready` entry sends nothing, so switching back to a camera reuses its cached profile. An `error` entry is retried only when that camera is selected again.
+   - One exception ([README section 5, "Horizon"](README.md#horizon) rule 1): the listener receives the previous `[id, site]` as its second argument. When the id is the same and `latDeg`, `lonDeg` or `mastM` differs, the active camera's site changed under it, so compute as for a missing entry, whatever its status. That happens when `local-replay` loads a clip from another camera (M5 step 10.5 replaces the entry, with the clip camera's site, while it is active). A new site object with the same values (a clip of the same camera) changes nothing.
+   - Checked with zustand 5.0.15: with `fireImmediately` the first call gets the same tuple twice, and a `setState` that replaced only the active entry's site gave the old site as the previous value.
 5. Replies: ignore `progress` (the store has no field for it). On `done` with the latest `requestId` for its camera: `setHorizon(cameraId, { status: "ready", profileDeg, imagerySources })`, storing the transferred array as is. On `error` with the latest `requestId`: `setHorizon(cameraId, { status: "error" })` and `console.warn` the message (the e2e guard fails only on errors).
 6. Cleanup: unsubscribe, `terminate()`, then set every camera this binding left in `loading` back to `idle`. React StrictMode runs mount, cleanup, mount in development: without this reset the second mount sees `loading` and the profile never arrives.
 7. `SkyView.tsx` starts `bindHorizonWorker` with the sky map's other bindings, so the [map lifecycle](README.md#map-lifecycle) cleanup stops it.
 
 ### Step 8. Registry entries
 
-1. Enable `synthetic-walenstadt`. M1 already committed its entry in `public/data/cameras.json` ([M1 step 5](M1-ground-map.md)), with `heightM` marked provisional, and left it out of `ENABLED_CAMERA_IDS`. Add `"synthetic-walenstadt"` to `ENABLED_CAMERA_IDS` in `src/app/cameras.ts`; until then `?cam=synthetic-walenstadt` names a camera that is not in the store. Do not edit the entry: `heightM` 467.6 is the Terrarium z14 ground at the site (467.63 m; swissALTI3D gives 465.2 m, [terrain.md](../verification/terrain.md) claim 4), so the provisional value is now final. `mastM` 0, `geoidSepM` 47.08 and `timeZone` `Europe/Zurich` are already in it.
+1. Enable `synthetic-walenstadt`. M1 already committed its entry in `public/data/cameras.json` ([M1 step 5](M1-ground-map.md)), with `heightM` marked provisional, and left it out of `ENABLED_CAMERA_IDS`. Add `"synthetic-walenstadt"` to `ENABLED_CAMERA_IDS` in `src/app/cameras.ts`; until then `?cam=synthetic-walenstadt` names a camera that is not in the store. Do not edit the entry: `heightM` 467.6 is the Terrarium z14 ground at the site (467.63 m; swissALTI3D gives 465.2 m, `verification/terrain.md` claim 4), so the provisional value is now final. `mastM` 0, `geoidSepM` 47.08 and `timeZone` `Europe/Zurich` are already in it.
 2. `synthetic-maunakea`: change `site.mastM` from 0 to 33 (Parth to confirm; DECISIONS "Contract changes from the implementation docs"). Its `heightM` 4204 is CFHT's published altitude, but the DEM ground there is 4,170.92 m. With `mastM` 0 the worker puts the eye on the ground of a summit ridge, and terrain rises up to +6.87° (az 186°) over az 61–216°. With 33 m, z0 = 4,203.9 m, every azimuth is negative (maximum −0.27° at az 200°), and the sea horizon is −1.9407°, matching the flat-sea fixture. `heightM` does not change, so the Polaris and planet fixtures are untouched.
 3. `cfht-nanaao` and `cfht-starcam` sit on the same point with the same `heightM` 4204 and `mastM` 0. Their `mastM` is provisional (M1's table; M4 step 9 says to ask CFHT). With 0 they get the same +6.87° terrain. Unless M4 or M5 recorded a measured mount height, set both to 33 as well. If a measured mast exists, keep it and set `heightM` = 4,170.9 + `mastM` instead.
 4. `cameraHeights.test.ts` keeps `heightM` and `mastM` consistent with the DEM (section 5).
@@ -350,7 +352,7 @@ export interface HorizonWorkerLike {
 
 ### Step 10. Behind terrain: visibility and the Inspector
 
-1. In `updateEphemerisFrame` (`src/state/ephemeris.ts`, M3 step 11), read `profile = selectHorizonProfileDeg(store.getState())` once per frame and pass `horizonAltAtAzDeg(profile, azDeg)` as `horizonDeg`. Before the profile is `ready` this is 0, the geometric horizon ([architecture.md](../verification/architecture.md) claim 13). M3 skips the loop when `simTimeMs`, the sample pair and the mask are unchanged: add the profile reference to that check. Otherwise, while paused, the visible flags keep the geometric horizon after the profile arrives.
+1. In `updateEphemerisFrame` (`src/state/ephemeris.ts`, M3 step 11), read `profile = selectHorizonProfileDeg(store.getState())` once per frame and pass `horizonAltAtAzDeg(profile, azDeg)` as `horizonDeg`. Before the profile is `ready` this is 0, the geometric horizon (`verification/architecture.md` claim 13). M3 skips the loop when `simTimeMs`, the sample pair and the mask are unchanged: add the profile reference to that check. Otherwise, while paused, the visible flags keep the geometric horizon after the profile arrives.
 2. Where the terrain horizon is below 0° (open sea seen from a summit), an object between it and 0° now counts as visible. Example: from `subaru-starcam` the profile is −1.93° at az 65–70°. Drawing does not change: the sky layers still draw only objects with apparent altitude above 0° (M3 step 13), so such an object is "Visible to the eye" in the Inspector but not drawn. At the Subaru frame centre (az 81.2°) the terrain horizon is +1.9° (interpolated between +1.96° at az 81 and +1.78° at az 82), above the frame's bottom edge (−1.9°).
 3. The `horizon` toggle hides only the skyline and its fill. Visibility and the Inspector flag always use the profile when it is `ready`.
 4. Inspector, for any selected object (satellite, star, planet, Sun, Moon), from `useTick4Hz` reads:
@@ -363,7 +365,7 @@ export interface HorizonWorkerLike {
 
 ### Step 11. Hillshade: `hillshade.ts` and `bindHillshade.ts`
 
-1. The layer. Use `ImageTile`, not `XYZ`: `XYZ` fails strict tsc as a `WebGLTile` source with TS2740 ([terrain.md](../verification/terrain.md) claim 2).
+1. The layer. Use `ImageTile`, not `XYZ`: `XYZ` fails strict tsc as a `WebGLTile` source with TS2740 (`verification/terrain.md` claim 2).
 
 ```ts
 // src/map/ground/layers/hillshade.ts
@@ -421,7 +423,7 @@ export function createHillshadeLayer(): { layer: WebGLTileLayer; source: ImageTi
 
    Keep `COS_INCIDENCE` as is. The `color` above is opaque grey, which is what the pixel check in item 2 reads. The final mapping (colour, alpha or layer opacity) is settled from screenshots; whatever it is, the true-colour imagery must stay visible under the relief.
 
-2. Texel size. Band offsets step one source texel, but `['resolution']` is the view's EPSG:3857 resolution, so the OpenLayers example's divisor is off by cos(lat) and by up to 2× between zooms ([terrain.md](../verification/terrain.md) claim 10, [openlayers.md](../verification/openlayers.md) claim 8). Push the true texel size instead:
+2. Texel size. Band offsets step one source texel, but `['resolution']` is the view's EPSG:3857 resolution, so the OpenLayers example's divisor is off by cos(lat) and by up to 2× between zooms (`verification/terrain.md` claim 10, `verification/openlayers.md` claim 8). Push the true texel size instead:
 
 ```ts
 /** Keeps texelGroundM equal to the ground size of one texel of the tiles OpenLayers is drawing. */
@@ -480,7 +482,7 @@ export function bindHillshadeTexel(
 10. United Kingdom terrain data © Environment Agency copyright and/or database right 2015. All rights reserved
 11. United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey.
 
-`Credits.tsx` shows the credit and all 11 statements while terrain data is in use: `layers.hillshade` is on, or the active camera's horizon status is `loading` or `ready`. The Mapzen block does not apply to the AWS bucket. Never show a fixed subset: a ground-map hillshade over Walenstadt at z11+ already draws Austrian data ([terrain.md](../verification/terrain.md) claim 3).
+`Credits.tsx` shows the credit and all 11 statements while terrain data is in use: `layers.hillshade` is on, or the active camera's horizon status is `loading` or `ready`. The Mapzen block does not apply to the AWS bucket. Never show a fixed subset: a ground-map hillshade over Walenstadt at z11+ already draws Austrian data (`verification/terrain.md` claim 3).
 
 ### Step 13. Layers panel
 
@@ -517,14 +519,14 @@ Unit tests (Vitest, Node; `tests/unit/setup.ts` blocks `fetch`, so the fixture t
 | | Maunakea open ocean: Subaru (19.82552, −155.47587), z0 = fixture ground + 13 = 4,147.6, rays from `tilesForSite(…, limit, [0])`: az 0° = −1.9277°, sea tangent at 245.3 km | `terrain/maunakea` | −1.93 ± 0.02° |
 | `cameraHeights.test.ts` | For every `cameras.json` entry at a fixture site (`synthetic-maunakea`, `cfht-nanaao`, `cfht-starcam` at the CFHT point; `subaru-starcam`, `local-replay`, `subaru-2026-10-11-iss` at the Subaru point; `synthetic-walenstadt`): \|DEM ground from the fixture + `mastM` − `heightM`\| (measured −0.08 m at the CFHT point with `mastM` 33, −0.4 m at Subaru, +0.03 m at Walenstadt). The CFHT point's z14 tile `14/1116/7271` is in the `maunakea` fixture. | both | ≤ 3 m |
 | `skyHorizon.test.ts` | `buildSkylineCoords` on `createCameraModel` of the 1024 zenith fisheye (f = 1024/π, roll 180): constant 10° profile puts az 0° at [512, 967.111] and az 90° at [56.889, 512]; every fill bottom lies at radius 512 from [512, 512]; a −1.93° profile gives empty line and fill | inline | 1e-3 px; 0.2 px; exact |
-| `bindHorizon.test.ts` | fake worker, store from `createAppStore`: one `compute` at subscribe with the registry's lat, lon, `mastM` and status `loading`; `done` → `ready` with the same array; a `done` with an old `requestId` is ignored; switching away and back sends nothing; `error` → `error`, retried only on re-selection; cleanup calls `terminate` and resets `loading` to `idle` | inline | exact |
+| `bindHorizon.test.ts` | fake worker, store from `createAppStore`: one `compute` at subscribe with the registry's lat, lon, `mastM` and status `loading`; `done` → `ready` with the same array; a `done` with an old `requestId` is ignored; switching away and back sends nothing; `error` → `error`, retried only on re-selection; with the camera active, `setRegistry` replacing its entry with a site 1° further north sends one new `compute` with the new latitude (status `loading`) even though the entry was `ready`, and a reply to the old `requestId` is then ignored; replacing it with an equal site sends nothing; cleanup calls `terminate` and resets `loading` to `idle` | inline | exact |
 | `hillshade.test.ts` | `createHillshadeLayer()` builds in Node, max zoom 15; `layer.createRenderer()` (public on `WebGLTileLayer`) does not throw: the full style parses into GLSL source (the GPU compile is covered by e2e test 3); a layer whose style uses an undeclared `['var', 'nope']` throws `Missing 'nope' in style variables` from `createRenderer()`, not from the constructor | none | exact |
 | `bindHillshade.test.ts` | real layer with a spied `updateStyleVariables`, `vi.useFakeTimers()` (it advances `performance.now()` too), Walenstadt camera: 60 ticks in 1 s give at most 2 Sun pushes; the last push carries the final time; 15:20:00Z pushes 244.56/12.69 (± 0.01°), 22:00:00Z pushes 315/45; nothing while `hillshade` is off | inline | as stated |
 | `visibility.test.ts` | profile with [0] = 32.75, [270] = 1.96: a lit satellite at alt 20° with the Sun at −10° is not visible at az 0° and visible at az 270° | inline | exact |
 
 `tests/e2e/terrain.spec.ts` (shared fixture with the step 14 route; no third-party requests, no console errors):
 
-1. `/?cam=synthetic-walenstadt&t=2026-10-11T15:20:00Z&sel=star:1708`: open the Layers panel (`L`); it shows "Terrain ready". The Inspector shows "Behind terrain" for Capella (az 359.92°, apparent alt 3.37°, under a terrain horizon of 32.7° there). M3's Inspector already handles `star:` ids. Save a screenshot of the sky view for the PR.
+1. `./?cam=synthetic-walenstadt&t=2026-10-11T15:20:00Z&sel=star:1708`: open the Layers panel (`L`); it shows "Terrain ready". The Inspector shows "Behind terrain" for Capella (az 359.92°, apparent alt 3.37°, under a terrain horizon of 32.7° there). M3's Inspector already handles `star:` ids. Save a screenshot of the sky view for the PR.
 2. Same URL with `sel=star:424`: Polaris (az 0.49°, alt 46.62°) does not show "Behind terrain".
 3. Same camera, turn on "Hillshade": at least one Terrarium request comes from the ground map (its `request.resourceType()` is `"image"`; the worker's are `"fetch"`), the Credits region contains the terrain credit link and every one of the 11 `TERRAIN_SOURCE_STATEMENTS`, and "Night: fixed lighting (315°, 45°)" is absent. With `t=2026-10-11T22:00:00Z` the badge is present. Before each ground-map screenshot, click the map's zoom-in control 4 times (M1's view starts at zoom 6), so the relief comes from the `walenstadt` z10 fixture tiles instead of `flat.png`. Save both screenshots.
 
@@ -543,29 +545,29 @@ Unit tests (Vitest, Node; `tests/unit/setup.ts` blocks `fetch`, so the fixture t
 
 ## 7. Gotchas
 
-1. **Ocean pixels are seabed.** Terrarium carries ETOPO1 bathymetry (−4,100 to −5,200 m around Hawaii). Without `max(z, 0)` the Maunakea sea horizon reads −2.9° to −3.2° instead of −1.93°. Clamp only in the march; the hillshade keeps raw values. ([terrain.md](../verification/terrain.md) claims 9, 13)
+1. **Ocean pixels are seabed.** Terrarium carries ETOPO1 bathymetry (−4,100 to −5,200 m around Hawaii). Without `max(z, 0)` the Maunakea sea horizon reads −2.9° to −3.2° instead of −1.93°. Clamp only in the march; the hillshade keeps raw values. (`verification/terrain.md` claims 9, 13)
 2. **Simple GET only.** S3 answers CORS for a plain GET with no custom headers. A preflight asking for any header, or a HEAD, returns 403 or no `Access-Control-Allow-Origin`, so a HEAD "probe" falsely reports the tiles as blocked. (claim 1)
-3. **`XYZ` is not a `WebGLTile` source** under strict tsc (TS2740). Use `ol/source/ImageTile`. (claim 2; [openlayers.md](../verification/openlayers.md) claim 7)
+3. **`XYZ` is not a `WebGLTile` source** under strict tsc (TS2740). Use `ol/source/ImageTile`. (claim 2; `verification/openlayers.md` claim 7)
 4. **Zoom 15 is the top.** z16 returns 404; set `maxZoom: 15` on the source. The ground map stops at zoom 12, but the expression was verified to z15. (claim 14)
 5. **`getImageData` lives on the 2D context.** `OffscreenCanvas` has no `getImageData` (TS2339). (claim 6)
 6. **Brave adds noise to `getImageData`,** in workers too: about 85 red-channel bit flips per tile, each a ±256 m spike that becomes a false ridge. M6 accepts this. The fix, if Brave matters, is the canvas-free decoder (`DecompressionStream('deflate')` plus filter reversal), which needs a `DECISIONS.md` change. (claim 6)
 7. **The march steps on the sphere.** Adding d to EPSG:3857 metres overstates distance by 1/cos(lat) (1.47× at Walenstadt) and gives up to 9.2° of error. (claim 7)
 8. **The plateau test needs a plateau.** A wall thinner than the local step (about 100 m at 10 km) can fall between samples. (claim 8)
-9. **`heightM` is not always DEM ground + mast.** CFHT's 4,204 m is 33 m above the Terrarium ground, which is why the three entries at the CFHT point need `mastM` 33 (step 8). The worker never reads `heightM`. ([terrain.md](../verification/terrain.md) claim 4)
-10. **Copying the OpenLayers shaded-relief example is wrong twice:** `['resolution']` is the view resolution, not the texel size, and EPSG:3857 metres are 1/cos(lat) ground metres. Slopes come out flat by cos(lat) and jump by up to 2× at tile-zoom switches. (claim 10; [openlayers.md](../verification/openlayers.md) claim 8)
-11. **SwiftShader, which headless CI uses, returns π for `atan(-0.0, +y)`** and folds `0.0 - x` into `-x`, which swaps north- and south-facing light wherever dzdx is 0. `COS_INCIDENCE` has no `atan` and no `^` (`pow` is undefined for negative bases). Pixel tests use non-cardinal aspects. ([openlayers.md](../verification/openlayers.md) claim 8)
-12. **A missing style variable throws on the first render,** not in the constructor (verified: `createRenderer()` throws). Declare `sunAzDeg`, `sunAltDeg` and `texelGroundM` in `style.variables`. ([terrain.md](../verification/terrain.md) claim 22)
-13. **Seams.** Textures use `CLAMP_TO_EDGE`, so the column at each tile edge shades with a halved gradient: a 1 px seam. Accept it. ([openlayers.md](../verification/openlayers.md) claim 8)
-14. **Mobile GPUs with only `mediump`** cannot hold 32,768 + metres; the shader decode breaks (4,204 m reads 4,192 m). Desktop browsers use `highp`. ([terrain.md](../verification/terrain.md) claim 21; [openlayers.md](../verification/openlayers.md) claim 18)
+9. **`heightM` is not always DEM ground + mast.** CFHT's 4,204 m is 33 m above the Terrarium ground, which is why the three entries at the CFHT point need `mastM` 33 (step 8). The worker never reads `heightM`. (`verification/terrain.md` claim 4)
+10. **Copying the OpenLayers shaded-relief example is wrong twice:** `['resolution']` is the view resolution, not the texel size, and EPSG:3857 metres are 1/cos(lat) ground metres. Slopes come out flat by cos(lat) and jump by up to 2× at tile-zoom switches. (claim 10; `verification/openlayers.md` claim 8)
+11. **SwiftShader, which headless CI uses, returns π for `atan(-0.0, +y)`** and folds `0.0 - x` into `-x`, which swaps north- and south-facing light wherever dzdx is 0. `COS_INCIDENCE` has no `atan` and no `^` (`pow` is undefined for negative bases). Pixel tests use non-cardinal aspects. (`verification/openlayers.md` claim 8)
+12. **A missing style variable throws on the first render,** not in the constructor (verified: `createRenderer()` throws). Declare `sunAzDeg`, `sunAltDeg` and `texelGroundM` in `style.variables`. (`verification/terrain.md` claim 22)
+13. **Seams.** Textures use `CLAMP_TO_EDGE`, so the column at each tile edge shades with a halved gradient: a 1 px seam. Accept it. (`verification/openlayers.md` claim 8)
+14. **Mobile GPUs with only `mediump`** cannot hold 32,768 + metres; the shader decode breaks (4,204 m reads 4,192 m). Desktop browsers use `highp`. (`verification/terrain.md` claim 21; `verification/openlayers.md` claim 18)
 15. **`marchLimitM` must clamp z0 at 0,** or a site below sea level gets a NaN limit and an empty march.
 16. **Fulfilled responses hide custom headers** unless the route sends `access-control-expose-headers`. The real S3 sends it.
 17. **StrictMode leaves `loading` behind** if cleanup terminates the worker mid-compute. Reset it to `idle` (step 7).
-18. **Refraction near the horizon is approximate.** The terrain uses κ = 0.13; objects use astronomy-engine's sea-level `'normal'`, about 0.18° too large at the horizon at Maunakea's pressure. Objects within about 0.2° of the skyline can be flagged either way. ([terrain.md](../verification/terrain.md) claim 17)
+18. **Refraction near the horizon is approximate.** The terrain uses κ = 0.13; objects use astronomy-engine's sea-level `'normal'`, about 0.18° too large at the horizon at Maunakea's pressure. Objects within about 0.2° of the skyline can be flagged either way. (`verification/terrain.md` claim 17)
 19. **Domes are not in the DEM.** The Subaru frame's real obstructions (summit buildings) will not be masked; the computed skyline sits up to +4.1° on the summit cones at 0.2–0.8 km. (claim 9) On the 2026-10-11 clip the real ISS goes behind the large dome at media 228.0 s, shows through gaps at 238.0–241.5 s and 256.0–258.4 s, and is lost behind the left-hand dome at 290.43 s (az 59.5°, alt 6.9°), while the marker drawn over the video carries on across the domes ([README recorded clips](README.md#recorded-clips)).
 
 ## 8. Decisions to append to `docs/DECISIONS.md`
 
-`DECISIONS.md` already holds M6's contract lines under "Contract changes from the implementation docs": `mastM` 33 at the CFHT point, linear `horizonAltAtAzDeg`, and the hillshade push rules. Append the rest.
+`DECISIONS.md` already holds M6's contract lines under "Contract changes from the implementation docs": `mastM` 33 at the CFHT point, linear `horizonAltAtAzDeg`, and the hillshade push rules. Its section "Revisions for O1, O2, O4 and H1" holds the recompute on a site change (step 7.4). Append the rest.
 
 - `synthetic-walenstadt` is enabled with M1's entry unchanged; its provisional `heightM` 467.6 is confirmed by the Terrarium z14 ground (467.63 m). Reason: M1 commits every entry and the enabling milestone settles it.
 - Behind-terrain objects are dimmed by the skyline fill drawn above them, not by per-object style classes; the selection layer stays on top. Reason: one layer covers stars, bodies and satellites with no per-frame work.

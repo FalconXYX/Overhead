@@ -1,6 +1,6 @@
 # M1 · Ground map
 
-One pull request on branch `m1-ground-map`. Contracts: [README.md](README.md). Precedence: [`../DECISIONS.md`](../DECISIONS.md), then the README, then this file. Evidence: [gibs.md](../verification/gibs.md), [openlayers.md](../verification/openlayers.md), [architecture.md](../verification/architecture.md), [tooling.md](../verification/tooling.md), [sources.md](../verification/sources.md), [geopose.md](../verification/geopose.md), [terrain.md](../verification/terrain.md).
+One pull request on branch `m1-ground-map`. Contracts: [README.md](README.md). Precedence: [`../DECISIONS.md`](../DECISIONS.md), then the README, then this file. Evidence: `verification/gibs.md`, `verification/openlayers.md`, `verification/architecture.md`, `verification/tooling.md`, `verification/sources.md`, `verification/geopose.md`, `verification/terrain.md`.
 
 "Verified" means run on 2026-10-11 in a throwaway copy of the app built from these steps: Node 26.11.1 arm64 with `@types/node` 26.6.5 (O4), TypeScript 7.0.2 (`tsc -b`, strict, `noUncheckedIndexedAccess`, `moduleResolution: "bundler"`), Biome 2.5.15, Vitest 5.0.3, Vite 8.3.4, ol 10.11.0, zustand 5.0.15, React 19.3.0, Playwright 1.64.0 with headless Chromium 1248 (156.0.8078.4), and live GIBS where stated. Every code block is an excerpt of a file that passed `tsc -b`, `biome ci --error-on-warnings`, the unit tests and the e2e specs below. The copy has `.nvmrc` `26`, `engines.node` `">=26"` and the step 5 `cameras.json` exactly as printed; its last full run (16:20–16:30 UTC) passed `tsc -b`, `biome ci` (62 files), 73 unit tests, `vite build` and the 9 e2e specs. In the same window `scripts/fetch-gibs-caps.ts` (step 1) ran against live GIBS under Node 26.11.1 arm64 and wrote a 28,645 B snapshot from the filtered response (no fallback, no `snapshotProblems`).
 
@@ -14,7 +14,7 @@ Out of scope:
 - Satellites, selection, `?sel=`, Esc, Inspector (M3).
 - CameraPicker, wedge, calibration, `C` (M4); YouTube, video, stream delay (M5); terrain and hillshade (M6); the GOES layer, DescribeDomains, HEAD probes and GOES ticks (M7); footprint (M8); demo (M9). The GOES layer stays in the snapshot, and `gibsWmtsOptions` ships the `dropLimits` option M7 uses.
 - Enabling any camera other than `synthetic-maunakea`. The later entries are committed in M1 but stay disabled until their milestone (step 5).
-- Detecting an all-black true-colour tile and stepping back a day. [gibs.md](../verification/gibs.md) claim 1 calls it optional; the 4 h rule in step 3 avoids black tiles.
+- Detecting an all-black true-colour tile and stepping back a day. `verification/gibs.md` claim 1 calls it optional; the 4 h rule in step 3 avoids black tiles.
 - Visual design (layout, colours, panel placement, marker look). It is settled during the build from screenshots. This file fixes behaviour, content, states, keyboard and accessibility.
 
 ## 2. Prerequisites
@@ -68,7 +68,7 @@ Build in this order. Write each unit test (section 5) before its code and watch 
 
 `scripts/fetch-gibs-caps.ts`, run by hand: `npx tsx scripts/fetch-gibs-caps.ts [outPath]` (default `public/data/gibs-capabilities.xml`). It exports `GIBS_CAPS_LAYERS` (the five ids below), `GIBS_CAPS_MATRIX_SETS` (`GoogleMapsCompatible_Level6`, `GoogleMapsCompatible_Level9`), `trimGibsCapabilities` and `snapshotProblems`.
 
-1. GET `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi?SERVICE=WMTS&REQUEST=GetCapabilities&LAYER=VIIRS_NOAA20_CorrectedReflectance_TrueColor,VIIRS_NOAA21_CorrectedReflectance_TrueColor,GOES-West_ABI_Band13_Clean_Infrared,Coastlines,Reference_Labels`. Throw on any status but 200. The `LAYER` filter works only in this KVP form ([gibs.md](../verification/gibs.md) claim 3). Verified: 200, 43,630 B in 0.28 s, CORS `*`, the five layers and all seven GoogleMapsCompatible matrix sets (Level3, 6, 7, 8, 9, 12, 13).
+1. GET `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/wmts.cgi?SERVICE=WMTS&REQUEST=GetCapabilities&LAYER=VIIRS_NOAA20_CorrectedReflectance_TrueColor,VIIRS_NOAA21_CorrectedReflectance_TrueColor,GOES-West_ABI_Band13_Clean_Infrared,Coastlines,Reference_Labels`. Throw on any status but 200. The `LAYER` filter works only in this KVP form (`verification/gibs.md` claim 3). Verified: 200, 43,630 B in 0.28 s, CORS `*`, the five layers and all seven GoogleMapsCompatible matrix sets (Level3, 6, 7, 8, 9, 12, 13).
 2. Trim with regexes (Node has no `DOMParser`). This is safe: `Layer` elements are not nested and their first `<ows:Identifier>` is the layer id; a top-level matrix set starts `<TileMatrixSet><ows:Identifier>`, while the `<TileMatrixSet>Name</TileMatrixSet>` inside a link does not.
 
    ```ts
@@ -98,7 +98,7 @@ Build in this order. Write each unit test (section 5) before its code and watch 
 
 ### Step 2. Tile fixtures
 
-NOAA-20 imagery is NASA/NOAA data (CC0 unless marked, [gibs.md](../verification/gibs.md) claim 6). The Reference_Labels tile over Hawaii at z5 is empty, so it carries no OSM data. Run once, commit, and put the commands in the root README:
+NOAA-20 imagery is NASA/NOAA data (CC0 unless marked, `verification/gibs.md` claim 6). The Reference_Labels tile over Hawaii at z5 is empty, so it carries no OSM data. Run once, commit, and put the commands in the root README:
 
 ```sh
 mkdir -p tests/fixtures/gibs
@@ -114,7 +114,7 @@ Verified: `tile.jpg` 19,949 B, 256 × 256, 0 % black, sha256 `a3359e2d…ea248c0
 In `src/domain/time/index.ts` ([README section 6](README.md#6-domain-module-apis)):
 
 1. `isoDateUtc(timeMs)`: `new Date(timeMs).toISOString().slice(0, 10)`.
-2. `trueColorDateUtc(timeMs, siteLonDeg)`. Rule ([gibs.md](../verification/gibs.md) claim 1): T is the latest instant at or before `timeMs − 4 h` at which local mean solar time at the site (UTC + lon/15 h) is 13:30, NOAA-20's afternoon pass. Return T's UTC date. In ms:
+2. `trueColorDateUtc(timeMs, siteLonDeg)`. Rule (`verification/gibs.md` claim 1): T is the latest instant at or before `timeMs − 4 h` at which local mean solar time at the site (UTC + lon/15 h) is 13:30, NOAA-20's afternoon pass. Return T's UTC date. In ms:
    - `passOffsetMs = (13.5 − siteLonDeg / 15) × 3_600_000` (the pass's UTC time of day; may be negative or above 24 h);
    - `passMs = Math.floor((timeMs − 14_400_000 − passOffsetMs) / 86_400_000) × 86_400_000 + passOffsetMs`;
    - return `isoDateUtc(passMs)`, memoised on `passMs` in a one-entry module cache, so the per-frame selector allocates nothing.
@@ -182,12 +182,12 @@ Commit these five entries. The two `local-video` entries, `local-replay` and `su
 
 Where the fixed values come from:
 
-- **Subaru (corrected):** site 19.82552°, −155.47587° and mast 13 m from arXiv 2508.00245; pointing az 81.2°, alt 19.6° from its Table 2.3; credit "NAOJ & Asahi Shimbun", non-commercial ([sources.md](../verification/sources.md) claims 5, 9, 28; DECISIONS "Data sources"). The resolver pages returned `Kj5DjRYkzD8` and `Q3UhCgsWDw8` with CORS `*` at about 10:00Z on 2026-10-11.
-- **Synthetic cameras:** `heightM` 4204 is CFHT's published altitude and the Polaris and flat-sea fixture height, not DEM ground (about 4171 m, [terrain.md](../verification/terrain.md)). `focalPx` 325.94932345220167 is 1024/π, which equals `syntheticFisheyeCalibration(1024).focalPx`.
+- **Subaru (corrected):** site 19.82552°, −155.47587° and mast 13 m from arXiv 2508.00245; pointing az 81.2°, alt 19.6° from its Table 2.3; credit "NAOJ & Asahi Shimbun", non-commercial (`verification/sources.md` claims 5, 9, 28; DECISIONS "Data sources"). The resolver pages returned `Kj5DjRYkzD8` and `Q3UhCgsWDw8` with CORS `*` at about 10:00Z on 2026-10-11.
+- **Synthetic cameras:** `heightM` 4204 is CFHT's published altitude and the Polaris and flat-sea fixture height, not DEM ground (about 4171 m, `verification/terrain.md`). `focalPx` 325.94932345220167 is 1024/π, which equals `syntheticFisheyeCalibration(1024).focalPx`.
 - **`geoidSepM`:** EGM96 from pyproj 3.8.0 / PROJ 9.8.1 with network grids (`EPSG:4326+5773` to `EPSG:4979`): CFHT coordinates 24.226 m, Subaru 24.316 m, Walenstadt 47.084 m, rounded to 0.01 m. Without the network grids PROJ silently returns 0.
 - **`cfht-nanaao`:** copied verbatim from [M4 step 9](M4-camera-model.md), which owns it (tilted equidistant fit on two 2025 frames).
-- **`subaru-starcam`, `cfht-starcam`:** copied from [M5 step 2](M5-live-video.md), which owns them (names and `termsNote` included). Under O1 both `termsNote` values are exactly `"YouTube embed; non-commercial use with credit"`, and M5 step 2 must carry the same strings: M9's `readme.test.ts` compares them as exact substrings.
-- Compared field by field on 2026-10-11 (script, after the O1 edit): `cfht-nanaao` is identical to the M4 step 9 block, and the two StarCam entries are identical to the M5 step 2 block in every field other than `termsNote`.
+- **`subaru-starcam`, `cfht-starcam`:** provisional copies of the [M5 step 2](M5-live-video.md) entries, which M5 owns and edits in place when it enables them. M5 changes exactly two things: `subaru-starcam.defaults` become the star fit on the 2026-10-11 clip (az 81.2322°, alt 19.6185°, roll 0.7698°, f 2525.93 px, k1 −0.00992, `rmsDeg` 0.0415), and both `termsNote` values become `"Non-commercial use only"`, the string M9's `readme.test.ts` compares. Neither camera is enabled before M5, so M1's provisional `termsNote` is never shown.
+- Compared field by field on 2026-10-11 (script): `cfht-nanaao` is identical to the M4 step 9 block, and the two StarCam entries are identical to the M5 step 2 block in every field other than `subaru-starcam.defaults` and the two `termsNote` values.
 
 Provisional fields. The milestone that enables an entry owns its final values, edits it in place, and moves its id into `ENABLED_CAMERA_IDS`:
 
@@ -229,7 +229,7 @@ The handler returns false (does nothing) when:
 ### Step 8. `src/app/credits.ts`
 
 1. `GIBS_CREDIT: Credit`: text exactly as in [README Credits](README.md#credits) (verified on the GIBS docs page today), `href` `https://nasa-gibs.github.io/gibs-api-docs/`, no licence.
-2. `OSM_NE_CREDIT`: text `© OpenStreetMap contributors, Natural Earth` (the Reference_Labels layer-metadata subtitle), `href` `https://www.openstreetmap.org/copyright`, `licence` `ODbL-1.0`, `licenceHref` `https://opendatacommons.org/licenses/odbl/` (both 200). OSM requires the credit and a licence link ([gibs.md](../verification/gibs.md) claim 6).
+2. `OSM_NE_CREDIT`: text `© OpenStreetMap contributors, Natural Earth` (the Reference_Labels layer-metadata subtitle), `href` `https://www.openstreetmap.org/copyright`, `licence` `ODbL-1.0`, `licenceHref` `https://opendatacommons.org/licenses/odbl/` (both 200). OSM requires the credit and a licence link (`verification/gibs.md` claim 6).
 3. `TRUE_COLOR_INSTRUMENT = "NOAA-20 / VIIRS"`, the layer-metadata subtitle of `TRUE_COLOR_LAYER` (verified; NOAA-21's is `NOAA-21 / VIIRS`). Change both constants together.
 4. `dataCredits(layers, gibsReady): Credit[]` ([README section 6](README.md#state-app-and-map-modules)). M1 lands it with `layers: Pick<LayersState, "trueColor" | "coastlines">`; M3 adds `satellites` and `starlink`, M7 adds `goesIr`. In M1 it returns `[]` unless `gibsReady`; then `GIBS_CREDIT` when either layer is on, and `OSM_NE_CREDIT` when `coastlines` is on. (From M3, `CELESTRAK_CREDIT` does not depend on `gibsReady`.) Callers pass `store.getState().layers`. It returns a new array: call it during render, never inside `useAppState` (React error #185).
 
@@ -266,7 +266,7 @@ export function renderSyncAll(): void {
 
 ### Step 10. `src/map/ground/layers/gibs.ts`
 
-Every GIBS source in the app comes from `gibsWmtsOptions`. KVP is required because, by default, `optionsFromCapabilities` picks REST and spreads tiles over three templates, two without `{Time}` ([openlayers.md](../verification/openlayers.md) claim 1). The type narrows `WMTSCapabilities#read`, which returns `any`.
+Every GIBS source in the app comes from `gibsWmtsOptions`. KVP is required because, by default, `optionsFromCapabilities` picks REST and spreads tiles over three templates, two without `{Time}` (`verification/openlayers.md` claim 1). The type narrows `WMTSCapabilities#read`, which returns `any`.
 
 ```ts
 import WMTSCapabilities from "ol/format/WMTSCapabilities";
@@ -396,7 +396,7 @@ export function bindTrueColorDate(store: AppStore, source: WMTS): () => void {
 }
 ```
 
-- The dimension key must be exactly `Time` ([gibs.md](../verification/gibs.md) claim 4).
+- The dimension key must be exactly `Time` (`verification/gibs.md` claim 4).
 - `updateDimensions` with an unchanged value is a no-op (`setKey`, `ol/source/Tile.js:149`), so the immediate first call costs nothing.
 - `TileImage` stamps each tile with the source key when it creates it (`ol/source/TileImage.js:216`), so `e.tile.key !== source.getKey()` filters late events from an older Time.
 - This is [README Errors](README.md#errors) rule 6. Verified in headless Chromium with the new date answering 404: `Time` went back to the old date and the map made 0 `postrender` events in the next idle second. With the very first Time failing there is nothing to go back to: the layer stays empty, idle 0 `postrender`, and one `map.render()` gave 1 `postrender` and 1 `rendercomplete` (no spin).
@@ -438,7 +438,7 @@ Verified in a development build under `<StrictMode>`. With the data ready before
 ### Step 14. `src/state/clockLoop.ts`
 
 1. **Live branch:** when `mode` is `live` and the active camera is `synthetic` (or the registry has not loaded), sim time is `Date.now()`. If `|Date.now() − rangeCenterMs| > SCRUB_HALF_RANGE_MS`, call `jumpToNow()` instead, so long live sessions keep the scrubber around now.
-2. **Render:** after the tick and the frame updaters, call `renderSyncAll()` only on frames where `simTimeMs` changed. OpenLayers schedules its own renders for interaction, tile loads and toggles. Verified on the ground map: 0 `postrender` per idle second while paused, 60–61 per second while playing. Why `renderSync` at all: [architecture.md](../verification/architecture.md) claim 5 (one frame late, or 30 fps).
+2. **Render:** after the tick and the frame updaters, call `renderSyncAll()` only on frames where `simTimeMs` changed. OpenLayers schedules its own renders for interaction, tile loads and toggles. Verified on the ground map: 0 `postrender` per idle second while paused, 60–61 per second while playing. Why `renderSync` at all: `verification/architecture.md` claim 5 (one frame late, or 30 fps).
 
 ### Step 15. Timeline, Layers panel, Credits
 
@@ -524,7 +524,7 @@ export const test = base.extend<{ guard: Guard; routes: undefined }>({
 
 Type the fixture `undefined`, not `void`: Biome's `noConfusingVoidType` warns on `void`, and `--error-on-warnings` fails CI (verified). With this fixture all 9 specs passed.
 
-Never fulfil a tile with 404: Chromium logs every 404 as a console error, which fails the guard (verified: 12 errors for 12 tiles). The snapshot and `cameras.json` are same-origin and need no route. In M0's `smoke.spec.ts`, the Play test must start at `/?t=2026-10-10T03:30:00Z`: without `t` the app now starts live and playing.
+Never fulfil a tile with 404: Chromium logs every 404 as a console error, which fails the guard (verified: 12 errors for 12 tiles). The snapshot and `cameras.json` are same-origin and need no route. In M0's `smoke.spec.ts`, the Play test must start at `./?t=2026-10-10T03:30:00Z` (base-relative, M0 step 9): without `t` the app now starts live and playing.
 
 ### Step 18. Documentation
 
@@ -541,7 +541,7 @@ Unit tests run in Vitest, `environment: "node"`, with no network. `storeAt(iso)`
 | `actions.test.ts` | M1 actions | `recenter(1791603000000)` from live gives exactly `{ mode: "replay", playing: false, rate: 1, simTimeMs, rangeCenterMs }`; `stepBy(+13 h)` stops at centre + 43,200,000 and switches to replay; `seek(centre − 50 h)` gives −43,200,000; `setRate(60)` in live gives replay at 60; `setMode("live")` gives rate 1 and playing; `jumpToNow` under `vi.setSystemTime` sets both times; `setActiveCamera` clears `frameTimeMs`; `togglePanel("layers")` twice returns to `null` |
 | `selectors.test.ts` | `selectTrueColorDate`, `selectSite` | `2026-10-08` at 2026-10-10T03:30:00Z, `2026-10-09` after 30 min; `null` with an empty registry; `selectSite` returns the same reference across 100 ticks |
 | `store.test.ts` (M0) | unlanded actions | 27 remain; each throws `/^actions\.<name> lands in M[2-9]$/` |
-| `cameras.test.ts` | committed file | ids in order `synthetic-maunakea`, `cfht-nanaao`, `subaru-starcam`, `cfht-starcam`, `synthetic-walenstadt`; `enabledCameras` keeps only the first; its `focalPx` equals 1024/π to 1e-9; Subaru `site` deep-equals the step 5 values and `defaults` match az 81.2, alt 19.6, f 2742, delay 50,000. A duplicated entry plus `latDeg` 91 and `timeZone` `Not/AZone` on one entry throws one Error naming all three; `[]` throws `cameras.json: expected a non-empty array` |
+| `cameras.test.ts` | committed file | ids in order `synthetic-maunakea`, `cfht-nanaao`, `subaru-starcam`, `cfht-starcam`, `synthetic-walenstadt`; `enabledCameras` keeps only the first; its `focalPx` equals 1024/π to 1e-9; Subaru `site` deep-equals the step 5 values and `defaults` match az 81.2, alt 19.6, f 2742, delay 50,000 (M5 changes this assertion to the settled values). A duplicated entry plus `latDeg` 91 and `timeZone` `Not/AZone` on one entry throws one Error naming all three; `[]` throws `cameras.json: expected a non-empty array` |
 | `url.test.ts` | parse, write, sync | `?cam=synthetic-maunakea&t=2026-10-10T03:30:00Z` → `{ cam, tMs: 1791603000000 }`; `%3A`-encoded and `T03:30Z` give the same; `.123Z` keeps the ms; `2026-10-10T03:30:00`, `2026-10-10`, `2026-13-45T99:99:00Z`, `+00:00` and empty give `null`. Replay at 1791603000123 writes `?cam=synthetic-maunakea&t=2026-10-10T03:30:00Z`; live writes `?cam=synthetic-maunakea`. `startUrlSync` with fake timers: 1 write at start; 30 steps write nothing until 250 ms after the last, then exactly one (`…T04:00:00Z`); `play` is one more write; 100 ticks while playing write nothing |
 | `keyboard.test.ts` | `handleKeyDown` with plain objects | ArrowRight +1,000 ms; Shift+ArrowLeft −60,000 ms; 780 Shift+ArrowRight stop at +43,200,000; returns false and changes nothing for an INPUT target, a contenteditable target, `defaultPrevented`, Meta+`]` and Ctrl+ArrowRight; `]` 1 → 10, five more clamp at 600, `[` gives 60; Space on a BUTTON returns false, elsewhere toggles play; `l` then Shift+`L` opens and closes Layers |
 | `credits.test.ts` | `dataCredits` | the four layer combinations with `gibsReady` true; `[]` when false |
@@ -557,7 +557,7 @@ End-to-end (Playwright, the shared fixture, `vite preview`, default 1280 × 720 
 `tests/e2e/gibs-time.spec.ts`, "every true-colour tile request carries the clock's date, before and after a date change". This is the acceptance test.
 
 1. Record every request to `gibs.earthdata.nasa.gov` whose `Request` is `GetTile` as `{ layer, time: searchParams.get("Time"), tile: "TileMatrix/TileRow/TileCol" }`. `URLSearchParams` decodes `%3A` ([README end-to-end tests](README.md#end-to-end-tests) item 5). Count completions with `requestfinished` and `requestfailed`.
-2. `goto("/?t=2026-10-10T03:30:00Z")`. Assert the map's bounding box is at least 512 × 256 px.
+2. `goto("./?t=2026-10-10T03:30:00Z")`. Assert the map's bounding box is at least 512 × 256 px.
 3. Wait for quiet: `expect.poll` every 100 ms (timeout 10 s) until there is at least one request, none is pending, and nothing changed for 500 ms.
 4. Assert: at least 4 true-colour requests; their `Time` set is exactly `{"2026-10-08"}`; every overlay request has no `Time`; `time-utc` reads `2026-10-10T03:30:00Z`; `time-local` reads `2026-10-09 17:30:00 Pacific/Honolulu`.
 5. Note the count, then press `Shift+ArrowRight` 30 times (focus on the page, not the map).
@@ -589,27 +589,27 @@ Verified: 18 true-colour and 36 overlay requests at load; 18 new true-colour req
 Evidence in the pull request:
 
 - The CI log lines with the unit and e2e test names (`npx vitest run --reporter=verbose`, `npm run e2e`).
-- A screenshot of `npm run dev` at `/?t=2026-10-10T08:00:00Z` against live GIBS: Hawaii true colour for 2026-10-09, overlays, the site marker, the timeline and the credits.
-- A clip of 20 s or less: from `/?t=2026-10-10T03:45:00Z`, step across 03:51:52Z with DevTools Network filtered by `Time=`, showing `2026-10-08` give way to `2026-10-09`.
+- A screenshot of `npm run dev` at `http://localhost:5173/Overhead/?t=2026-10-10T08:00:00Z` against live GIBS: Hawaii true colour for 2026-10-09, overlays, the site marker, the timeline and the credits.
+- A clip of 20 s or less: from `http://localhost:5173/Overhead/?t=2026-10-10T03:45:00Z`, step across 03:51:52Z with DevTools Network filtered by `Time=`, showing `2026-10-08` give way to `2026-10-09`.
 - The trace from `npx playwright test gibs-time --trace on` (`test-results/…/trace.zip`, about 2.8 MB).
 - The output of the criterion 8 check.
 
 ## 7. Gotchas
 
-1. **OpenLayers defaults to REST for GIBS.** The GetTile operation lists RESTful first, so `optionsFromCapabilities` without `requestEncoding` collects three templates. About two thirds of tiles never carry `Time`, and those URLs return 200, so the bug is silent. Re-verified on the snapshot: REST, 3 urls, 1 with `{Time}`. Always use `gibsWmtsOptions`. ([openlayers.md](../verification/openlayers.md) claim 1, [gibs.md](../verification/gibs.md) claims 8 and 13)
-2. **The capabilities Default is today's UTC date, which is black.** OpenLayers copies it into `dimensions` (`ol/source/WMTS.js:452`), so set `Time` when constructing the source. A black tile is a 200, so the error revert cannot catch it; only the 4 h rule prevents it. ([gibs.md](../verification/gibs.md) claims 1 and 4)
-3. **A 404 Time makes OpenLayers spin.** With stale tiles from the previous Time, the map re-renders at about 60 fps and never fires `rendercomplete`. Revert, as in step 12. OpenLayers never re-requests an errored tile, so returning to a failed Time fires no new error and spins again: the binding must remember failed Times (step 12). Each 404 is also a console error, so test the revert in unit tests, never in e2e. ([openlayers.md](../verification/openlayers.md) claim 6)
+1. **OpenLayers defaults to REST for GIBS.** The GetTile operation lists RESTful first, so `optionsFromCapabilities` without `requestEncoding` collects three templates. About two thirds of tiles never carry `Time`, and those URLs return 200, so the bug is silent. Re-verified on the snapshot: REST, 3 urls, 1 with `{Time}`. Always use `gibsWmtsOptions`. (`verification/openlayers.md` claim 1, `verification/gibs.md` claims 8 and 13)
+2. **The capabilities Default is today's UTC date, which is black.** OpenLayers copies it into `dimensions` (`ol/source/WMTS.js:452`), so set `Time` when constructing the source. A black tile is a 200, so the error revert cannot catch it; only the 4 h rule prevents it. (`verification/gibs.md` claims 1 and 4)
+3. **A 404 Time makes OpenLayers spin.** With stale tiles from the previous Time, the map re-renders at about 60 fps and never fires `rendercomplete`. Revert, as in step 12. OpenLayers never re-requests an errored tile, so returning to a failed Time fires no new error and spins again: the binding must remember failed Times (step 12). Each 404 is also a console error, so test the revert in unit tests, never in e2e. (`verification/openlayers.md` claim 6)
 4. **KVP needs `OperationsMetadata`.** With the operations removed from the snapshot, `requestEncoding: "KVP"` silently returned REST with 3 urls (verified). The script and `gibsWmtsOptions` both check for it.
 5. **An unlinked matrix set falls back silently.** `optionsFromCapabilities` uses the layer's first `TileMatrixSetLink` when the requested set is not linked (`ol/source/WMTS.js:413`). Asking NOAA-20 for Level6 returned Level9 (verified). `gibsWmtsOptions` throws instead.
-6. **`WMTSCapabilities` needs `DOMParser`.** It runs only on the main thread, never in a worker or in Vitest's Node environment, and `read()` returns `any`. Unit tests check the snapshot text; e2e covers parsing. ([gibs.md](../verification/gibs.md) claim 3, [openlayers.md](../verification/openlayers.md) claim 15)
-7. **The `_15m` overlays misrender in EPSG:3857** (opaque black tiles and HTTP 500s). Use `Coastlines` and `Reference_Labels` on Level9. ([gibs.md](../verification/gibs.md) claim 10)
-8. **StrictMode and disposal.** React 19 runs effects mount, cleanup, mount in development. `map.dispose()` does not dispose layers, and a disposed layer has a null source. Build everything inside the effect run. An effect re-run caused by a dependency change is not doubled, so the double mount appears only when the data are ready before mount. ([openlayers.md](../verification/openlayers.md) claim 5, [tooling.md](../verification/tooling.md) claim 6)
+6. **`WMTSCapabilities` needs `DOMParser`.** It runs only on the main thread, never in a worker or in Vitest's Node environment, and `read()` returns `any`. Unit tests check the snapshot text; e2e covers parsing. (`verification/gibs.md` claim 3, `verification/openlayers.md` claim 15)
+7. **The `_15m` overlays misrender in EPSG:3857** (opaque black tiles and HTTP 500s). Use `Coastlines` and `Reference_Labels` on Level9. (`verification/gibs.md` claim 10)
+8. **StrictMode and disposal.** React 19 runs effects mount, cleanup, mount in development. `map.dispose()` does not dispose layers, and a disposed layer has a null source. Build everything inside the effect run. An effect re-run caused by a dependency change is not doubled, so the double mount appears only when the data are ready before mount. (`verification/openlayers.md` claim 5, `verification/tooling.md` claim 6)
 9. **Arrow keys belong to a focused map.** OpenLayers keyboard interactions listen on the map target, need `tabIndex`, and call `preventDefault`. The global handler skips `defaultPrevented` events. (verified)
 10. **Space on a focused button.** The global handler's `preventDefault()` cancels the button's activation, so without the BUTTON rule Space toggles play instead of pressing the button. (verified)
 11. **`Date.parse` without a zone is local time.** In Pacific/Honolulu, `2026-10-10T03:30:00` became 13:30Z in both Node and Chromium, while the date-only `2026-10-10` parsed as UTC midnight. Reject `?t=` without `Z`. (verified)
 12. **WebKit rate-limits `history.replaceState`** to 100 calls per 10 s and then throws `SecurityError`. Debounce the writer and wrap it in `try/catch`. (verified)
 13. **The true-colour date is not the UTC date.** At Maunakea it flips at 03:51:52.5Z. A spec that changes the date must cross that instant: 2026-10-10T03:30Z gives `2026-10-08`, and 04:00Z gives `2026-10-09`.
-14. **`Time` is case-sensitive, and so are the KVP parameter names.** OpenLayers writes `layer`, `Request`, `Format`, `TileMatrix`, `TileCol`, `TileRow` and `Time`. Route matchers and recorders must read exactly these names with `searchParams.get`. ([gibs.md](../verification/gibs.md) claim 4)
+14. **`Time` is case-sensitive, and so are the KVP parameter names.** OpenLayers writes `layer`, `Request`, `Format`, `TileMatrix`, `TileCol`, `TileRow` and `Time`. Route matchers and recorders must read exactly these names with `searchParams.get`. (`verification/gibs.md` claim 4)
 15. **A zero-size map requests nothing.** Without styling, the container div has height 0, OpenLayers fetches no tiles, and the acceptance test fails on its first count. Give the container a size; the spec asserts at least 512 × 256 px.
 16. **`ol/ol.css` is functional.** Without it, OpenLayers controls are unstyled and the rotate control (`ol-hidden`) stays visible. (verified by screenshot)
 17. **`vite build` warns about a chunk over 500 kB** (about 564 kB, 172 kB gzipped, mostly OpenLayers). It is a warning, not a failure. Code splitting belongs to M9's performance pass.

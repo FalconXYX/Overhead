@@ -1,0 +1,58 @@
+# Refreshes public/data/gp/ from CelesTrak (M3 step 9). The only workflow that reaches a third party.
+# scripts/fetch-gp.ts skips a group whose meta.json stamp is under 2 h old, always asks for FORMAT=json,
+# stops at the first non-200 (including 403) and never retries: CelesTrak firewalls an IP after 50 errors
+# in 2 h. Its source data changes 2–3 times a day, so 4 runs a day are enough.
+name: fetch-gp
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the data commit
+  actions: write # dispatch deploy.yml after a data push
+
+# Never two runs at once, and never cancel one that may be pushing.
+concurrency:
+  group: fetch-gp
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Fetch GP data (stops at the first non-200, never retries)
+        run: npx tsx scripts/fetch-gp.ts --out public/data/gp
+        env:
+          GP_CONTACT_URL: ${{ github.server_url }}/${{ github.repository }}
+      # Also after a stop (the job still fails), so groups fetched before it are kept.
+      # A push made with GITHUB_TOKEN starts no workflow, so this step dispatches deploy.yml itself.
+      # The dispatched run builds the newest commit on main, which is this data commit; a called
+      # workflow (workflow_call) would build this run's own commit, the one before the data push.
+      - name: Commit changed files, then deploy them
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/gp
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "data: refresh CelesTrak GP $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            gh workflow run deploy.yml --ref main
+          else
+            echo "Pushed to $GITHUB_REF_NAME; production deploys from main only, so no deploy"
+          fi

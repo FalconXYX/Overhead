@@ -1,6 +1,6 @@
 # M3 · Satellites
 
-Branch `m3-satellites`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: [satellite-js.md](../verification/satellite-js.md), [architecture.md](../verification/architecture.md), [openlayers.md](../verification/openlayers.md), [sources.md](../verification/sources.md). Every number below marked "measured" was run on 2026-10-11 with the pinned packages (satellite.js 7.1.0, astronomy-engine 2.1.19, ol 10.11.0, TypeScript 7.0.2, Vitest 5.0.3, Biome 2.5.15), Skyfield 1.55 + sgp4 2.27, and headless Chromium 156 (`chromium_headless_shell-1248`, native arm64) on an Apple M2. Every TypeScript snippet type-checks with `tsc -b` under the M0 configs and passes Biome's linter; a few long lines are shown unwrapped, so run `npm run format` after pasting.
+Branch `m3-satellites`, one pull request. Contracts: [README.md](README.md). Decisions: [../DECISIONS.md](../DECISIONS.md). Evidence: `verification/satellite-js.md`, `verification/architecture.md`, `verification/openlayers.md`, `verification/sources.md`. Every number below marked "measured" was run on 2026-10-11 with the pinned packages (satellite.js 7.1.0, astronomy-engine 2.1.19, ol 10.11.0, TypeScript 7.0.2, Vitest 5.0.3, Biome 2.5.15), Skyfield 1.55 + sgp4 2.27, and headless Chromium 156 (`chromium_headless_shell-1248`, native arm64) on an Apple M2. Every TypeScript snippet type-checks with `tsc -b` under the M0 configs and passes Biome's linter; a few long lines are shown unwrapped, so run `npm run format` after pasting.
 
 ## 1. Goal
 
@@ -21,7 +21,7 @@ Out of scope here (milestone in brackets):
 2. Data: the CelesTrak snapshot from the verification run (step 1). No new download is needed for M3 unless that snapshot is gone.
 3. Tools on the developer machine only: `uv` (for the Skyfield fixture, step 4) and network once for `de421.bsp` (17 MB, cached outside the repository).
 4. Accounts: none beyond the GitHub repository (Actions with `contents: write`) and the M0 host. CelesTrak has no accounts or keys.
-5. Decisions ([DECISIONS](../DECISIONS.md)). O1: M3 draws satellites on the synthetic sky with pixel-space picking. Over a video, M5 limits the sky view to the light set (README [Sky over video](README.md#sky-over-video): the ISS and the visual group, labels only for the ISS and the selected or hovered object, the selected object's trail and next path, Starlink only when switched on for the video). On a YouTube camera M5 also replaces map picking with DOM hit targets that call the same `hover` and `select` actions, so keep picking behind those two actions. O2: no effect. O3 is open: M3 uses `selection`, `layers.satellites/starlink/trails` and `data.gp`; if O3 changes, propose them in this PR. O4: `fetch-gp.yml` reads `.nvmrc` (`26`).
+5. Decisions ([DECISIONS](../DECISIONS.md)). O1: M3 draws satellites on the synthetic sky with pixel-space picking. Over a video, M5 limits the sky view to the light set (README [Sky over video](README.md#sky-over-video): the ISS and the other stations and visual satellites, labels only for the ISS and the selected or hovered object, the selected object's trail and next path, Starlink only when switched on for the video). On a YouTube camera M5 also replaces map picking with DOM hit targets that call the same `hover` and `select` actions, so keep picking behind those two actions. O2: no effect. O3 is open: M3 uses `selection`, `layers.satellites/starlink/trails` and `data.gp`; if O3 changes, propose them in this PR. O4: `fetch-gp.yml` reads `.nvmrc` (`26`).
 
 ## 3. Deliverables
 
@@ -116,7 +116,7 @@ sub = wgs84.subpoint_of(geo)
 lit = geo.is_sunlit(eph)
 ```
 
-Passes in the committed fixture: 2026-10-11 15:06:50–15:12:44Z (max 28.84°), 16:45:01–16:48:10Z (12.67°), 2026-10-12 00:57:45–01:04:11Z (44.83°). The first shadow entry is 05:18:57Z, matching [satellite-js.md #16](../verification/satellite-js.md).
+Passes in the committed fixture: 2026-10-11 15:06:50–15:12:44Z (max 28.84°), 16:45:01–16:48:10Z (12.67°), 2026-10-12 00:57:45–01:04:11Z (44.83°). The first shadow entry is 05:18:57Z, matching `verification/satellite-js.md` #16.
 
 ### Step 5. Samples (`src/domain/orbits/sample.ts`)
 
@@ -260,6 +260,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # gh workflow run deploy.yml after a data push (M0 step 15)
 
 concurrency:
   group: fetch-gp
@@ -280,8 +281,10 @@ jobs:
         run: npx tsx scripts/fetch-gp.ts --out public/data/gp
         env:
           GP_CONTACT_URL: ${{ github.server_url }}/${{ github.repository }}
-      - name: Commit changed files
+      - name: Commit changed files, then deploy them
         if: ${{ !cancelled() }} # also after a stop, so groups fetched before it are kept
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -292,9 +295,10 @@ jobs:
           fi
           git commit -m "data: refresh CelesTrak GP $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
+          gh workflow run deploy.yml --ref main
 ```
 
-A stop fails the job (red run, e-mail) and still commits what succeeded. The stamp in `meta.json` changes on every successful fetch, so expect one small data commit per run that fetched anything. Run it once with `workflow_dispatch` before merging and link the run in the PR (gotcha 6 explains why the push may be rejected).
+A push made with `GITHUB_TOKEN` starts no workflow, so the step dispatches `deploy.yml` itself; `workflow_dispatch` runs always start, and the dispatched run builds the newest commit on `main`, which is the data commit (M0 step 15, rule 1). Without that line data commits never reach production. A stop fails the job (red run, e-mail) and still commits what succeeded. The stamp in `meta.json` changes on every successful fetch, so expect one small data commit per run that fetched anything. Run it once with `workflow_dispatch` before merging and link the run in the PR (gotcha 6 explains why the push may be rejected).
 
 ### Step 10. Worker (`src/workers/protocol.ts`, `propagation.worker.ts`)
 
@@ -433,7 +437,7 @@ export function writeClassPoints(
 
 1. `src/app/testHooks.ts` ([README section 6](README.md#state-app-and-map-modules)) is installed by `main.tsx` only when `navigator.webdriver` is true (it is in Playwright's headless Chromium). The selection layers call `recordHighlight(view, selectedId)` from `postrender`. `selectionFrame` comes from the hooks' own `bindSelection` listener, which stores `frameCount()` whenever `selectedId` changes; `readyFrame` is set by `updateEphemerisFrame` (step 11). `clientPoint` uses M1's `registry` (`src/map/registry.ts`), `map.getPixelFromCoordinate` and the target's `getBoundingClientRect()`. `ViewId` has the same members as M1's `MapId`.
 2. `tests/e2e/fixtures.ts`: add the same-origin route `**/data/gp/*.json` → `tests/fixtures/gp/<file>` ([End-to-end tests](README.md#end-to-end-tests)), so positions do not change when the workflow commits new data.
-3. `tests/perf/propagation.perf.ts` (`npm run perf`): load `/?t=2026-10-11T15:09:50Z`, press Space (1×), collect 600 `overhead:propagate` durations, drop the first 5 (JIT warm-up: the first reply took 1.0–3.1 ms), report p50/p95/max; then turn Starlink on, wait for the group, and collect 600 more the same way. `ephemeris.ts` records each reply as `performance.measure("overhead:propagate", { start: performance.now() - computeMs, duration: computeMs })` and clears it at once; collect with a `PerformanceObserver`, as M2 does for `overhead:sky` (599 of 600 measures were observed before the run returned; the last was still pending).
+3. `tests/perf/propagation.perf.ts` (`npm run perf`): load `./?t=2026-10-11T15:09:50Z`, press Space (1×), collect 600 `overhead:propagate` durations, drop the first 5 (JIT warm-up: the first reply took 1.0–3.1 ms), report p50/p95/max; then turn Starlink on, wait for the group, and collect 600 more the same way. `ephemeris.ts` records each reply as `performance.measure("overhead:propagate", { start: performance.now() - computeMs, duration: computeMs })` and clears it at once; collect with a `PerformanceObserver`, as M2 does for `overhead:sky` (599 of 600 measures were observed before the run returned; the last was still pending).
 
 ### Step 17. Docs
 
@@ -461,7 +465,7 @@ Site for orbit tests: 19.8253°, −155.4689°, 4,204 m. Fixtures as in [Fixture
 | `pick.test.ts` | A pointer at x = half-world + 2 km picks an object at x = −half-world + 1 km with wrapping, not without; `skip` and radius are respected | none | exact |
 | `actions.test.ts`, `selectors.test.ts`, `url.test.ts`, `keyboard.test.ts` | `select(null)` clears follow; `hover` unchanged id → no state change; `selectGroupMask` 3 / 7; `?sel=` round trip; Esc → `select(null)` | store | exact |
 | `bindSelection.test.ts` | Fires `[null, null]` at subscribe, once per selection or hover change, never on `tick`, never after unsubscribe | store | exact |
-| `selection.spec.ts` (e2e) | `/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z`: once `readyFrame()` is set, the "Satellites above the horizon" list holds exactly ISS (ZARYA), SL-3 R/B (NORAD 19046), CYGNUS NG-24, ORBVIEW 2 (SEASTAR), SL-3 R/B (NORAD 10114), DUPLEX, SPACEMOBILE-010, CZ-8A R/B, in that order, and no docked vehicle (no POISK) | gp route | exact |
+| `selection.spec.ts` (e2e) | `./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z`: once `readyFrame()` is set, the "Satellites above the horizon" list holds exactly ISS (ZARYA), SL-3 R/B (NORAD 19046), CYGNUS NG-24, ORBVIEW 2 (SEASTAR), SL-3 R/B (NORAD 10114), DUPLEX, SPACEMOBILE-010, CZ-8A R/B, in that order, and no docked vehicle (no POISK) | gp route | exact |
 | `selection.spec.ts` | Click `clientPoint("sky", "sat:25544")`: `highlight("ground").id` is `sat:25544` and its frame − `selectionFrame()` ≤ 1; the Inspector shows "ISS (ZARYA)" and "25544"; URL has `sel=sat:25544` | same | ≤ 1 frame |
 | `selection.spec.ts` | Load the same URL plus `&sel=sat:25544`: `highlight("ground")` and `highlight("sky")` frames ≤ `readyFrame() + 1`; Inspector filled. Esc: both highlights null, URL without `sel` | same | ≤ 1 frame |
 | `selection.spec.ts` | Hover the ISS point: the tooltip reads "az 123.8°", "alt 28.9°", "795 km", "Sunlit" (satellite.js at 15:09:50Z: az 123.812°, geometric alt 28.841° + 0.030° refraction = 28.872°, range 794.522 km. The range is 0.02 km above the rounding edge; Skyfield's 794.494 km would round to 794, so the string must come from the app's own satellite.js value) | same | exact strings |
@@ -474,7 +478,7 @@ The e2e spec, type-checked against `@playwright/test` 1.64 (the click case):
 const T = "2026-10-11T15:09:50Z"; // ISS at az 123.8°, apparent alt 28.9°, sunlit, Sun at −16.2°
 
 test("clicking the ISS in the sky view highlights it on the ground map on the next frame", async ({ page }) => {
-  await page.goto(`/?cam=synthetic-maunakea&t=${T}`);
+  await page.goto(`./?cam=synthetic-maunakea&t=${T}`);
   await expect.poll(() => hooksReady(page)).toBe(true);
   const p = await clientPoint(page, "sky", "sat:25544");
   expect(p).not.toBeNull();
@@ -497,8 +501,8 @@ with `hooksReady = (page: Page) => page.evaluate(() => (window.__overhead?.ready
 1. `orbits.test.ts` "ISS vs Skyfield" passes: great-circle az/alt ≤ 0.05° on all 93 rows (stricter than the brief's 0.5°), range ≤ 0.1 km, sub-point ≤ 0.005°, sunlit flips within 2 s on all 31.
 2. `selection.spec.ts` passes in CI: clicking the ISS in the sky view, and loading `?sel=sat:25544`, each highlight it on the ground map within one frame and fill the Inspector; Esc clears both; the list, hover and Starlink cases pass; the shared fixture records no console errors and no third-party requests.
 3. `interpolate.test.ts`, `sampleClient.test.ts`, `tracks.test.ts`, `fetchGp.test.ts`, `gpData.test.ts` and the docking counts pass.
-4. `npm run perf` on a native-architecture laptop: ISS + visual p95 ≤ 4 ms. Measured here at 10 Hz in four runs of 600 (first 5 dropped): p50 0.1–0.2 ms, p95 0.2–0.7 ms, max 0.6–0.9 ms (175 objects; worker `performance.now()` is quantised to 0.1 ms); request-to-reply p95 0.4–1.0 ms. The Starlink numbers are recorded, not gated: p50 5.6–9.1 ms, p95 17.8–18.0 ms, max 19.9–20.4 ms paced at 10 Hz in three runs, against 4.6–4.8 ms for a back-to-back loop (propagate alone 3.9–4.1 ms).
-5. `fetch-gp.yml` passes actionlint, and one `workflow_dispatch` run on GitHub fetched or skipped every group and pushed (or had nothing to push).
+4. `npm run perf` on a laptop, launched from the arm64 Node 26 (O4): ISS + visual p95 ≤ 4 ms. Measured here at 10 Hz in four runs of 600 (first 5 dropped): p50 0.1–0.2 ms, p95 0.2–0.7 ms, max 0.6–0.9 ms (175 objects; worker `performance.now()` is quantised to 0.1 ms); request-to-reply p95 0.4–1.0 ms. The Starlink numbers are recorded, not gated: p50 5.6–9.1 ms, p95 17.8–18.0 ms, max 19.9–20.4 ms paced at 10 Hz in three runs, against 4.6–4.8 ms for a back-to-back loop (propagate alone 3.9–4.1 ms).
+5. `fetch-gp.yml` passes actionlint, and one `workflow_dispatch` run on GitHub fetched or skipped every group and pushed (or had nothing to push); after a push, a Deploy run for the data commit started (`workflow_dispatch`).
 6. Keyboard: Esc clears the selection; the satellite list is reachable with Tab and selects on Enter; Inspector buttons work with Enter and Space; focus rings are visible. Lit and shadowed satellites differ in shape. The CelesTrak credit is visible while satellites are shown.
 7. The [definition of done](README.md#definition-of-done) holds.
 
@@ -506,37 +510,37 @@ Evidence in the PR: the Vitest summary and the measured values printed by the IS
 
 ## 7. Gotchas
 
-1. **`eciToGeodetic` runs a fixed 20-iteration loop**: about 15–16.5 ms per 11k objects in Chrome. Use the Bowring closed form (1e-7°). [satellite-js.md #2](../verification/satellite-js.md)
-2. **`BulkPropagator`'s `GeodeticPositionCalculator` swaps latitude and longitude in 7.1.0**, and `createWasmModule` does not exist. M3 does not use `BulkPropagator`. [satellite-js.md #1, #5, #6](../verification/satellite-js.md)
-3. **Without `worker: { format: "es" }` the build fails** as soon as anything imports satellite.js. [satellite-js.md #4](../verification/satellite-js.md)
-4. **A hand-written OMM interface fails TS2345** (`EPHEMERIS_TYPE`, `CLASSIFICATION_TYPE`, no index signature). Use `OMMJsonObject` and a type guard. [satellite-js.md #11](../verification/satellite-js.md)
+1. **`eciToGeodetic` runs a fixed 20-iteration loop**: about 15–16.5 ms per 11k objects in Chrome. Use the Bowring closed form (1e-7°). `verification/satellite-js.md` #2
+2. **`BulkPropagator`'s `GeodeticPositionCalculator` swaps latitude and longitude in 7.1.0**, and `createWasmModule` does not exist. M3 does not use `BulkPropagator`. `verification/satellite-js.md` #1, #5, #6
+3. **Without `worker: { format: "es" }` the build fails** as soon as anything imports satellite.js. `verification/satellite-js.md` #4
+4. **A hand-written OMM interface fails TS2345** (`EPHEMERIS_TYPE`, `CLASSIFICATION_TYPE`, no index signature). Use `OMMJsonObject` and a type guard. `verification/satellite-js.md` #11
 5. **CelesTrak:**
    - The default format became CSV on 2026-05-09: always send `FORMAT=json`.
    - A second download in the same window returns 403 "GP data has not updated since your last successful download"; 50 errors (301/403/404) in 2 h firewall the IP. Stop on any non-200 and never retry.
    - Store the stamp in `meta.json`: `git checkout` resets file mtimes, so an mtime check in CI always sees a fresh file.
    - A `.com` URL answers 301; `redirect: "manual"` makes that a stop instead of a silent follow.
-   - [sources.md #3, #18, #19](../verification/sources.md)
+   - `verification/sources.md` #3, #18, #19
 6. **Workflow pushes:**
    - Pushes made with `GITHUB_TOKEN` do not start other workflows, so `ci.yml` does not run on data commits (GitHub docs, "Triggering a workflow", checked 2026-10-11).
    - M0 makes `check` a required status check on `main`. Required checks are meant to pass before commits land on the branch, and the data commit never gets a `check` run (previous point), so the workflow's push may be rejected. The README assumes a repository ruleset that requires `check` and lets the data push bypass it ([README "Assumed until Parth confirms"](README.md#assumed-until-parth-confirms)); prove it on the first manual run, and if the push is rejected, report it to Parth instead of weakening the protection.
-7. **`shadowFraction` takes the Sun in AU first and the satellite in km second**; swapped arguments return NaN. [satellite-js.md #16](../verification/satellite-js.md)
+7. **`shadowFraction` takes the Sun in AU first and the satellite in km second**; swapped arguments return NaN. `verification/satellite-js.md` #16
 8. **Sun altitude:**
    - `sunPos().rsun` is in AU. Scale it to km before subtracting the observer's ECEF position, or the topocentric vector is meaningless.
    - The −6° test is geometric. A refracted Sun turns "visible" on about 156 s after the twilight marker.
-   - [architecture.md #13](../verification/architecture.md)
-9. **Hermite needs the Earth-fixed velocity** `eciToEcf(v) − ω × r_ecf`. The naive rotated velocity errs by 0.35° at 600× (measured above), worse than linear. [architecture.md #12](../verification/architecture.md)
-10. **An emptied `MultiPoint` never redraws on `WebGLVector`.** `MixedGeometryBatch.changeFeature` returns early for a feature without a ref (`ol/render/webgl/MixedGeometryBatch.js` 543–557), and an empty geometry loses its ref. Remove the feature while empty and add it back (verified). A `MultiPoint` created empty never draws at all. [architecture.md #2](../verification/architecture.md)
-11. **`WebGLVector` draws about one frame late and freezes while the view pans, zooms or animates.** At 600× a satellite moves tens of km per frame, so a WebGL dot under a canvas label would visibly lag. Draw the ISS, the selected and the hovered satellites only on the canvas markers layer. A canvas `VectorLayer` also skips re-rendering during view animation and interaction unless `updateWhileAnimating` and `updateWhileInteracting` are true (both default false, `renderer/canvas/VectorLayer.js` 688–699), so set both on the markers layer. [openlayers.md #9](../verification/openlayers.md)
-12. **`WebGLVector` drops unwrapped geometry past ±180°** when the view sits inside one world (a Hawaii-centred view shows nothing). Ground tracks go on a canvas `VectorLayer` with unwrapped longitudes. [openlayers.md #10](../verification/openlayers.md)
+   - `verification/architecture.md` #13
+9. **Hermite needs the Earth-fixed velocity** `eciToEcf(v) − ω × r_ecf`. The naive rotated velocity errs by 0.35° at 600× (measured above), worse than linear. `verification/architecture.md` #12
+10. **An emptied `MultiPoint` never redraws on `WebGLVector`.** `MixedGeometryBatch.changeFeature` returns early for a feature without a ref (`ol/render/webgl/MixedGeometryBatch.js` 543–557), and an empty geometry loses its ref. Remove the feature while empty and add it back (verified). A `MultiPoint` created empty never draws at all. `verification/architecture.md` #2
+11. **`WebGLVector` draws about one frame late and freezes while the view pans, zooms or animates.** At 600× a satellite moves tens of km per frame, so a WebGL dot under a canvas label would visibly lag. Draw the ISS, the selected and the hovered satellites only on the canvas markers layer. A canvas `VectorLayer` also skips re-rendering during view animation and interaction unless `updateWhileAnimating` and `updateWhileInteracting` are true (both default false, `renderer/canvas/VectorLayer.js` 688–699), so set both on the markers layer. `verification/openlayers.md` #9
+12. **`WebGLVector` drops unwrapped geometry past ±180°** when the view sits inside one world (a Hawaii-centred view shows nothing). Ground tracks go on a canvas `VectorLayer` with unwrapped longitudes. `verification/openlayers.md` #10
 13. **Docked vehicles do not always share elements.** Five ISS vehicles carry the ISS element set exactly; CREW DRAGON 13 has its own (epoch 10 ms earlier, ω and M differ) and stays within 0.611 km. An exact-key rule draws it as a second ISS.
 14. **Two objects can share a name** (two "SL-3 R/B" above Maunakea at 15:09:50Z). Accessible names and list keys carry the NORAD id.
 15. **Worker URLs:** `new URL("meta.json", "data/gp/stations.json")` throws "Invalid base URL", and a relative `fetch("data/gp/meta.json")` in the built worker went to `/assets/data/gp/meta.json` (the worker script's folder) and still answered 200 under `vite preview`, so the mistake surfaces as a JSON parse error (both measured). Pass absolute URLs.
-16. **Transferring a buffer detaches it**; only the main thread's pool may reuse it, after the worker sends it back. Never keep a reference to a sent buffer. [satellite-js.md #8](../verification/satellite-js.md)
+16. **Transferring a buffer detaches it**; only the main thread's pool may reuse it, after the worker sends it back. Never keep a reference to a sent buffer. `verification/satellite-js.md` #8
 17. **`Refraction` throws a string, not an `Error`, on a non-finite altitude**, after `console.trace()` (`astronomy.js` 199–205). The M0 clock loop then removes the throwing frame updater for good. Call `apparentAltDeg` only for valid objects.
 18. **TypeScript 7 typed arrays are generic.** A helper declared to return `Uint8Array` returns `Uint8Array<ArrayBufferLike>`, which is not assignable to a variable inferred as `Uint8Array<ArrayBuffer>` (TS2322, verified). Annotate `Uint8Array<ArrayBuffer>` / `Float32Array<ArrayBuffer>`.
 19. **`erasableSyntaxOnly` rejects constructor parameter properties and enums** (TS1294, verified). Declare fields explicitly.
-20. **Benchmark paced, native and in a browser.** Back-to-back loops ran Starlink in 4.6–4.8 ms; the same code paced at 10 Hz gave p50 5.6–9.1 ms and p95 18 ms on the same M2 under background load. This Mac now has only Node 26.11.1 arm64 (O4), and the project's `node_modules` carries the arm64 builds of its native bindings (rolldown, esbuild, lightningcss, Biome); `vite --version` and `vitest --version` report `darwin-arm64 node-v26.11.1`. Run the benchmark in Playwright's arm64 headless shell (`navigator.userAgentData` architecture `arm`), launched from that Node. [satellite-js.md #3](../verification/satellite-js.md)
-21. **`setFlatCoordinates` takes `number[]`, not a typed array**, and does not fire a change: call `changed()` once per geometry per frame. Per-feature `setCoordinates` at Starlink scale costs 13–46 ms per frame. [architecture.md #3](../verification/architecture.md)
+20. **Benchmark paced, native and in a browser.** Back-to-back loops ran Starlink in 4.6–4.8 ms; the same code paced at 10 Hz gave p50 5.6–9.1 ms and p95 18 ms on the same M2 under background load. This Mac now has only Node 26.11.1 arm64 (O4), and the project's `node_modules` carries the arm64 builds of its native bindings (rolldown, esbuild, lightningcss, Biome); `vite --version` and `vitest --version` report `darwin-arm64 node-v26.11.1`. Run the benchmark in Playwright's arm64 headless shell (`navigator.userAgentData` architecture `arm`), launched from that Node. `verification/satellite-js.md` #3
+21. **`setFlatCoordinates` takes `number[]`, not a typed array**, and does not fire a change: call `changed()` once per geometry per frame. Per-feature `setCoordinates` at Starlink scale costs 13–46 ms per frame. `verification/architecture.md` #3
 22. **Load groups strictly in order.** Two concurrent `fetch`es can resolve in either order; visual finishing first would claim 25544 for the visual group and break `?sel=` group text and the docking hosts.
 23. **The worker answers within milliseconds, but tracks and sky paths share its thread.** Keep both requests at ≤ 10 per second so a burst never delays a sample past its 100 ms slot.
 
