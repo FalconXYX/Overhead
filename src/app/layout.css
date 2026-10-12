@@ -642,12 +642,13 @@
   width: 100%;
 }
 
+/* GOES availability: muted bars under the track (aria-hidden; the caption over the map is the text). */
 .tl-goes {
   position: relative;
   display: block;
-  height: 4px;
-  margin: 1px 0;
-  color: var(--c-text-2);
+  height: 3px;
+  margin: 2px 0 1px;
+  color: #5d6c82;
 }
 
 .tl-markers {
@@ -1164,6 +1165,12 @@
     min-width: 30px;
     min-height: 26px;
     padding: 2px;
+  }
+
+  /* Collapsed, the camera's credit fills the line and the rest sit past its end, clipped: hide them outright, so
+     nothing invisible takes the focus or crowds the toggle (Lighthouse target-size). The toggle shows them all. */
+  .credits:not([data-expanded="true"]) .credits-list > li + li {
+    visibility: hidden;
   }
 }
 
