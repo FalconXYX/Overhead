@@ -1,5 +1,6 @@
 // tests/perf/propagation.perf.ts — propagation worker cost per sample (M3 step 16.3; README section 9). Run by hand with
-// `npm run perf`, never in CI. Budget: ISS + visual p95 ≤ 4 ms. Starlink is recorded, not gated (M9 gates it).
+// `npm run perf`, never in CI. Budget: ISS + visual p95 ≤ 4 ms. [M9] With Starlink (culled, step 2) p95 ≤ 10 ms at 1×,
+// 60× and 600×: gated from M9 (measured 2.1–2.6 ms at 1× to 60×, 4.1–5.1 ms at 600×).
 import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import { expect, test } from "../e2e/fixtures";
@@ -7,6 +8,7 @@ import { expect, test } from "../e2e/fixtures";
 const SAMPLES = 600; // 60 s at 1× (D = 100 ms)
 const WARMUP = 5; // JIT warm-up: the first replies took 1.0–3.1 ms
 const BUDGET_P95_MS = 4;
+const STARLINK_BUDGET_P95_MS = 10; // [M9]
 
 // Collects every "overhead:propagate" duration (the worker's computeMs). The app clears its measures at once; an
 // observer still receives each one.
@@ -33,8 +35,15 @@ const resetDurations = (page: Page): Promise<void> =>
     (window as unknown as { __propagate: number[] }).__propagate = [];
   });
 
-/** Waits for WARMUP + SAMPLES replies, drops the warm-up, and returns p50/p95/max of the rest. */
-async function collect(page: Page, label: string): Promise<{ p95: number; text: string }> {
+/**
+ * Waits for WARMUP + SAMPLES replies, drops the warm-up, and returns p50/p95/max of the rest. [M9] The warm-up also
+ * drops the full passes that follow a flush (a rate change or a seek).
+ */
+async function collect(
+  page: Page,
+  label: string,
+  rate = "1x",
+): Promise<{ p95: number; text: string }> {
   await resetDurations(page);
   await expect
     .poll(async () => (await durations(page)).length, { timeout: 120_000, intervals: [1_000] })
@@ -52,13 +61,13 @@ async function collect(page: Page, label: string): Promise<{ p95: number; text: 
   return {
     p95,
     text:
-      `${label}: ${kept.length} samples at 1x (first ${WARMUP} dropped: ${warm} ms), ` +
+      `${label}: ${kept.length} samples at ${rate} (first ${WARMUP} dropped: ${warm} ms), ` +
       `p50 ${p50.toFixed(2)} ms, p95 ${p95.toFixed(2)} ms, max ${max.toFixed(2)} ms`,
   };
 }
 
 test("propagation worker per tick: ISS + visual, then with Starlink", async ({ page, browser }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(600_000);
   await page.goto("./?t=2026-10-11T15:09:50Z");
   await expect
     .poll(() => page.evaluate(() => (window.__overhead?.readyFrame() ?? null) !== null))
@@ -73,13 +82,31 @@ test("propagation worker per tick: ISS + visual, then with Starlink", async ({ p
   const starlink = page.getByRole("checkbox", { name: "Starlink (about 11,100; loads 4.7 MB)" });
   await starlink.check();
   await expect(starlink).toHaveAccessibleDescription(/^11,102 objects/, { timeout: 30_000 });
-  const withStarlink = await collect(page, "with Starlink (11,277 objects)");
+  const starlinkRows = [await collect(page, "with Starlink (11,277 objects)")];
+  // [M9] 60× and 600×: each from the start of the ±12 h range (Home on the scrubber), so 600× (10 h of sim time per
+  // minute) never reaches the edge, where the clock pauses.
+  const slider = timeline.getByRole("slider", { name: "Simulation time" });
+  for (const rate of ["60×", "600×"] as const) {
+    await slider.focus();
+    await page.keyboard.press("Home");
+    await timeline.getByRole("radio", { name: rate }).click();
+    await expect(timeline.getByRole("radio", { name: rate })).toBeChecked();
+    await expect(timeline.getByRole("button", { name: "Pause" })).toBeVisible();
+    starlinkRows.push(
+      await collect(page, "with Starlink (11,277 objects)", rate.replace("×", "x")),
+    );
+  }
 
   // navigator.userAgentData is no use here: the Desktop Chrome descriptor's Windows x64 user agent overrides it.
   console.log(
     `Chromium ${browser.version()} headless, launched from Node ${process.version} ${process.arch}`,
   );
   console.log(`overhead:propagate ${base.text}; budget p95 <= ${BUDGET_P95_MS} ms`);
-  console.log(`overhead:propagate ${withStarlink.text}; recorded, not gated until M9`);
+  for (const row of starlinkRows) {
+    console.log(`overhead:propagate ${row.text}; budget p95 <= ${STARLINK_BUDGET_P95_MS} ms`);
+  }
   expect(base.p95, "ISS + visual worker p95 (ms)").toBeLessThanOrEqual(BUDGET_P95_MS);
+  for (const row of starlinkRows) {
+    expect.soft(row.p95, `${row.text}: p95 (ms)`).toBeLessThanOrEqual(STARLINK_BUDGET_P95_MS);
+  }
 });

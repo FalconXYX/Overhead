@@ -1,6 +1,7 @@
 // src/map/ground/layers/tracks.ts — ground tracks on a canvas VectorLayer (M3 step 14.4). WebGLVector drops unwrapped
 // geometry past ±180° (gotcha 12), so tracks keep the worker's unwrapped longitudes on canvas with the source's
-// default wrapX. Colours and widths are visual design, settled from screenshots; the values here are placeholders.
+// default wrapX. Colours and widths are visual design (M9 step 12): light lines on the imagery, the selected track in the
+// accent on a dark casing.
 import Feature from "ol/Feature";
 import LineString from "ol/geom/LineString";
 import VectorLayer from "ol/layer/Vector";
@@ -17,12 +18,12 @@ export interface GroundTracks {
 
 /** Other tracks: thin. */
 const TRACK_STYLE = new Style({
-  stroke: new Stroke({ color: "rgba(34, 34, 34, 0.7)", width: 1.5 }),
+  stroke: new Stroke({ color: "rgba(220, 228, 240, 0.55)", width: 1.25 }),
 });
 /** The selected satellite's ±10 min track, emphasised by width (with a halo), not by colour alone. */
 const SELECTED_TRACK_STYLES = [
-  new Style({ stroke: new Stroke({ color: "rgba(255, 255, 255, 0.9)", width: 5 }) }),
-  new Style({ stroke: new Stroke({ color: "#222", width: 3 }) }),
+  new Style({ stroke: new Stroke({ color: "rgba(4, 6, 11, 0.75)", width: 5 }) }),
+  new Style({ stroke: new Stroke({ color: "#f5a623", width: 2.5 }) }),
 ];
 
 function trackStyle(feature: unknown): Style | Style[] {

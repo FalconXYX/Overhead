@@ -31,7 +31,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # [M9] Builds, then downloads the deploy copy of each recorded clip from its release asset (clips-2026-10-11 on
+      # this public repository; no token) into dist/recordings/, checking size and sha256, and copies each clip's
+      # element sets into dist/recordings/<clip>.gp/ (scripts/fetch-deploy-clips.ts). Any mismatch or a missing asset
+      # fails the deploy, and production keeps its last deploy. ci.yml keeps `npm run build` and never downloads clips.
+      - run: npm run build:pages
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

@@ -18,6 +18,7 @@ import {
   enuToAzAltDeg,
   enuToEcef,
   enuToEcefMatrix,
+  geodeticHeightKm,
   geodeticToEcefKm,
   type Mat3,
   type ObserverSite,
@@ -363,5 +364,136 @@ describe("unwrapLonLatPairsInPlace", () => {
     for (let i = 0; i < 8; i++) near(pairs[i] ?? Number.NaN, expected[i] ?? Number.NaN);
     unwrapLonLatPairsInPlace(pairs, 0); // no pairs: nothing to do
     near(pairs[0] ?? Number.NaN, 179);
+  });
+});
+
+// ---- M8: ENU→ECEF numeric check and geodeticHeightKm (M8 section 5)
+
+describe("enuToEcefMatrix numeric check (M8)", () => {
+  const M8_SITE: ObserverSite = { latDeg: 19.8253, lonDeg: -155.4689, heightM: 4204 };
+
+  it("matches the prototype's row-major values at 19.8253°, −155.4689° and is a rotation", () => {
+    const m = enuToEcefMatrix(M8_SITE.latDeg, M8_SITE.lonDeg);
+    const expected = [
+      0.415187106151195, 0.308540026704293, -0.855816989085348, -0.909736042424283,
+      0.14081209806506, -0.390579423616657, 0, 0.940731101303571, 0.339153350330156,
+    ];
+    for (let i = 0; i < 9; i++) near(m[i] ?? Number.NaN, expected[i] ?? Number.NaN, 1e-12);
+    let worst = 0;
+    for (let a = 0; a < 3; a++) {
+      for (let b = 0; b < 3; b++) {
+        let dot = 0;
+        for (let r = 0; r < 3; r++) dot += (m[3 * r + a] ?? 0) * (m[3 * r + b] ?? 0);
+        worst = Math.max(worst, Math.abs(dot - (a === b ? 1 : 0)));
+      }
+    }
+    expect(worst).toBeLessThan(1e-15); // measured 1.1e-16
+    const [m0, m1, m2, m3, m4, m5, m6, m7, m8] = Array.from(m);
+    const det =
+      (m0 ?? 0) * ((m4 ?? 0) * (m8 ?? 0) - (m5 ?? 0) * (m7 ?? 0)) -
+      (m1 ?? 0) * ((m3 ?? 0) * (m8 ?? 0) - (m5 ?? 0) * (m6 ?? 0)) +
+      (m2 ?? 0) * ((m3 ?? 0) * (m7 ?? 0) - (m4 ?? 0) * (m6 ?? 0));
+    near(det, 1, 1e-15);
+  });
+
+  it("agrees with satellite.js ecfToLookAngles for points 1,000 km out along six directions", () => {
+    const m = enuToEcefMatrix(M8_SITE.latDeg, M8_SITE.lonDeg);
+    const o = new Float64Array(3);
+    geodeticToEcefKm(M8_SITE.latDeg, M8_SITE.lonDeg, M8_SITE.heightM, o, 0);
+    const observerGd = {
+      latitude: M8_SITE.latDeg * D2R,
+      longitude: M8_SITE.lonDeg * D2R,
+      height: M8_SITE.heightM / 1000,
+    };
+    const enu = new Float64Array(3);
+    const d = new Float64Array(3);
+    const cases: readonly (readonly [number, number])[] = [
+      [0, 45],
+      [90, 10],
+      [181, 60],
+      [270, 0.5],
+      [30, 40],
+      [359, 89],
+    ];
+    for (const [az, alt] of cases) {
+      azAltToEnuUnit(az, alt, enu, 0);
+      enuToEcef(m, 1000 * (enu[0] ?? 0), 1000 * (enu[1] ?? 0), 1000 * (enu[2] ?? 0), d, 0);
+      const look = ecfToLookAngles(observerGd, {
+        x: (o[0] ?? 0) + (d[0] ?? 0),
+        y: (o[1] ?? 0) + (d[1] ?? 0),
+        z: (o[2] ?? 0) + (d[2] ?? 0),
+      });
+      near(wrap180(look.azimuth * R2D - az), 0, 1e-9); // measured ≤ 5e-13°
+      near(look.elevation * R2D, alt, 1e-9);
+    }
+  });
+});
+
+describe("geodeticHeightKm (M8)", () => {
+  it("matches eciToGeodetic height for every snapshot object at 2026-10-11T03:50:21Z", () => {
+    const records = [
+      ...readGroup("stations.json"),
+      ...readGroup("visual.json"),
+      ...readGroup("starlink.json"),
+    ];
+    const date = new Date(SNAPSHOT_MS);
+    const gmst = gstime(date);
+    const c = Math.cos(gmst);
+    const s = Math.sin(gmst);
+    let checked = 0;
+    let worst = 0;
+    for (const omm of records) {
+      const pv = propagate(json2satrec(omm), date);
+      if (pv === null) continue;
+      const r = pv.position;
+      const h = geodeticHeightKm(r.x * c + r.y * s, -r.x * s + r.y * c, r.z);
+      worst = Math.max(worst, Math.abs(h - eciToGeodetic(r, gmst).height));
+      checked += 1;
+    }
+    console.log(
+      `geodeticHeightKm vs eciToGeodetic over ${checked} records: max |Δh| ${worst.toExponential(2)} km`,
+    );
+    expect(checked).toBe(11_280);
+    expect(worst).toBeLessThan(1e-6); // measured 6.4e-12 km
+  });
+
+  it("inverts geodeticToEcefKm at every latitude, the poles included", () => {
+    const rand = mulberry32(20261011);
+    const ecef = new Float64Array(3);
+    let worst = 0;
+    for (let i = 0; i < 1000; i++) {
+      const latDeg = i < 4 ? ([90, -90, 0, 89.9999][i] ?? 0) : rand() * 180 - 90;
+      const heightM = rand() * 2e6 - 500;
+      geodeticToEcefKm(latDeg, rand() * 360 - 180, heightM, ecef, 0);
+      const h = geodeticHeightKm(ecef[0] ?? 0, ecef[1] ?? 0, ecef[2] ?? 0);
+      worst = Math.max(worst, Math.abs(h - heightM / 1000));
+    }
+    expect(worst).toBeLessThan(1e-6);
+  });
+});
+
+describe("[M9] ecefToLatLonDeg without the θ trigonometry", () => {
+  it("matches the atan2, sin and cos form of one-step Bowring to 1e-12° over random satellite positions", () => {
+    const rand = mulberry32(20261011);
+    const out = new Float64Array(2);
+    const a = WGS84_A_KM;
+    const b = WGS84_B_KM;
+    const e2 = 1 - (b * b) / (a * a);
+    const ep2 = (a * a) / (b * b) - 1;
+    for (let k = 0; k < 5_000; k++) {
+      const r = 6_500 + 2_000 * rand();
+      const lat = Math.asin(2 * rand() - 1);
+      const lon = 2 * Math.PI * rand() - Math.PI;
+      const x = r * Math.cos(lat) * Math.cos(lon);
+      const y = r * Math.cos(lat) * Math.sin(lon);
+      const z = r * Math.sin(lat);
+      ecefToLatLonDeg(x, y, z, out, 0);
+      const p = Math.hypot(x, y);
+      const theta = Math.atan2(z * a, p * b);
+      const ref =
+        (Math.atan2(z + ep2 * b * Math.sin(theta) ** 3, p - e2 * a * Math.cos(theta) ** 3) * 180) /
+        Math.PI;
+      expect(Math.abs((out[0] ?? Number.NaN) - ref)).toBeLessThan(1e-12);
+    }
   });
 });

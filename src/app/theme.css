@@ -1,0 +1,437 @@
+/* src/app/theme.css — the visual design pass (M9 step 12): the dark night-sky theme. Every colour, size and font is a
+   custom property here; layout.css places the panes. main.tsx imports this after ol/ol.css and before layout.css and
+   a11y.css. Text colours keep WCAG AA (4.5:1) on every panel colour; the one accent, amber, marks the ISS, the
+   selection, interaction and focus. Video and imagery stay the brightest things on screen: the UI is near-black with
+   muted blue-grey panels. */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest first. */
+  --c-bg: #07090d; /* the page, the header and the credits line */
+  --c-sky: #04060b; /* behind every sky stage and its letterbox */
+  --c-surface: #0e131b; /* panels: sidebar, timeline, lists */
+  --c-surface-2: #151c27; /* controls and raised cards */
+  --c-surface-3: #1c2533; /* hover */
+  --c-line: #1f2836; /* hairlines between panels */
+  --c-line-strong: #344155; /* control borders */
+  --c-line-hover: #4b5b73;
+
+  /* Text: 15.6, 8.4 and 5.9 to 1 on --c-surface. */
+  --c-text: #e6ebf2;
+  --c-text-2: #a2afc1;
+  --c-text-3: #8592a6;
+
+  /* The accent: 9.2 to 1 on --c-surface; ink on amber 9.2 to 1. */
+  --c-accent: #f5a623;
+  --c-accent-strong: #ffb547;
+  --c-accent-ink: #1a1204;
+  --c-accent-soft: rgb(245 166 35 / 0.14);
+  --c-accent-line: rgb(245 166 35 / 0.55);
+  --c-focus: #ffbf47;
+
+  /* Type: the platform's UI face, a 12–13 px body for a dense tool, tabular figures for readouts. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 17px;
+  --lh: 1.45;
+
+  /* Shape and size. */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --control-h: 26px; /* every button and field is at least 24 × 24 CSS px */
+  --gap: 12px;
+  --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.55), 0 0 0 1px var(--c-line-strong);
+
+  /* OpenLayers' own control colours (ol/ol.css reads these). */
+  --ol-background-color: var(--c-surface-2);
+  --ol-accent-background-color: var(--c-surface-3);
+  --ol-subtle-background-color: rgb(14 19 27 / 0.55);
+  --ol-partial-background-color: rgb(14 19 27 / 0.85);
+  --ol-foreground-color: var(--c-text);
+  --ol-subtle-foreground-color: var(--c-text-2);
+  --ol-brand-color: var(--c-accent);
+}
+
+/* ---- Base ---- */
+
+html {
+  background: var(--c-bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font: var(--fs-md) / var(--lh) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+fieldset,
+pre {
+  margin: 0;
+}
+
+a {
+  color: var(--c-text);
+  text-decoration: underline;
+  text-decoration-color: var(--c-line-hover);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--c-accent-strong);
+  text-decoration-color: currentColor;
+}
+
+/* README Accessibility rule 1: never remove the ring, replace it with one that reads on every panel. */
+:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+time,
+output,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+pre,
+code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+/* ---- Controls (never inside an OpenLayers viewport: its hit targets and buttons keep their own look) ---- */
+
+:where(button):not(.ol-viewport *) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 3px 10px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+:where(button):not(.ol-viewport *):hover {
+  border-color: var(--c-line-hover);
+  background: var(--c-surface-3);
+}
+
+:where(button):not(.ol-viewport *):active {
+  background: var(--c-line);
+}
+
+:where(button):not(.ol-viewport *):disabled,
+:where(button[aria-disabled="true"]):not(.ol-viewport *) {
+  border-color: var(--c-line);
+  background: var(--c-surface);
+  color: var(--c-text-3);
+  cursor: not-allowed;
+}
+
+/* A pressed toggle: the amber fill and a leading dot, so the state is a shape too, not only a colour. */
+:where(button[aria-pressed="true"]):not(.ol-viewport *) {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-accent-strong);
+}
+
+:where(button[aria-pressed="true"]):not(.ol-viewport *):hover {
+  border-color: var(--c-accent);
+  background: rgb(245 166 35 / 0.22);
+}
+
+:where(button[aria-pressed]):not(.ol-viewport *)::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+:where(button[aria-pressed="true"]):not(.ol-viewport *)::before {
+  background: currentColor;
+}
+
+.btn-primary:not(.ol-viewport *) {
+  border-color: var(--c-accent);
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+  font-weight: 600;
+}
+
+.btn-primary:not(.ol-viewport *):hover {
+  border-color: var(--c-accent-strong);
+  background: var(--c-accent-strong);
+}
+
+.btn-primary:not(.ol-viewport *):disabled {
+  border-color: var(--c-line-strong);
+  background: var(--c-surface-2);
+  color: var(--c-text-3);
+  font-weight: 400;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--c-accent);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Sliders: a neutral track and an amber thumb (a filled amber track would outshine the imagery). */
+input[type="range"] {
+  min-height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-line-strong);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-line-strong);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--c-bg);
+  border-radius: 50%;
+  background: var(--c-accent);
+  box-shadow: 0 0 0 1px var(--c-accent);
+  appearance: none;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--c-bg);
+  border-radius: 50%;
+  background: var(--c-accent);
+  box-shadow: 0 0 0 1px var(--c-accent);
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  background: var(--c-accent-strong);
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: var(--c-text-3);
+  box-shadow: 0 0 0 1px var(--c-text-3);
+}
+
+input[type="range"]:disabled::-moz-range-thumb {
+  background: var(--c-text-3);
+  box-shadow: 0 0 0 1px var(--c-text-3);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="datetime-local"],
+input:not([type]),
+select,
+textarea {
+  min-height: var(--control-h);
+  padding: 2px 6px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg);
+  font-variant-numeric: tabular-nums;
+}
+
+select {
+  padding-right: 4px;
+  cursor: pointer;
+}
+
+input[type="file"] {
+  max-width: 100%;
+  color: var(--c-text-2);
+}
+
+input[type="file"]::file-selector-button {
+  min-height: var(--control-h);
+  margin-right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+input:disabled,
+select:disabled {
+  color: var(--c-text-3);
+  cursor: not-allowed;
+}
+
+label {
+  cursor: pointer;
+}
+
+fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  padding-bottom: 4px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+th,
+td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--c-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+thead th {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+summary {
+  cursor: pointer;
+}
+
+/* Visually hidden, still read and still labelling (the timeline's heading, the camera group's legend). */
+.visually-hidden,
+.pane-timeline > .pane-title,
+.pane-camera legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- OpenLayers controls and the hover card ---- */
+
+.ol-viewport .ol-control {
+  padding: 2px;
+  border-radius: var(--radius);
+}
+
+.ol-viewport .ol-control button {
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ol-partial-background-color);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.ol-viewport .ol-control button:hover {
+  border-color: var(--c-line-hover);
+  background: var(--c-surface-3);
+  outline: none;
+}
+
+.ol-viewport .ol-control button:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 1px;
+}
+
+/* HoverCard (role="tooltip"), portalled into the sky map's hover overlay. */
+.ol-overlay-container [role="tooltip"] {
+  display: grid;
+  gap: 1px;
+  min-width: 120px;
+  padding: 7px 10px 8px;
+  border-radius: var(--radius);
+  background: rgb(14 19 27 / 0.94);
+  box-shadow: var(--shadow-pop);
+  color: var(--c-text-2);
+  font: var(--fs-sm) / 1.35 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ol-overlay-container [role="tooltip"] strong {
+  margin-bottom: 2px;
+  color: var(--c-text);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}

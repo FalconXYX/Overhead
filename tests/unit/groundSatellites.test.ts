@@ -1,5 +1,7 @@
 import type Feature from "ol/Feature";
 import type MultiPoint from "ol/geom/MultiPoint";
+import type WebGLVectorLayer from "ol/layer/WebGLVector";
+import type VectorSource from "ol/source/Vector";
 import type Style from "ol/style/Style";
 import { describe, expect, it } from "vitest";
 import {
@@ -33,14 +35,25 @@ describe("writeGroundSatellites", () => {
     const g = createGroundSatellites();
     const ids = { iss: 0, selected: 6, hovered: 7 };
     writeGroundSatellites(g, fakeFrame(SATS, T), fakeCatalog(SATS), ids, true, true);
-    const [stationsLit, stationsShadow, visualLit, visualShadow, starlinkLit, starlinkShadow] =
-      g.classes;
+    // [M9] Starlink by row parity: the Starlink row (index 3) is odd.
+    const [
+      stationsLit,
+      stationsShadow,
+      visualLit,
+      visualShadow,
+      evenLit,
+      evenShadow,
+      starlinkLit,
+      starlinkShadow,
+    ] = g.classes;
     expect(stationsLit?.source.hasFeature(stationsLit.feature)).toBe(false);
     expect(stationsShadow?.source.hasFeature(stationsShadow.feature)).toBe(false);
     expect(pointsOf(visualLit?.feature)).toEqual([3e6, 4e6]); // below the sky's horizon, still on the globe
     expect(pointsOf(visualShadow?.feature)).toEqual([1e6, 2e6]);
     expect(pointsOf(starlinkLit?.feature)).toEqual([5e6, 6e6]);
     expect(starlinkShadow?.source.hasFeature(starlinkShadow.feature)).toBe(false);
+    expect(evenLit?.source.hasFeature(evenLit.feature)).toBe(false);
+    expect(evenShadow?.source.hasFeature(evenShadow.feature)).toBe(false);
     // Pickable: drawn, the markers included.
     expect(Array.from(g.skip.subarray(0, 8))).toEqual([0, 0, 0, 0, 1, 1, 0, 0]);
     expect(g.count).toBe(8);
@@ -62,12 +75,71 @@ describe("writeGroundSatellites", () => {
 
   it("marks lit and shadowed in the WebGL style by shape: circle against square", () => {
     const g = createGroundSatellites();
-    expect(g.classes.map((c) => c.feature.get("lit"))).toEqual([1, 0, 1, 0, 1, 0]);
+    expect(g.classes.map((c) => c.feature.get("lit"))).toEqual([1, 0, 1, 0, 1, 0, 1, 0]);
     const [lit, shadowed] = satelliteWebglStyle(4);
     expect(lit?.filter).toEqual(["==", ["get", "lit"], 1]);
     expect(lit?.style).toHaveProperty("circle-radius", 4);
     expect(shadowed?.else).toBe(true);
     expect(shadowed?.style).toHaveProperty("shape-points", 4);
+  });
+
+  it("[M9] splits Starlink by row parity into two WebGL layers, so a frame that moves one parity changes one layer", () => {
+    const g = createGroundSatellites();
+    const sats: FakeSat[] = [
+      { norad: 1, name: "STARLINK-A", group: 2, mercator: [1e6, 1e6] }, // 0 even
+      { norad: 2, name: "STARLINK-B", group: 2, mercator: [2e6, 2e6] }, // 1 odd
+      { norad: 3, name: "STARLINK-C", group: 2, mercator: [3e6, 3e6], sunlit: false }, // 2 even, shadowed
+    ];
+    const ids = { iss: null, selected: null, hovered: null };
+    const catalog = fakeCatalog(sats);
+    const frame = fakeFrame(sats, T);
+    writeGroundSatellites(g, frame, catalog, ids, true, true);
+    const layers = g.starlinkLayer.getLayers().getArray();
+    expect(layers).toHaveLength(2);
+    const [evenLit, evenShadow, oddLit] = g.classes.slice(4);
+    expect(pointsOf(evenLit?.feature)).toEqual([1e6, 1e6]);
+    expect(pointsOf(evenShadow?.feature)).toEqual([3e6, 3e6]);
+    expect(pointsOf(oddLit?.feature)).toEqual([2e6, 2e6]);
+    expect(evenLit?.source).toBe((layers[0] as WebGLVectorLayer<VectorSource>).getSource());
+    expect(oddLit?.source).toBe((layers[1] as WebGLVectorLayer<VectorSource>).getSource());
+    // Only the odd row moves: the even layer's source sees no change.
+    let evenChanges = 0;
+    let oddChanges = 0;
+    evenLit?.source.on("change", () => evenChanges++);
+    oddLit?.source.on("change", () => oddChanges++);
+    frame.mercator[2] = 2.5e6;
+    writeGroundSatellites(g, frame, catalog, ids, true, true);
+    expect([evenChanges, oddChanges]).toEqual([0, 1]);
+    expect(g.starlinkLayer.getVisible()).toBe(true);
+  });
+
+  it("[M9] leaves Starlink outside the draw area out of the class points (wrapped in x), never other groups", () => {
+    const g = createGroundSatellites();
+    const W = 40_075_016.685578488;
+    const sats: FakeSat[] = [
+      { norad: 1, name: "STARLINK-NEAR", group: 2, mercator: [1e6, 0] }, // 0 in
+      { norad: 2, name: "STARLINK-FAR", group: 2, mercator: [9e6, 0] }, // 1 out in x
+      { norad: 3, name: "STARLINK-WRAP", group: 2, mercator: [-W / 2 + 1e5, 0] }, // 2 in across the antimeridian
+      { norad: 4, name: "STARLINK-NORTH", group: 2, mercator: [1e6, 5e6] }, // 3 out in y
+      { norad: 5, name: "FAR STATION", group: 1, mercator: [9e6, 9e6] }, // 4 stations/visual: always drawn
+    ];
+    const ids = { iss: null, selected: null, hovered: null };
+    const area = { centerX: W / 2 - 1e6, centerY: 0, halfSizeM: 3e6 };
+    writeGroundSatellites(g, fakeFrame(sats, T), fakeCatalog(sats), ids, true, true, area);
+    const [evenLit, , oddLit] = g.classes.slice(4);
+    // Row 0 is about 1.9e7 m from the centre and left out; row 2 is 1.1e6 m away across the antimeridian.
+    expect(pointsOf(evenLit?.feature)).toEqual([-W / 2 + 1e5, 0]);
+    expect(oddLit?.source.hasFeature(oddLit.feature)).toBe(false); // rows 1 and 3 are out
+    expect(pointsOf(g.classes[2]?.feature)).toEqual([9e6, 9e6]);
+    // Picking does not depend on the area.
+    expect(Array.from(g.skip.subarray(0, 5))).toEqual([0, 0, 0, 0, 0]);
+    // An area as wide as the world draws everything.
+    writeGroundSatellites(g, fakeFrame(sats, T), fakeCatalog(sats), ids, true, true, {
+      ...area,
+      halfSizeM: W,
+    });
+    expect(pointsOf(g.classes[4]?.feature)).toEqual([1e6, 0, -W / 2 + 1e5, 0]);
+    expect(pointsOf(g.classes[6]?.feature)).toEqual([9e6, 0, 1e6, 5e6]);
   });
 
   it("draws and picks nothing before a ready frame", () => {

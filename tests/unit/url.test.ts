@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseUrlState, startUrlSync, writeUrlState } from "../../src/app/url";
+import { parseUrlState, shareUrl, startUrlSync, writeUrlState } from "../../src/app/url";
 import type { ObjectId } from "../../src/state/types";
 import { storeAt } from "../helpers/store";
 
@@ -15,6 +15,7 @@ describe("parseUrlState", () => {
       cam: "synthetic-maunakea",
       tMs: T,
       sel: null,
+      demo: false,
     });
   });
 
@@ -101,6 +102,7 @@ describe("?sel= (M3)", () => {
       cam: "synthetic-maunakea",
       tMs: Date.parse("2026-10-11T15:09:50Z"),
       sel: "sat:25544",
+      demo: false,
     });
     expect(parseUrlState("?sel=sat%3A25544").sel).toBe("sat:25544");
     expect(parseUrlState("?sel=sat:100882").sel).toBe("sat:100882");
@@ -177,5 +179,106 @@ describe("?sel= (M3)", () => {
     actions.select("moon");
     vi.advanceTimersByTime(1000);
     expect(writes).toHaveLength(3);
+  });
+});
+
+describe("?demo=1 and shareUrl (M9)", () => {
+  const PAGE =
+    "http://localhost:4173/Overhead/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&demo=1#x";
+
+  it("demo is true only for ?demo=1", () => {
+    expect(parseUrlState("?demo=1").demo).toBe(true);
+    expect(parseUrlState("?cam=synthetic-maunakea&demo=1").demo).toBe(true);
+    for (const search of [
+      "",
+      "?demo=0",
+      "?demo=",
+      "?demo",
+      "?demo=true",
+      "?demo=yes",
+      "?demo=01",
+    ]) {
+      expect(parseUrlState(search).demo, search).toBe(false);
+    }
+  });
+
+  it("writeUrlState appends &demo=1 while the tour runs, last", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    actions.startDemo();
+    expect(writeUrlState(store.getState())).toBe(
+      "?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544&demo=1",
+    );
+    actions.stopDemo();
+    expect(writeUrlState(store.getState())).toBe(
+      "?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544",
+    );
+  });
+
+  it("startUrlSync writes when the tour starts and when it stops, not on its steps", () => {
+    vi.useFakeTimers();
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    const writes: string[] = [];
+    const stop = startUrlSync(store, (search) => writes.push(search));
+    actions.startDemo();
+    vi.advanceTimersByTime(250);
+    expect(writes).toEqual([
+      "?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z",
+      "?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&demo=1",
+    ]);
+    actions.setDemoStep(3);
+    actions.setDemoPaused(true);
+    vi.advanceTimersByTime(1000);
+    expect(writes).toHaveLength(2);
+    actions.stopDemo(); // Esc or "Exit tour"
+    vi.advanceTimersByTime(250);
+    expect(writes[2]).toBe("?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z");
+    stop();
+  });
+
+  it("shareUrl in replay while playing carries the current t and sel, never demo", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.select("sat:25544");
+    actions.startDemo();
+    actions.play();
+    actions.tick(Date.parse("2026-10-11T15:09:52.700Z")); // the address bar still says 15:09:50 while playing
+    const link = shareUrl(store.getState(), PAGE);
+    expect(link).toBe(
+      "http://localhost:4173/Overhead/?cam=synthetic-maunakea&t=2026-10-11T15:09:52Z&sel=sat:25544",
+    );
+    expect(new URL(link).searchParams.has("demo")).toBe(false);
+    expect(new URL(link).hash).toBe("");
+  });
+
+  it("shareUrl in live mode has no t, so the link opens live", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.setMode("live");
+    expect(shareUrl(store.getState(), PAGE)).toBe(
+      "http://localhost:4173/Overhead/?cam=synthetic-maunakea",
+    );
+    actions.select("moon");
+    expect(shareUrl(store.getState(), PAGE)).toBe(
+      "http://localhost:4173/Overhead/?cam=synthetic-maunakea&sel=moon",
+    );
+  });
+
+  it("round trip: a shared link parses back to the same camera, time and selection", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.setActiveCamera("synthetic-walenstadt");
+    actions.select("planet:Jupiter");
+    actions.tick(Date.parse("2026-10-11T15:10:03Z"));
+    const link = new URL(shareUrl(store.getState(), "https://parthjain.ca/Overhead/?demo=1"));
+    expect(link.pathname).toBe("/Overhead/");
+    expect(parseUrlState(link.search)).toEqual({
+      cam: "synthetic-walenstadt",
+      tMs: Date.parse("2026-10-11T15:10:03Z"),
+      sel: "planet:Jupiter",
+      demo: false,
+    });
   });
 });

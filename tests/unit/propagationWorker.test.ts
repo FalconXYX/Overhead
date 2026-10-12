@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { json2satrec } from "satellite.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type CameraModelInput, syntheticFisheyeCalibration } from "../../src/domain/camera";
 import { enuToAzAltDeg, type ObserverSite } from "../../src/domain/geo";
 import {
   appendGroup,
@@ -373,6 +374,35 @@ describe("sample", () => {
     ]);
   });
 
+  it("[M9] culls Starlink on consecutive samples, and follows the request's group mask", async () => {
+    const w = await startedWithStationsAndVisual();
+    w.send({ type: "loadGroup", group: "starlink", url: `${BASE}starlink.json` });
+    await loaded(w, 3);
+    const count = 11_277;
+    const k0 = Math.floor(T_PASS / 100);
+    const run = (k: number, groups: number): Float32Array => {
+      const req = sampleRequest(count, k, 100, groups, 3);
+      w.send(req);
+      return new Float32Array(req.buffer);
+    };
+    run(k0, 0b111); // a full pass after groupLoaded
+    const second = run(k0 + 1, 0b111);
+    // Stations and visual are always propagated in full: the ISS row equals writeSample at t_k.
+    const satrec = referenceSatrecs().satrecs[0];
+    if (satrec === undefined) throw new Error("no ISS");
+    const iss = new Float32Array(SAMPLE_STRIDE);
+    writeSample(satrec, createPropagationContext((k0 + 1) * 100, SITE), iss, 0);
+    expect([...second.subarray(0, SAMPLE_STRIDE)]).toEqual([...iss]);
+    let validStarlink = 0;
+    for (let i = 175; i < count; i++)
+      if (second[i * SAMPLE_STRIDE + SampleField.valid] === 1) validStarlink++;
+    expect(validStarlink).toBeGreaterThan(11_000); // extrapolated rows keep their held valid flag
+    // Starlink off: its rows are zeroed at once, stations and visual still propagate.
+    const off = run(k0 + 2, 0b011);
+    for (let i = 175; i < count; i++) expect(off[i * SAMPLE_STRIDE + SampleField.valid]).toBe(0);
+    expect(off[SampleField.valid]).toBe(1);
+  });
+
   it("replies with an error message, not a sample, before init", async () => {
     const w = await startWorker();
     w.send(sampleRequest(1, 1, 100));
@@ -478,15 +508,65 @@ describe("skyPaths", () => {
   });
 });
 
-describe("M8 placeholders", () => {
-  it("stores no camera and answers incoming with no entries", async () => {
+describe("M8 incoming (step 5)", () => {
+  /** synthetic-maunakea's camera, as ephemeris.ts sends it; SITE is its site. */
+  const FISHEYE_INPUT: CameraModelInput = {
+    lens: "fisheye-equidistant",
+    calibration: syntheticFisheyeCalibration(1024),
+    widthPx: 1024,
+    heightPx: 1024,
+  };
+  const T_INCOMING = Date.parse("2026-10-11T15:05:07Z");
+  const etas = (w: Harness): [number, number][] => {
+    const { noradIds } = catalogOf(w);
+    return (w.of("incoming").at(-1)?.entries ?? []).map((e) => [noradIds[e.index] ?? -1, e.etaSec]);
+  };
+
+  it("answers with no entries and computeMs 0 without a camera, or before init", async () => {
+    const early = await startWorker();
+    early.send({ type: "setCamera", camera: FISHEYE_INPUT });
+    early.send({ type: "incoming", requestId: 1, timeMs: T_INCOMING, groups: 0b011 });
+    expect(early.of("incoming")).toEqual([
+      { type: "incoming", requestId: 1, timeMs: T_INCOMING, computeMs: 0, entries: [] },
+    ]);
+
     const w = await startedWithStationsAndVisual();
     const before = w.posted.length;
     w.send({ type: "setCamera", camera: null });
-    expect(w.posted).toHaveLength(before);
+    expect(w.posted).toHaveLength(before); // setCamera has no reply
     w.send({ type: "incoming", requestId: 5, timeMs: T_PASS, groups: 0b011 });
     expect(w.of("incoming")).toEqual([
       { type: "incoming", requestId: 5, timeMs: T_PASS, computeMs: 0, entries: [] },
     ]);
+  });
+
+  it("lists the ISS and SL-3 R/B 19046 on the fisheye at 15:05:07Z, sorted, with computeMs", async () => {
+    const w = await startedWithStationsAndVisual();
+    w.send({ type: "setCamera", camera: FISHEYE_INPUT });
+    w.send({ type: "incoming", requestId: 7, timeMs: T_INCOMING, groups: 0b011 });
+    const reply = w.of("incoming").at(-1);
+    expect(reply).toMatchObject({ type: "incoming", requestId: 7, timeMs: T_INCOMING });
+    expect(reply?.computeMs).toBeGreaterThan(0);
+    expect(etas(w)).toEqual([
+      [25544, 35],
+      [19046, 55],
+    ]);
+    // Only the groups asked for: Starlink alone is not loaded, so nothing.
+    w.send({ type: "incoming", requestId: 8, timeMs: T_INCOMING, groups: 0b100 });
+    expect(etas(w)).toEqual([]);
+  });
+
+  it("uses the stored horizon profile, and setSite resets it to the geometric horizon", async () => {
+    const w = await startedWithStationsAndVisual();
+    w.send({ type: "setCamera", camera: FISHEYE_INPUT });
+    w.send({ type: "setHorizonProfile", profileDeg: new Float32Array(360).fill(30) });
+    w.send({ type: "incoming", requestId: 1, timeMs: T_INCOMING, groups: 0b011 });
+    expect(etas(w)).toEqual([]); // both enter below 30°
+    w.send({ type: "setSite", site: { ...SITE }, generation: 1 });
+    w.send({ type: "incoming", requestId: 2, timeMs: T_INCOMING, groups: 0b011 });
+    expect(etas(w).map(([norad]) => norad)).toEqual([25544, 19046]);
+    w.send({ type: "setHorizonProfile", profileDeg: new Float32Array(360).fill(-0.27) });
+    w.send({ type: "incoming", requestId: 3, timeMs: T_INCOMING, groups: 0b011 });
+    expect(etas(w).map(([norad]) => norad)).toEqual([25544, 19046]);
   });
 });

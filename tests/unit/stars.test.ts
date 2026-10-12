@@ -164,3 +164,12 @@ describe("needsSkyRecompute", () => {
     expect(needsSkyRecompute(10000, 10000)).toBe(false);
   });
 });
+
+describe("[M9] the refraction shortcut below −1°", () => {
+  it("astronomy-engine's 'normal' refraction below −1° is its −1° value times (alt + 90) / 89, bit for bit", () => {
+    const atMinus1 = Refraction("normal", -1);
+    for (let alt = -90; alt < -1; alt += 0.0137) {
+      expect(atMinus1 * ((alt + 90.0) / 89.0)).toBe(Refraction("normal", alt));
+    }
+  });
+});

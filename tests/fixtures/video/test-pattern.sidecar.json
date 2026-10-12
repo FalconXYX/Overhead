@@ -1,0 +1,18 @@
+{
+  "cameraId": "subaru-starcam",
+  "videoFile": "test-pattern.webm",
+  "startUtcMs": 1791705600000,
+  "startUncertaintyS": 0,
+  "timingSource": { "method": "manual", "detail": "Generated test pattern; the start is fixed" },
+  "durationS": 7,
+  "width": 320,
+  "height": 180,
+  "fps": 25,
+  "sourceVideoId": null,
+  "credit": {
+    "text": "Test pattern generated for the Overhead e2e tests",
+    "href": null,
+    "licence": "CC0-1.0",
+    "licenceHref": null
+  }
+}

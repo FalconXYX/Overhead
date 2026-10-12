@@ -1,6 +1,6 @@
 // src/map/sky/layers/grid.ts — the alt/az grid and the cardinal letters (M2 step 8.3).
 // Every sample goes through the camera model, so the same code serves M4's lenses. Colours and fonts are visual
-// design, settled from screenshots; the values here are placeholders.
+// design (M9 step 12): faint blue-grey lines and light letters on the night sky.
 import Feature from "ol/Feature";
 import MultiLineString from "ol/geom/MultiLineString";
 import Point from "ol/geom/Point";
@@ -80,7 +80,7 @@ export function buildGridFeatures(model: CameraModel): Feature[] {
 }
 
 const LINE_STYLE = new Style({
-  stroke: new Stroke({ color: "rgba(128, 128, 128, 0.6)", width: 1 }),
+  stroke: new Stroke({ color: "rgba(125, 150, 186, 0.3)", width: 1 }),
 });
 const LETTER_STYLES: ReadonlyMap<string, Style> = new Map(
   LETTERS.map(([label]) => [
@@ -88,9 +88,9 @@ const LETTER_STYLES: ReadonlyMap<string, Style> = new Map(
     new Style({
       text: new Text({
         text: label,
-        font: "bold 14px sans-serif",
-        fill: new Fill({ color: "#333" }),
-        stroke: new Stroke({ color: "#fff", width: 3 }),
+        font: "600 13px system-ui, -apple-system, 'Segoe UI', sans-serif",
+        fill: new Fill({ color: "#c3cedd" }),
+        stroke: new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 3 }),
       }),
     }),
   ]),

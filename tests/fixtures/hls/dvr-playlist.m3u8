@@ -1,0 +1,14 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:887655
+#EXT-X-DISCONTINUITY-SEQUENCE:132
+#EXT-X-PROGRAM-DATE-TIME:2026-10-11T15:08:30.039+00:00
+#EXTINF:5.0,
+https://example.invalid/sq/887655/seg.ts
+#EXTINF:5.0,
+https://example.invalid/sq/887656/seg.ts
+#EXTINF:5.0,
+https://example.invalid/sq/887657/seg.ts
+#EXTINF:5.0,
+https://example.invalid/sq/887658/seg.ts

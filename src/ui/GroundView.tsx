@@ -1,15 +1,41 @@
-// src/ui/GroundView.tsx — the ground map container, its lifecycle and its load states (M1 step 13).
+// src/ui/GroundView.tsx — the ground map container, its lifecycle and its load states (M1 step 13), the GOES
+// caption (M7 step 7) and the hillshade's night badge (M6 step 11.4).
 // Imports no OpenLayers module (README import rule 4).
 import { useEffect, useRef } from "react";
 import { createGroundMap } from "../map/ground/createGroundMap";
 import { getGibsCapabilities } from "../map/ground/layers/gibs";
-import { useAppState } from "../state/hooks";
-import { selectActiveCamera } from "../state/selectors";
+import { useAppState, useTick4Hz } from "../state/hooks";
+import { selectActiveCamera, selectGoesLabel } from "../state/selectors";
+import { skyCache } from "../state/skyCache";
 import { store } from "../state/store";
 import { gibsStatusText } from "./gibsStatus";
 
-/** A container needs a non-zero size: a zero-size map requests no tiles (Gotcha 15). */
-const MAP_STYLE = { height: "60vh", minHeight: "256px" } as const;
+/**
+ * [M7] The GOES caption ("Imagery as of 09:50 UTC"), on screen whenever the layer is on, whether or not the Layers
+ * panel is open. Re-rendered by the 4 Hz ticker and read during render: a useAppState(selectGoesStepMs) subscription
+ * would add a React commit per step outside the ticker. No aria-live: at 600× the text changes every second.
+ */
+function GoesCaption() {
+  useTick4Hz();
+  const label = selectGoesLabel(store.getState());
+  return label === null ? null : (
+    <p id="goes-status" data-testid="goes-asof">
+      {label}
+    </p>
+  );
+}
+
+/**
+ * [M6] While the hillshade is on and the Sun is below 0° at the site, the relief uses fixed lighting from 315° at 45°
+ * (NIGHT_SUN_AZ_DEG and NIGHT_SUN_ALT_DEG in hillshade.ts): say so. The Sun's apparent altitude is skyCache's body 0,
+ * read during the 4 Hz render; NaN before the first sky pass shows nothing.
+ */
+function NightBadge() {
+  useTick4Hz();
+  const on = useAppState((s) => s.layers.hillshade);
+  const sunAltDeg = skyCache.bodies[1] ?? Number.NaN;
+  return on && sunAltDeg < 0 ? <p>Night: fixed lighting (315°, 45°)</p> : null;
+}
 
 export function GroundView() {
   const ref = useRef<HTMLDivElement>(null);
@@ -25,8 +51,10 @@ export function GroundView() {
   }, [cameras, gibs]);
 
   const gibsText = gibsStatusText(gibs);
+  // [M9] Layout in src/app/layout.css: the map fills the pane (a container needs a non-zero size: a zero-size map
+  // requests no tiles, Gotcha 15), and the GOES caption and night badge sit over its bottom-left corner.
   return (
-    <div>
+    <div className="ground">
       {cameras === "error" ? (
         <div role="status">
           <p>Camera list failed to load</p>
@@ -50,8 +78,12 @@ export function GroundView() {
         }
         // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable so OpenLayers KeyboardPan and KeyboardZoom work
         tabIndex={0}
-        style={MAP_STYLE}
+        className="ground-map"
       />
+      <div className="ground-badges">
+        <GoesCaption />
+        <NightBadge />
+      </div>
     </div>
   );
 }

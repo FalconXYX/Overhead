@@ -1,4 +1,5 @@
-// src/app/url.ts — ?cam= and ?t= (M1 step 6; README URL and persistence), ?sel= (M3 step 12). M9 adds demo.
+// src/app/url.ts — ?cam= and ?t= (M1 step 6; README URL and persistence), ?sel= (M3 step 12), ?demo=1 and shareUrl
+// (M9 step 8).
 import { shallow } from "zustand/vanilla/shallow";
 import { isoUtcSeconds } from "../domain/time";
 import { parseObjectId } from "../state/objectId";
@@ -9,6 +10,7 @@ export interface UrlState {
   cam: string | null;
   tMs: number | null; // only an ISO 8601 UTC value ending in Z; anything else is null
   sel: ObjectId | null; // [M3] parsed by parseObjectId; anything else is null
+  demo: boolean; // [M9] true only for ?demo=1
 }
 
 /** Zone-less values are rejected, never guessed: Date.parse reads them as local time (Gotcha 11). */
@@ -36,14 +38,12 @@ export function parseUrlState(search: string): UrlState {
     cam: cam === null || cam === "" ? null : cam,
     tMs: Number.isFinite(tMs) ? tMs : null,
     sel: sel === null ? null : parseObjectId(sel),
+    demo: params.get("demo") === "1",
   };
 }
 
-/**
- * "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay and "&sel=<id>" while something is selected. Colons are written
- * raw (URLSearchParams would encode them); every ObjectId is otherwise letters and digits.
- */
-export function writeUrlState(state: AppState): string {
+/** The view without the tour: "?cam=<id>", "&t=" in replay (the store's time, even while playing) and "&sel=". */
+function viewSearch(state: AppState): string {
   const cam = `?cam=${encodeURIComponent(state.camera.activeId)}`;
   const t = state.clock.mode === "replay" ? `&t=${isoUtcSeconds(state.clock.simTimeMs)}` : "";
   const { selectedId } = state.selection;
@@ -51,8 +51,27 @@ export function writeUrlState(state: AppState): string {
 }
 
 /**
+ * "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay, "&sel=<id>" while something is selected and [M9] "&demo=1" while
+ * the tour runs. Colons are written raw (URLSearchParams would encode them); every ObjectId is otherwise letters and
+ * digits.
+ */
+export function writeUrlState(state: AppState): string {
+  return `${viewSearch(state)}${state.ui.demo.active ? "&demo=1" : ""}`;
+}
+
+/**
+ * [M9] Absolute link to this view, resolved against href (the page's own URL; its query and hash are replaced): always
+ * the current t in replay, even while playing, where the address bar's t is stale (M1 writes it only when paused);
+ * none in live, so the link opens live; cam and sel when set; never demo.
+ */
+export function shareUrl(state: AppState, href: string): string {
+  return new URL(viewSearch(state), href).href;
+}
+
+/**
  * Writes once now, then delayMs after the last discrete change (trailing debounce): camera, mode, pause,
- * every seek or step while paused, and the selection. Never per tick while playing, never on hover.
+ * every seek or step while paused, the selection and [M9] the tour starting or stopping. Never per tick while
+ * playing, never on hover.
  */
 export function startUrlSync(
   store: AppStore,
@@ -67,6 +86,7 @@ export function startUrlSync(
       s.clock.mode,
       s.clock.playing ? null : s.clock.simTimeMs,
       s.selection.selectedId,
+      s.ui.demo.active, // [M9] exiting the tour removes &demo=1
     ],
     () => {
       if (timer !== null) clearTimeout(timer);

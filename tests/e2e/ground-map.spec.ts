@@ -162,8 +162,9 @@ test("live without t", async ({ page }) => {
 });
 
 test("URL fallbacks", async ({ page }) => {
-  // An unknown id and a known but not-yet-enabled id both fall back (a console.warn is allowed).
-  for (const cam of ["nope", "synthetic-walenstadt"]) {
+  // An unknown id falls back (a console.warn is allowed). [M6] Every committed camera is enabled from here on, so
+  // ?cam=synthetic-walenstadt now loads that camera (terrain.spec.ts).
+  for (const cam of ["nope"]) {
     await page.goto(`./?cam=${cam}&t=2026-10-10T03:30:00Z`);
     await expect(page).toHaveURL(/\?cam=synthetic-maunakea&t=2026-10-10T03:30:00Z$/);
   }

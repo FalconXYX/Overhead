@@ -4,6 +4,7 @@ import {
   createTestHooks,
   installTestHooks,
   type OverheadTestHooks,
+  recordCommit,
   recordHighlight,
   type SatPositionsView,
   type TestHookSources,
@@ -11,6 +12,7 @@ import {
 } from "../../src/app/testHooks";
 import { BODY_IDS, BODY_STRIDE, type StarRow } from "../../src/domain/astro";
 import { type FrameScheduler, frameCount, startClockLoop } from "../../src/state/clockLoop";
+import type { FootprintStatus } from "../../src/state/footprintStatus";
 import type { AppStore } from "../../src/state/store";
 import type { ObjectId } from "../../src/state/types";
 import { storeAt } from "../helpers/store";
@@ -100,6 +102,15 @@ function setup(store: AppStore = storeAt("2026-10-11T15:09:50Z")) {
     ["ground", fakeMap()],
   ]);
   const updates: number[] = [];
+  // [M8] What bindFootprint and the incoming client would hold.
+  const footprint: FootprintStatus = { heightKm: null, source: "fallback", pairCount: 0 };
+  const satellites: {
+    incoming: TestHookSources["satellites"]["incoming"];
+    catalog: { noradIds: Int32Array };
+  } = {
+    incoming: null,
+    catalog: { noradIds: Int32Array.from([25544, 19046, 10114]) },
+  };
   const sources: TestHookSources = {
     store,
     updateSatFrame: (simTimeMs): SatPositionsView => {
@@ -114,12 +125,14 @@ function setup(store: AppStore = storeAt("2026-10-11T15:09:50Z")) {
       bodies,
     },
     maps,
+    footprint,
+    satellites,
   };
   const { hooks, dispose } = createTestHooks(sources);
   cleanups.push(dispose);
   const scheduler = new ManualScheduler();
   cleanups.push(startClockLoop(store, scheduler));
-  return { hooks, frame, maps, scheduler, store, updates };
+  return { hooks, frame, maps, scheduler, store, updates, footprint, satellites };
 }
 
 const mapOf = (maps: Map<ViewId, OlMap>, view: ViewId) => maps.get(view) as OlMap & FakeMap;
@@ -293,5 +306,50 @@ describe("installTestHooks", () => {
     const { hooks } = setup();
     installTestHooks(hooks);
     expect(fakeWindow.__overhead).toBe(hooks);
+  });
+});
+
+describe("footprint and incoming (M8)", () => {
+  it("footprint() is a snapshot of footprintStatus", () => {
+    const { hooks, footprint } = setup();
+    expect(hooks.footprint()).toEqual({ heightKm: null, source: "fallback", pairCount: 0 });
+    footprint.heightKm = 422.4;
+    footprint.source = "selected";
+    footprint.pairCount = 64;
+    const snapshot = hooks.footprint();
+    expect(snapshot).toEqual({ heightKm: 422.4, source: "selected", pairCount: 64 });
+    footprint.pairCount = 0;
+    expect(snapshot.pairCount).toBe(64);
+  });
+
+  it("incoming() maps catalogue indices to NORAD ids, or is null without a reply", () => {
+    const { hooks, satellites } = setup();
+    expect(hooks.incoming()).toBeNull();
+    satellites.incoming = {
+      timeMs: Date.parse("2026-10-11T15:05:07Z"),
+      computeMs: 0.4,
+      entries: [
+        { index: 0, etaSec: 35 },
+        { index: 1, etaSec: 55 },
+      ],
+    };
+    expect(hooks.incoming()).toEqual({
+      timeMs: Date.parse("2026-10-11T15:05:07Z"),
+      computeMs: 0.4,
+      entries: [
+        { noradId: 25544, etaSec: 35 },
+        { noradId: 19046, etaSec: 55 },
+      ],
+    });
+  });
+});
+
+describe("commits (M9 step 5)", () => {
+  it("counts every recordCommit call (main.tsx's <Profiler> onRender) since the app started", () => {
+    const { hooks } = setup();
+    const before = hooks.commits();
+    recordCommit();
+    recordCommit();
+    expect(hooks.commits()).toBe(before + 2);
   });
 });

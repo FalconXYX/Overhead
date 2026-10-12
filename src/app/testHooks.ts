@@ -10,6 +10,7 @@ import {
 } from "../domain/camera";
 import type { MapId } from "../map/registry";
 import { frameCount, registerFrameUpdater } from "../state/clockLoop";
+import type { FootprintStatus } from "../state/footprintStatus";
 import { selectActiveCamera, selectCalibration } from "../state/selectors";
 import type { AppStore } from "../state/store";
 import type { ObjectId } from "../state/types";
@@ -22,6 +23,13 @@ export interface OverheadTestHooks {
   selectionFrame(): number | null; // frame in which selection.selectedId last changed
   highlight(view: ViewId): { id: ObjectId | null; frame: number | null }; // last drawn, and since when
   clientPoint(view: ViewId, id: ObjectId): { x: number; y: number } | null; // viewport CSS px
+  footprint(): FootprintStatus; // [M8]
+  incoming(): {
+    timeMs: number;
+    computeMs: number;
+    entries: { noradId: number; etaSec: number }[];
+  } | null; // [M8]
+  commits(): number; // [M9] React commits since start (step 5); 0 in a production build
 }
 
 declare global {
@@ -52,6 +60,17 @@ export interface TestHookSources {
     readonly bodies: ArrayLike<number>;
   };
   readonly maps: ReadonlyMap<ViewId, OlMap>;
+  /** [M8] footprintStatus, written in place by bindFootprint. */
+  readonly footprint: FootprintStatus;
+  /** [M8] ephemeris.ts: the latest incoming reply and the catalogue's NORAD ids, read through the object. */
+  readonly satellites: {
+    readonly incoming: {
+      readonly timeMs: number;
+      readonly computeMs: number;
+      readonly entries: readonly { readonly index: number; readonly etaSec: number }[];
+    } | null;
+    readonly catalog: { readonly noradIds: ArrayLike<number> };
+  };
 }
 
 const FLAG_VALID = 1;
@@ -85,6 +104,14 @@ export function recordHighlight(view: ViewId, id: ObjectId | null): void {
   if (record.frame !== null && record.id === id) return;
   record.id = id;
   record.frame = frameCount();
+}
+
+/** [M9] React commits seen by main.tsx's <Profiler> (step 5). Only a NODE_ENV=development build calls it. */
+let commitCount = 0;
+
+/** [M9] The <Profiler> onRender callback: counts one commit. Inert in production builds (README section 9). */
+export function recordCommit(): void {
+  commitCount += 1;
 }
 
 /** main.tsx installs the hooks only when navigator.webdriver is true. */
@@ -219,6 +246,18 @@ export function createTestHooks(sources: TestHookSources): {
       if (!(py >= 0 && py <= rect.height)) return null;
       return { x: rect.left + px, y: rect.top + py };
     },
+    footprint: () => ({ ...sources.footprint }), // a snapshot: the status object is rewritten in place
+    incoming: () => {
+      const reply = sources.satellites.incoming;
+      if (reply === null) return null;
+      const { noradIds } = sources.satellites.catalog;
+      return {
+        timeMs: reply.timeMs,
+        computeMs: reply.computeMs,
+        entries: reply.entries.map((e) => ({ noradId: noradIds[e.index] ?? 0, etaSec: e.etaSec })),
+      };
+    },
+    commits: () => commitCount, // [M9]
   };
 
   return {

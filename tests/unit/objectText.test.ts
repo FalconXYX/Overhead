@@ -4,12 +4,14 @@ import type { GroupData } from "../../src/state/types";
 import {
   altText,
   azText,
+  behindTerrain,
   bodyMagnitudeText,
   type CatalogView,
   dockedText,
   elementAgeText,
   GROUP_LABELS,
   groupStatusText,
+  horizonStatusText,
   isStale,
   litText,
   missingSatelliteText,
@@ -19,6 +21,7 @@ import {
   type SkyView,
   satelliteGroupsPending,
   starMagnitudeText,
+  terrainLines,
   visibilityText,
 } from "../../src/ui/objectText";
 
@@ -74,7 +77,13 @@ describe("field formats", () => {
   });
 
   it("visibility: Visible to the eye, else the first failing reason", () => {
-    const live = { sunlit: true, aboveHorizon: true, visible: true, sunAltDeg: -16.2 };
+    const live = {
+      sunlit: true,
+      aboveHorizon: true,
+      visible: true,
+      sunAltDeg: -16.2,
+      altDeg: 28.9,
+    };
     expect(visibilityText(live, "stations")).toBe("Visible to the eye");
     expect(visibilityText({ ...live, visible: false, sunlit: false }, "visual")).toBe(
       "Not visible: in Earth's shadow",
@@ -89,8 +98,12 @@ describe("field formats", () => {
     expect(visibilityText({ ...live, visible: false, sunAltDeg: -5 }, "stations")).toBe(
       "Not visible: Sun too high",
     );
+    expect(
+      visibilityText({ ...live, visible: false, aboveHorizon: false, altDeg: -3 }, "stations"),
+    ).toBe("Not visible: below the horizon");
+    // [M6] Above 0° but at or below the terrain horizon (the flag uses the terrain horizon).
     expect(visibilityText({ ...live, visible: false, aboveHorizon: false }, "stations")).toBe(
-      "Not visible: below the horizon",
+      "Not visible: behind terrain",
     );
     // A flag the three rules do not explain still reads as not visible.
     expect(visibilityText({ ...live, visible: false }, "stations")).toBe("Not visible to the eye");
@@ -340,5 +353,51 @@ describe("objectDetails", () => {
       live: null,
       note: "Computing position…",
     });
+  });
+});
+
+describe("terrain text (M6)", () => {
+  // Walenstadt-like: the Churfirsten wall north at 32.75°, the Walensee gap west at 1.96°, a sea horizon east.
+  const profile = new Float32Array(360).fill(10);
+  profile[0] = 32.75;
+  profile[359] = 32.65;
+  profile[1] = 32.85;
+  profile[270] = 1.96;
+  profile[90] = -1.93;
+
+  it("ready: the signed terrain horizon at the object's azimuth, and Behind terrain at or below it", () => {
+    // Capella: az 359.92°, alt 3.37°, under 32.7° (interpolated between az 359 and 0).
+    expect(terrainLines("ready", profile, 359.92, 3.37)).toEqual([
+      "Terrain horizon here: +32.7°",
+      "Behind terrain",
+    ]);
+    // Polaris: az 0.49°, alt 46.62°.
+    expect(terrainLines("ready", profile, 0.49, 46.62)).toEqual(["Terrain horizon here: +32.8°"]);
+    expect(terrainLines("ready", profile, 90, -1.5)).toEqual(["Terrain horizon here: −1.9°"]);
+    expect(terrainLines("ready", profile, 270, 1.96)).toEqual([
+      "Terrain horizon here: +2.0°",
+      "Behind terrain", // at the horizon counts as behind it
+    ]);
+  });
+
+  it("loading, error and idle", () => {
+    expect(terrainLines("loading", null, 0, 10)).toEqual(["Terrain horizon: loading"]);
+    expect(terrainLines("error", null, 0, 10)).toEqual([
+      "Terrain horizon: unavailable (geometric horizon used)",
+    ]);
+    expect(terrainLines("idle", null, 0, 10)).toEqual([]);
+  });
+
+  it("behindTerrain needs a profile: with none, nothing is behind terrain", () => {
+    expect(behindTerrain(profile, 0, 20)).toBe(true);
+    expect(behindTerrain(profile, 270, 20)).toBe(false);
+    expect(behindTerrain(null, 0, -5)).toBe(false);
+  });
+
+  it("the Terrain horizon toggle's status", () => {
+    expect(horizonStatusText("idle")).toBeNull();
+    expect(horizonStatusText("loading")).toBe("Loading terrain…");
+    expect(horizonStatusText("ready")).toBe("Terrain ready");
+    expect(horizonStatusText("error")).toBe("Terrain unavailable: geometric horizon");
   });
 });

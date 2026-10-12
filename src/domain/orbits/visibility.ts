@@ -29,3 +29,20 @@ export function isVisible(
 ): boolean {
   return sunlit && sunAltDeg <= SUN_CUTOFF_DEG[group] && apparentAltDeg > horizonDeg;
 }
+
+/**
+ * [M9] Geometric altitude below which the frame pass skips a Starlink row's az/alt and refraction (step 4). Must stay
+ * at or below −3°: apparentAltDeg(−3) is −2.368°, under the lowest horizon in the registry (the −1.94° sea horizon
+ * from 4,204 m); −2° would give −1.361°, which can be drawn (gotcha 9).
+ */
+export const SKY_CUTOFF_GEOMETRIC_DEG = -3;
+const SIN2_SKY_CUTOFF = Math.sin((SKY_CUTOFF_GEOMETRIC_DEG * Math.PI) / 180) ** 2;
+
+/**
+ * [M9] true when the topocentric ENU vector (km) is strictly below SKY_CUTOFF_GEOMETRIC_DEG geometric altitude:
+ * u < 0 and u² > sin²(3°)·(e² + n² + u²). No trigonometry and no square root (it runs per row per frame).
+ */
+export function belowSkyCutoff(eKm: number, nKm: number, uKm: number): boolean {
+  const u2 = uKm * uKm;
+  return uKm < 0 && u2 > SIN2_SKY_CUTOFF * (eKm * eKm + nKm * nKm + u2);
+}

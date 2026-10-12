@@ -64,6 +64,16 @@ export class RequestGate {
     return true;
   }
 
+  /**
+   * [M9] Forget the last request, so the next offer with the same key goes through: called on frames that are not
+   * ready (a flush, or a worker restart, which clears the tracks and paths already received). Keeps the rate limit.
+   */
+  reset(): void {
+    this.slot = Number.NaN;
+    this.selected = -1;
+    this.count = 0;
+  }
+
   private sameSet(indices: Int32Array, count: number): boolean {
     if (count !== this.count) return false;
     for (let i = 0; i < count; i++) if (indices[i] !== this.indices[i]) return false;
@@ -91,8 +101,10 @@ export function framedTrackIndices(
   const n = Math.min(catalog.count, frame.flags.length);
   let count = 0;
   for (let i = 0; i < n && count < max; i++) {
-    if (i === selectedIndex || ((frame.flags[i] ?? 0) & FLAG_VALID) === 0) continue;
-    if ((catalog.dockedWith[i] ?? -1) !== -1 || catalog.groupIndex[i] === STARLINK_GROUP) continue;
+    // [M9] The Starlink test first: it rejects almost every row of a full catalogue.
+    if (catalog.groupIndex[i] === STARLINK_GROUP || i === selectedIndex) continue;
+    if (((frame.flags[i] ?? 0) & FLAG_VALID) === 0 || (catalog.dockedWith[i] ?? -1) !== -1)
+      continue;
     const az = frame.azAltDeg[2 * i] ?? Number.NaN;
     const alt = frame.azAltDeg[2 * i + 1] ?? Number.NaN;
     if (!projectAzAltDeg(model, az, alt, scratchUv, 0)) continue;
@@ -187,6 +199,8 @@ export function bindTracks(
         // A copy: the request may transfer its array to the worker (gotcha 16).
         deps.requestTracks(simTimeMs, selected, others.slice(0, count));
       }
+    } else {
+      gate.reset();
     }
     const version = deps.ephemeris.pathsVersion;
     const sel = selected ?? -1;

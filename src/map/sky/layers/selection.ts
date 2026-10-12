@@ -1,7 +1,8 @@
 // src/map/sky/layers/selection.ts — labelled markers for the ISS, the hovered and the selected object, and the selected
 // satellite's dotted next 2 minutes (M3 steps 13.4, 13.6). The marker slots are shared with the ground map's markers
 // layer. Satellites keep their lit/shadowed shape; selected and hovered differ by their ring (solid or dashed), not
-// by colour. Looks are visual design, settled from screenshots; the values here are neutral placeholders.
+// by colour. Looks are visual design (M9 step 12): the ISS and the selection in the one accent, amber; hover in the
+// light text colour; every label on a dark halo.
 import Feature from "ol/Feature";
 import MultiLineString from "ol/geom/MultiLineString";
 import Point from "ol/geom/Point";
@@ -51,24 +52,36 @@ export interface MarkerLayer {
   readonly iss: MarkerSlot;
 }
 
-const DARK = "#222";
-const LIGHT = "#fff";
+/** The theme's accent (theme.css --c-accent and --c-accent-strong), the light text colour and the dark halo. */
+const ACCENT = "#f5a623";
+const ACCENT_TEXT = "#ffb547";
+const LIGHT = "#e6ebf2";
+const HALO = "rgba(4, 6, 11, 0.92)";
 const MARKER_RADIUS_PX = 4.5;
-const LABEL_HALO = new Stroke({ color: LIGHT, width: 3 });
-const LABEL_FILL = new Fill({ color: DARK });
+const LABEL_FONT = "12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+const LABEL_FONT_BOLD = `600 ${LABEL_FONT}`;
+const LABEL_HALO = new Stroke({ color: HALO, width: 3 });
+const LABEL_FILLS: Readonly<Record<MarkerRole, Fill>> = {
+  selected: new Fill({ color: ACCENT_TEXT }),
+  iss: new Fill({ color: ACCENT_TEXT }),
+  hover: new Fill({ color: LIGHT }),
+};
 
 const RINGS: Readonly<Record<MarkerRole, Style | null>> = {
   selected: new Style({
-    image: new CircleStyle({ radius: 10, stroke: new Stroke({ color: DARK, width: 2 }) }),
+    image: new CircleStyle({ radius: 10, stroke: new Stroke({ color: ACCENT, width: 2 }) }),
   }),
   hover: new Style({
     image: new CircleStyle({
       radius: 9,
-      stroke: new Stroke({ color: DARK, width: 1.5, lineDash: [3, 3] }),
+      stroke: new Stroke({ color: LIGHT, width: 1.5, lineDash: [3, 3] }),
     }),
   }),
   iss: null,
 };
+
+/** The ISS keeps its lit or shadowed shape, in the accent. */
+const ISS_SHADOW_FILL = "#4a3612";
 
 const styleCache = new Map<string, Style[]>();
 
@@ -80,19 +93,22 @@ export function markerStyle(role: MarkerRole, shape: MarkerShape, label: string)
   const key = `${role}|${shape}|${label}`;
   const cached = styleCache.get(key);
   if (cached !== undefined) return cached;
+  const iss = role === "iss";
   const image =
     shape === "lit"
-      ? litImage(MARKER_RADIUS_PX)
+      ? litImage(MARKER_RADIUS_PX, iss ? ACCENT : undefined)
       : shape === "shadowed"
-        ? shadowedImage(MARKER_RADIUS_PX)
+        ? iss
+          ? shadowedImage(MARKER_RADIUS_PX, ISS_SHADOW_FILL, ACCENT)
+          : shadowedImage(MARKER_RADIUS_PX)
         : undefined;
   const main = new Style({
     image,
     text: new Text({
       text: label,
-      font: role === "selected" ? "bold 12px sans-serif" : "12px sans-serif",
+      font: role === "selected" ? LABEL_FONT_BOLD : LABEL_FONT,
       offsetY: -17,
-      fill: LABEL_FILL,
+      fill: LABEL_FILLS[role],
       stroke: LABEL_HALO,
     }),
   });
@@ -145,7 +161,9 @@ export function hideMarker(slot: MarkerSlot): boolean {
 }
 
 const NEXT_PATH_STYLES = [
-  new Style({ stroke: new Stroke({ color: DARK, width: 2, lineDash: [1, 5], lineCap: "round" }) }),
+  new Style({
+    stroke: new Stroke({ color: ACCENT, width: 2, lineDash: [1, 5], lineCap: "round" }),
+  }),
 ];
 
 /**

@@ -1,17 +1,26 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { parseCameraRegistry } from "../../src/app/cameras";
 import { type CameraModel, syntheticFisheyeCalibration } from "../../src/domain/camera";
 import { bindSkyCamera } from "../../src/map/sync/bindSkyCamera";
 import type { AppStore } from "../../src/state/store";
+import { withM5CameraEntries } from "../helpers/m5Cameras";
 import { committedCameras, storeAt } from "../helpers/store";
 
 function setup() {
   const store = storeAt("2026-10-10T08:00:00Z");
   const models: CameraModel[] = [];
-  const unbind = bindSkyCamera(store, { setCameraModel: (m) => models.push(m) });
-  return { store, models, unbind };
+  const panZoom: boolean[] = [];
+  const passThrough: boolean[] = [];
+  const unbind = bindSkyCamera(store, {
+    setCameraModel: (m) => models.push(m),
+    setPanZoom: (on) => panZoom.push(on),
+    setPassThrough: (on) => passThrough.push(on),
+  });
+  return { store, models, panZoom, passThrough, unbind };
 }
 
-/** updateCalibration still throws until M4, so tests write camera.calibration directly. */
+/** Writes camera.calibration directly, bypassing updateCalibration's normalisation. */
 function setCalibration(store: AppStore, id: string, patch: { rollDeg: number }): void {
   const s = store.getState();
   const base = s.camera.registry[id]?.defaults ?? syntheticFisheyeCalibration(1024);
@@ -63,11 +72,49 @@ describe("bindSkyCamera", () => {
     const store = storeAt("2026-10-10T08:00:00Z");
     store.getState().actions.setActiveCamera("nope");
     const models: CameraModel[] = [];
-    const unbind = bindSkyCamera(store, { setCameraModel: (m) => models.push(m) });
+    const unbind = bindSkyCamera(store, {
+      setCameraModel: (m) => models.push(m),
+      setPanZoom: () => {},
+      setPassThrough: () => {},
+    });
     expect(models).toHaveLength(0);
     store.getState().actions.setActiveCamera("synthetic-maunakea");
     expect(models).toHaveLength(1);
     unbind();
+  });
+
+  it("pan and zoom off for a synthetic camera, on for a still image", () => {
+    const { store, panZoom } = setup();
+    expect(panZoom).toEqual([false]);
+    store.getState().actions.setRegistry(committedCameras());
+    store.getState().actions.setActiveCamera("cfht-nanaao");
+    expect(panZoom.at(-1)).toBe(true);
+    store.getState().actions.setActiveCamera("synthetic-maunakea");
+    expect(panZoom.at(-1)).toBe(false);
+  });
+
+  it("[M5] pass-through only for a YouTube camera, which keeps M2's fixed view; pan and zoom for a clip", () => {
+    const { store, panZoom, passThrough } = setup();
+    expect(passThrough).toEqual([false]);
+    // The committed registry plus M5's clip entries (local-replay), as the M5 helper lists them.
+    const registry = parseCameraRegistry(
+      withM5CameraEntries(
+        JSON.parse(
+          readFileSync(new URL("../../public/data/cameras.json", import.meta.url), "utf8"),
+        ),
+      ),
+    );
+    store.getState().actions.setRegistry(registry);
+    store.getState().actions.setActiveCamera("subaru-starcam");
+    expect([panZoom.at(-1), passThrough.at(-1)]).toEqual([false, true]);
+    store.getState().actions.setActiveCamera("local-replay");
+    expect([panZoom.at(-1), passThrough.at(-1)]).toEqual([true, false]);
+    store.getState().actions.setActiveCamera("cfht-nanaao");
+    expect([panZoom.at(-1), passThrough.at(-1)]).toEqual([true, false]);
+    store.getState().actions.setActiveCamera("cfht-starcam");
+    expect([panZoom.at(-1), passThrough.at(-1)]).toEqual([false, true]);
+    store.getState().actions.setActiveCamera("synthetic-maunakea");
+    expect([panZoom.at(-1), passThrough.at(-1)]).toEqual([false, false]);
   });
 
   it("no call after an unsubscribe", () => {

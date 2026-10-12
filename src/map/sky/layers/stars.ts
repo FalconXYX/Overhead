@@ -43,7 +43,12 @@ export function createStarsLayer(capacity: number, fillStyle: string): StarsLaye
     },
   });
   const source = new VectorSource({ useSpatialIndex: false, features: [new Feature(geometry)] });
-  return { layer: new VectorLayer({ source, style }), geometry, visible, radiusPx };
+  return {
+    layer: new VectorLayer({ source, style, renderBuffer: 1_000_000 }),
+    geometry,
+    visible,
+    radiusPx,
+  };
 }
 
 /** After a magnitude-limit change: one point per star in the new prefix (allocates once per change). */

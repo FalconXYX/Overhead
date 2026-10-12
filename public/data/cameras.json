@@ -1,7 +1,7 @@
 [
   {
     "id": "synthetic-maunakea", "name": "Computed sky, Maunakea", "kind": "synthetic", "source": null,
-    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 0, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
+    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 33, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 1024, "heightPx": 1024 }, "lens": "fisheye-equidistant",
     "defaults": { "azDeg": 0, "altDeg": 90, "rollDeg": 180, "focalPx": 325.94932345220167, "cxPx": 512, "cyPx": 512, "k1": 0, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": null, "updatedAtMs": 0 },
     "credit": { "text": "Computed sky (no camera image)", "href": null, "licence": null, "licenceHref": null }, "termsNote": ""
@@ -9,7 +9,7 @@
   {
     "id": "cfht-nanaao", "name": "CFHT Nānā ao all-sky (visible)", "kind": "still-image",
     "source": { "imageUrl": "https://www.cfht.hawaii.edu/~nanaao/last_vis.png", "refreshSec": 60, "corsEnabled": false, "captureLagMs": 40000, "exposureSec": 0 },
-    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 0, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
+    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 33, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 1232, "heightPx": 1232 }, "lens": "fisheye-equidistant",
     "defaults": { "azDeg": 227.3, "altDeg": 88.26, "rollDeg": 44.8, "focalPx": 373.1, "cxPx": 619.6, "cyPx": 609.8, "k1": 0.003, "k2": 0, "flipX": true, "streamDelayMs": 0, "rmsDeg": null, "updatedAtMs": 0 },
     "credit": { "text": "Nānā ao all-sky image © CFHT", "href": "https://www.cfht.hawaii.edu/en/gallery/nanaao.php", "licence": "GFDL-1.3-or-later", "licenceHref": "https://www.gnu.org/licenses/fdl-1.3.html" },
@@ -20,18 +20,36 @@
     "source": { "youtubeVideoId": "Kj5DjRYkzD8", "resolverUrl": "https://astroasahi.github.io/maunakea_east/" },
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
-    "defaults": { "azDeg": 81.2, "altDeg": 19.6, "rollDeg": 0, "focalPx": 2742, "cxPx": 1920, "cyPx": 1080, "k1": 0, "k2": 0, "flipX": false, "streamDelayMs": 50000, "rmsDeg": null, "updatedAtMs": 0 },
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 50000, "rmsDeg": 0.0415, "updatedAtMs": 0 },
     "credit": { "text": "NAOJ & Asahi Shimbun", "href": "https://www.youtube.com/channel/UCiN7OwV8g8dMm_E0xphBVig", "licence": null, "licenceHref": null },
-    "termsNote": "YouTube embed; non-commercial use with credit"
+    "termsNote": "Non-commercial use only"
   },
   {
     "id": "cfht-starcam", "name": "CFHT-Asahi StarCam (west, live)", "kind": "youtube",
     "source": { "youtubeVideoId": "Q3UhCgsWDw8", "resolverUrl": "https://astroasahi.github.io/maunakea_west/" },
-    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 0, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
+    "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 33, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
     "defaults": { "azDeg": 270, "altDeg": 20, "rollDeg": 0, "focalPx": 2742, "cxPx": 1920, "cyPx": 1080, "k1": 0, "k2": 0, "flipX": false, "streamDelayMs": 50000, "rmsDeg": null, "updatedAtMs": 0 },
     "credit": { "text": "CFHT & Asahi Shimbun in collaboration with Subaru Telescope, NAOJ", "href": "https://www.cfht.hawaii.edu/en/gallery/starcam.php", "licence": null, "licenceHref": null },
-    "termsNote": "YouTube embed; non-commercial use with credit"
+    "termsNote": "Non-commercial use only"
+  },
+  {
+    "id": "local-replay", "name": "Local clip (replay)", "kind": "local-video",
+    "source": { "sidecarUrl": null, "sourceCameraId": null, "videoUrl": null, "startUtcMs": null },
+    "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
+    "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0415, "updatedAtMs": 0 },
+    "credit": { "text": "Local clip: credit comes from its sidecar", "href": null, "licence": null, "licenceHref": null },
+    "termsNote": "Played from this device only; never uploaded"
+  },
+  {
+    "id": "subaru-2026-10-11-iss", "name": "Subaru StarCam: ISS pass, 2026-10-11 (recorded)", "kind": "local-video",
+    "source": { "sidecarUrl": "recordings/subaru-2026-10-11-iss.json", "sourceCameraId": "subaru-starcam", "videoUrl": null, "startUtcMs": null },
+    "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
+    "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0415, "updatedAtMs": 0 },
+    "credit": { "text": "NAOJ & Asahi Shimbun", "href": "https://www.youtube.com/watch?v=Kj5DjRYkzD8", "licence": null, "licenceHref": null },
+    "termsNote": "Non-commercial use only"
   },
   {
     "id": "synthetic-walenstadt", "name": "Computed sky, Walenstadt", "kind": "synthetic", "source": null,

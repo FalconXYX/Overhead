@@ -10,7 +10,15 @@ import {
 } from "../state/types";
 
 /** Ids that reach the store; the milestone that enables an entry adds it (README camera registry). */
-export const ENABLED_CAMERA_IDS: readonly string[] = ["synthetic-maunakea"];
+export const ENABLED_CAMERA_IDS: readonly string[] = [
+  "synthetic-maunakea",
+  "cfht-nanaao",
+  "subaru-starcam", // [M5]
+  "cfht-starcam", // [M5]
+  "local-replay", // [M5]
+  "subaru-2026-10-11-iss", // [M5] loads only where recordings/ is served (npm run dev), else "not part of this build"
+  "synthetic-walenstadt", // [M6]
+];
 
 const KINDS = ["synthetic", "still-image", "youtube", "local-video"] as const;
 const LENSES = [
@@ -53,6 +61,27 @@ const STRING_OR_NULL: Check = [
   "must be a string or null",
 ];
 const NUMBER_OR_NULL: Check = [(v) => v === null || isFiniteNumber(v), "must be a number or null"];
+/** [M5] videoUrl and startUtcMs of a local-video entry: set at runtime when its clip loads, never in the file. */
+const NULL_IN_FILE: Check = [
+  (v) => v === null,
+  "must be null in cameras.json (set when the clip loads)",
+];
+
+/** [M5] An absolute https: URL (the resolver pages are fetched cross-origin with CORS *). */
+const isHttpsUrl = (v: unknown): boolean => {
+  if (typeof v !== "string") return false;
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false; // TypeError: not an absolute URL
+  }
+};
+/** [M5] A path relative to BASE_URL ending in .json: no scheme, no leading / or \, so it stays under the base. */
+const isRelativeJsonPath = (v: unknown): boolean =>
+  typeof v === "string" &&
+  v.endsWith(".json") &&
+  !/^[/\\]/.test(v) &&
+  !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(v);
 
 type SourceOf<K extends CameraKind> = Extract<CameraConfig, { kind: K }>["source"];
 
@@ -76,13 +105,16 @@ const SOURCE_FIELDS: { readonly [K in Exclude<CameraKind, "synthetic">]: Fields<
       (v) => typeof v === "string" && /^[A-Za-z0-9_-]{11}$/.test(v),
       "must be an 11-character YouTube id",
     ],
-    resolverUrl: STRING_OR_NULL,
+    resolverUrl: [(v) => v === null || isHttpsUrl(v), "must be null or an https: URL"],
   },
   "local-video": {
-    sidecarUrl: STRING_OR_NULL,
-    sourceCameraId: STRING_OR_NULL,
-    videoUrl: STRING_OR_NULL,
-    startUtcMs: NUMBER_OR_NULL,
+    sidecarUrl: [
+      (v) => v === null || isRelativeJsonPath(v),
+      "must be null or a relative path ending in .json (no scheme, no leading /)",
+    ],
+    sourceCameraId: STRING_OR_NULL, // and the id of a youtube or still-image entry: checked across entries
+    videoUrl: NULL_IN_FILE,
+    startUtcMs: NULL_IN_FILE,
   },
 };
 
@@ -179,6 +211,13 @@ function entryProblems(entry: Json, label: string): string[] {
         defaults.cyPx > (imageSize.heightPx as number))
     )
       bad("the principal point (defaults.cxPx, defaults.cyPx) lies outside the image");
+    // [M5] A clip is the master clock: it has no stream delay.
+    if (
+      kind === "local-video" &&
+      isFiniteNumber(defaults.streamDelayMs) &&
+      defaults.streamDelayMs !== 0
+    )
+      bad("defaults.streamDelayMs must be 0 for a local-video camera");
   }
 
   // credit and terms
@@ -196,6 +235,8 @@ export function parseCameraRegistry(json: unknown): Record<string, CameraConfig>
   const problems: string[] = [];
   const registry: Record<string, CameraConfig> = {};
   const seen = new Set<string>();
+  /** [M5] local-video sourceCameraId values, checked once every entry is known. */
+  const clipSources: { label: string; sourceCameraId: string }[] = [];
   json.forEach((entry: unknown, index) => {
     if (!isObject(entry)) {
       problems.push(`entry ${index}: expected an object`);
@@ -215,7 +256,21 @@ export function parseCameraRegistry(json: unknown): Record<string, CameraConfig>
       seen.add(id);
       registry[id] = entry as unknown as CameraConfig;
     }
+    const { source } = entry;
+    if (
+      entry.kind === "local-video" &&
+      isObject(source) &&
+      typeof source.sourceCameraId === "string"
+    )
+      clipSources.push({ label, sourceCameraId: source.sourceCameraId });
   });
+  for (const { label, sourceCameraId } of clipSources) {
+    const target = Object.hasOwn(registry, sourceCameraId) ? registry[sourceCameraId] : undefined;
+    if (target?.kind !== "youtube" && target?.kind !== "still-image")
+      problems.push(
+        `${label}: source.sourceCameraId must be null or the id of a youtube or still-image camera in this file`,
+      );
+  }
   if (!seen.has(DEFAULT_CAMERA_ID))
     problems.push(`the default camera ${DEFAULT_CAMERA_ID} is missing`);
   if (problems.length > 0) throw new Error(`cameras.json: ${problems.join("; ")}`);

@@ -122,7 +122,7 @@ The final state of the four entries, checked with `satisfies CameraConfig[]` und
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 },
     "lens": "rectilinear",
-    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 50000, "rmsDeg": 0.0294, "updatedAtMs": 0 },
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 50000, "rmsDeg": 0.0415, "updatedAtMs": 0 },
     "credit": { "text": "NAOJ & Asahi Shimbun", "href": "https://www.youtube.com/channel/UCiN7OwV8g8dMm_E0xphBVig", "licence": null, "licenceHref": null },
     "termsNote": "Non-commercial use only"
   },
@@ -146,7 +146,7 @@ The final state of the four entries, checked with `satisfies CameraConfig[]` und
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 },
     "lens": "rectilinear",
-    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0294, "updatedAtMs": 0 },
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0415, "updatedAtMs": 0 },
     "credit": { "text": "Local clip: credit comes from its sidecar", "href": null, "licence": null, "licenceHref": null },
     "termsNote": "Played from this device only; never uploaded"
   },
@@ -158,7 +158,7 @@ The final state of the four entries, checked with `satisfies CameraConfig[]` und
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 },
     "lens": "rectilinear",
-    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0294, "updatedAtMs": 0 },
+    "defaults": { "azDeg": 81.2322, "altDeg": 19.6185, "rollDeg": 0.7698, "focalPx": 2525.93, "cxPx": 1920, "cyPx": 1080, "k1": -0.00992, "k2": 0, "flipX": false, "streamDelayMs": 0, "rmsDeg": 0.0415, "updatedAtMs": 0 },
     "credit": { "text": "NAOJ & Asahi Shimbun", "href": "https://www.youtube.com/watch?v=Kj5DjRYkzD8", "licence": null, "licenceHref": null },
     "termsNote": "Non-commercial use only"
   }
@@ -167,7 +167,7 @@ The final state of the four entries, checked with `satisfies CameraConfig[]` und
 
 Where the values come from:
 
-- **`subaru-starcam` defaults.** The star fit on the 2026-10-11 clip: 73 BSC stars at media 56, 241 and 461 s, 207 pairs, rms 0.65 px at 1920 width (0.0294°), max 3.0 px. Az 81.2322 ± 0.002°, alt 19.6185 ± 0.002°, roll 0.7698 ± 0.005°, f 1262.96 ± 0.25 px at 1920 (2525.93 at 3840), k1 −0.00992 ± 0.0005. The three epochs agree to 0.004° in az, 0.002° in alt and 1 px in f, so the camera did not move during the clip. HFOV is 74.48°, not the nominal 70.0°.
+- **`subaru-starcam` defaults.** The star fit on the 2026-10-11 clip: 73 BSC stars at media 56, 241 and 461 s, 207 pairs, rms 0.915 px per pair at 1920 width (0.0415°; 0.65 px, 0.0294° per axis), max 3.0 px. Az 81.2322 ± 0.002°, alt 19.6185 ± 0.002°, roll 0.7698 ± 0.005°, f 1262.96 ± 0.25 px at 1920 (2525.93 at 3840), k1 −0.00992 ± 0.0005. The three epochs agree to 0.004° in az, 0.002° in alt and 1 px in f, so the camera did not move during the clip. HFOV is 74.48°, not the nominal 70.0°.
   - The old defaults (az 81.2°, alt 19.6°, roll 0, f 2742, k1 0) missed the same stars by rms 51.7 px and max 89.7 px (1920 width), and put the ISS marker up to 3.0° off.
   - `distortionValid` holds: g′ = 0.977 at `rMaxUnit` 0.87885.
   - Fixtures that name "the Subaru defaults" (M8, README section 8) keep az 81.2°, alt 19.6°, f 2742 as their inline inputs. Only code that reads `cameras.json` sees the new values.

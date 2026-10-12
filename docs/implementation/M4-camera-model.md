@@ -48,6 +48,8 @@ New files:
 | `tests/e2e/calibration-export.spec.ts` | section 5 |
 | `tests/fixtures/geopose/GeoPose.Basic.YPR.Instance.00.json` … `.03.json` | official instances |
 | `tests/fixtures/calibration/cfht-nanaao-pairs.json` | exported from the panel on a real frame (step 18) |
+| `tests/fixtures/calibration/subaru-clip-pairs.json` | 350 star and Jupiter pairs from 3 epochs of the 2026-10-11 Subaru clip; the real-frame acceptance until `cfht-nanaao-pairs.json` exists |
+| `scripts/fixtures/clip-pairs.ts` | rebuilds `subaru-clip-pairs.json` from the gitignored clip (`npx tsx scripts/fixtures/clip-pairs.ts --ffmpeg <path>`), byte for byte |
 
 Changed files:
 
@@ -467,7 +469,7 @@ Unit tests import through the module indexes; seeded tests use mulberry32 with s
 | `fit.test.ts` · robustness | Nānā ao-like truth (227, 88.25, 45, f 373, c (620, 610), k1 0.003, `flipX`), 14 pairs, 1 px noise; the StarCam truth above, 14 pairs, 2 px | start roll 179° off: all 100 seeds converge with `rmsDeg` ≤ 0.3; StarCam start az +30°: all 50 converge with `rmsDeg` ≤ 0.2; 3 pairs → null |
 | `fit.test.ts` · 3σ | the 2° tilt truth, 12 pairs, 1 px noise, pair 0 moved 30 px, 60 seeds; plus 60 clean fits | pair 0 rejected in ≥ 50 (55), no other pair rejected (0); ≤ 2 pairs rejected over the clean fits (1); `distortionValid` holds on every result |
 | `fit.test.ts` · `calibrationAcceptance` | hand-made `AcceptancePair` lists | each threshold flips `pass` on its own, including 9 named stars, 0.26° RMS, one 0.51° holdout, no planet, alt 19.9° on a fisheye |
-| `calibrationFixture.test.ts` | `cfht-nanaao-pairs.json` (step 18); targets recomputed at `frameTimeMs` from `public/data/stars.json` and `computeBodies` | `calibrationAcceptance(...).pass`; a refit from roll + 3° and f × 1.02 matches the first within 0.01° on every pair (3.4e-11° on the archived frames) |
+| `calibrationFixture.test.ts` | `subaru-clip-pairs.json` until `cfht-nanaao-pairs.json` (step 18) is committed; targets recomputed at `frameTimeMs` from `public/data/stars.json` and `computeBodies` | `calibrationAcceptance(...).pass`; a refit from roll + 3° and f × 1.02 matches the first within 0.01° on every pair (3.4e-11° on the archived frames) |
 | `time.test.ts` · `localDateTimeToUtcMs` | inline | exact: ("2026-10-11T06:04:01", Europe/Vaduz) → 04:04:01Z; ("2025-07-15T20:47", Pacific/Honolulu) → 2025-07-16T06:47:00Z; Vaduz 2026-03-29T02:30 → null, 03:00 → 01:00Z; 2026-10-25T02:30 → 00:30Z, 03:00 → 02:00Z; "11-10-2026 06:04:01", "2026-02-30T00:00", "2026-10-11T24:00" and zone "Not/AZone" → null; same results with TZ set to Honolulu and Kolkata |
 | `actions.test.ts` · M4 actions | `createAppStore` with the committed registry, `vi.setSystemTime` | exact. On `synthetic-maunakea`: `updateCalibration({ azDeg: 37 })` stores `azDeg` 0, `rollDeg` 143 (`wrap180(180 − 37)`) and `updatedAtMs` = now; `updateCalibration({ k1: −0.5 })` fails `distortionValid` (g′ at r = π/2 is −2.70) and leaves `camera.calibration` the same reference. `importCalibration` and `applyFit` normalize and reject the same way; `applyFit` also stamps `updatedAtMs` and writes each pair's `residualPx` and `rejected` and the `fit` summary. `resetCalibration` deletes the entry. A second `addImagePoint` replaces the pending point; `completePair` without one changes nothing; a second pair with the same `targetId` replaces the first. `cancelImagePoint` clears `pendingPx`. `setActiveCamera` resets `calibrationUi` to `{ pairs: [], pendingPx: null, fit: null }` |
 | `persist.test.ts` | Map-backed `Storage`; stubs whose `getItem` or `setItem` throw | load drops unknown ids, wrong types and invalid distortion; throwing stubs give defaults and no exception; export → parse round-trips; a file with another lens or size is rejected with a message |
@@ -523,7 +525,7 @@ function allowConsoleErrors(guard: Guard, allowed: readonly RegExp[]): void {
 
 1. `npm run typecheck`, `lint`, `test`, `build` and `e2e` pass in CI. Paste the Vitest summary listing every file in section 5.
 2. Every tolerance in section 5 holds.
-3. `calibrationFixture.test.ts` passes on the committed real-frame fixture: ≥ 10 named stars at alt ≥ 20°, RMS ≤ 0.25°, every fit star ≤ 0.5°, 1 planet and 3 held-out stars ≤ 0.5°. Paste the printed acceptance report.
+3. `calibrationFixture.test.ts` passes on the committed real-frame fixture (the Subaru clip until a clear Nānā ao night gives `cfht-nanaao-pairs.json`): ≥ 10 named stars at alt ≥ 20°, RMS ≤ 0.25°, every fit star ≤ 0.5°, 1 planet and 3 held-out stars ≤ 0.5°. Paste the printed acceptance report.
 4. `calibration-export.spec.ts` passes; the exported GeoPose validates against the vendored schema.
 5. Screenshot: Nānā ao with the overlay after the fit, the panel's checklist all passing, the credit and licence link. Visual design is settled from this screenshot.
 6. A clip of 30 s or less: a keyboard nudge, a pair made through the 3-nearest list, Fit, then Export GeoPose.

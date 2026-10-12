@@ -5,8 +5,17 @@ import { readFileSync } from "node:fs";
 import { eciToGeodetic, gstime, json2satrec, propagate } from "satellite.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apparentAltDeg } from "../../src/domain/astro";
-import { angularSeparationDeg, enuToAzAltDeg, type ObserverSite } from "../../src/domain/geo";
 import {
+  angularSeparationDeg,
+  ecefToLatLonDeg,
+  enuToAzAltDeg,
+  enuToEcef,
+  enuToEcefMatrix,
+  geodeticToEcefKm,
+  type ObserverSite,
+} from "../../src/domain/geo";
+import {
+  belowSkyCutoff,
   createPropagationContext,
   ISS_NORAD_ID,
   parseGpFile,
@@ -183,7 +192,8 @@ describe("startEphemeris: messages and group status", () => {
 
     const { enabledCameras } = await import("../../src/app/cameras");
     store.getState().actions.setRegistry(enabledCameras(committedCameras()));
-    expect(w.sent.map((m) => m.type)).toEqual(["init", "loadGroup", "loadGroup"]);
+    // [M8] setCamera follows init (the worker's first message), delivered inside loadGroup's setGroupData.
+    expect(w.sent.map((m) => m.type)).toEqual(["init", "setCamera", "loadGroup", "loadGroup"]);
     expect(w.sent[0]).toEqual({ type: "init", site: SITE, generation: expect.any(Number) });
     expect(w.of("loadGroup")).toEqual([
       { type: "loadGroup", group: "stations", url: gpUrl("stations") },
@@ -525,6 +535,165 @@ describe("startEphemeris: messages and group status", () => {
   });
 });
 
+describe("[M9] step 14f: a clip replays with its own element sets", () => {
+  const CLIP_ID = "subaru-2026-10-11-iss";
+  const appBase = new URL(import.meta.env.BASE_URL, APP_HREF).href; // as the app resolves its sidecarUrl
+  const CLIP_GP = `${appBase}recordings/${CLIP_ID}.gp/`;
+  const DATA_GP = `${appBase}data/gp/`;
+  const urlsOf = (w: FakeWorker): string[] => w.of("loadGroup").map((m) => m.url);
+
+  /** A fetch that answers the clip's meta.json probe with `answer`, and records every URL. */
+  function probeFetch(answer: () => Response | Promise<Response>) {
+    const calls: string[] = [];
+    const fn = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input instanceof Request ? input.url : input);
+      calls.push(url);
+      if (url !== `${CLIP_GP}meta.json`) throw new Error(`unexpected fetch ${url}`);
+      return answer();
+    };
+    return { fn, calls };
+  }
+  const metaJson = (): Response =>
+    new Response(JSON.stringify({ stations: { fetchedAtMs: SNAPSHOT_MS } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  /** The clip camera as loadClipFromSidecarUrl commits it: videoUrl and startUtcMs set. */
+  function loadClip(store: AppStore): void {
+    const { registry } = store.getState().camera;
+    const entry = registry[CLIP_ID];
+    if (entry?.kind !== "local-video") throw new Error("no clip camera in the registry");
+    store.getState().actions.setRegistry({
+      ...registry,
+      [CLIP_ID]: {
+        ...entry,
+        source: { ...entry.source, videoUrl: "blob:test", startUtcMs: 1791731310183 },
+      },
+    });
+  }
+
+  it("switches to <clip>.gp/ once the clip has loaded and meta.json answers JSON, and back for another camera", async () => {
+    const { eph } = await loadModules();
+    const store = storeAt(T_PASS_ISO);
+    const probe = probeFetch(metaJson);
+    stops.push(eph.startEphemeris(store, { fetch: probe.fn }));
+    const w0 = worker();
+    expect(urlsOf(w0)).toEqual([`${DATA_GP}stations.json`, `${DATA_GP}visual.json`]);
+    // The clip camera before its clip loads: data/gp/, no probe, no restart.
+    store.getState().actions.setActiveCamera(CLIP_ID);
+    expect(probe.calls).toEqual([]);
+    expect(FakeWorker.instances).toHaveLength(1);
+    loadClip(store);
+    expect(probe.calls).toEqual([`${CLIP_GP}meta.json`]);
+    expect(FakeWorker.instances).toHaveLength(1); // until the probe answers
+    await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(2));
+    const w1 = worker();
+    expect(w0.terminated).toBe(true);
+    // Started as at boot, on the clip's site, from the clip's directory.
+    expect(w1.sent.map((m) => m.type).slice(0, 3)).toEqual(["init", "loadGroup", "loadGroup"]);
+    const clipSite = store.getState().camera.registry[CLIP_ID]?.site;
+    expect(w1.of("init")[0]?.site).toEqual({
+      latDeg: clipSite?.latDeg,
+      lonDeg: clipSite?.lonDeg,
+      heightM: clipSite?.heightM,
+    });
+    expect(urlsOf(w1)).toEqual([`${CLIP_GP}stations.json`, `${CLIP_GP}visual.json`]);
+    expect(w1.of("setCamera").length).toBe(1); // the camera model goes to the new worker too
+    const { gp } = store.getState().data;
+    expect([gp.stations.status, gp.visual.status, gp.starlink.status]).toEqual([
+      "loading",
+      "loading",
+      "idle",
+    ]);
+    expect(eph.ephemeris.catalog.count).toBe(0);
+    // Starlink on: loaded from the clip's directory as well.
+    store.getState().actions.setLayer("starlink", true);
+    expect(urlsOf(w1).at(-1)).toBe(`${CLIP_GP}starlink.json`);
+    // Another camera: back to data/gp/ in a new worker, Starlink included.
+    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    expect(FakeWorker.instances).toHaveLength(3);
+    expect(w1.terminated).toBe(true);
+    expect(urlsOf(worker())).toEqual([
+      `${DATA_GP}stations.json`,
+      `${DATA_GP}visual.json`,
+      `${DATA_GP}starlink.json`,
+    ]);
+    // The clip again: the probe's answer is kept for the session.
+    store.getState().actions.setActiveCamera(CLIP_ID);
+    expect(FakeWorker.instances).toHaveLength(4);
+    expect(urlsOf(worker())[0]).toBe(`${CLIP_GP}stations.json`);
+    expect(probe.calls).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      "vite's index.html fallback",
+      () =>
+        new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } }),
+    ],
+    [
+      "a 404",
+      () =>
+        new Response("Not Found", { status: 404, headers: { "content-type": "application/json" } }),
+    ],
+    [
+      "a body that is not JSON",
+      () => new Response("{", { status: 200, headers: { "content-type": "application/json" } }),
+    ],
+    ["a network error", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("keeps data/gp/ when the probe meets %s, and asks once per clip", async (_name, answer) => {
+    const { eph } = await loadModules();
+    const store = storeAt(T_PASS_ISO);
+    const probe = probeFetch(answer);
+    stops.push(eph.startEphemeris(store, { fetch: probe.fn }));
+    store.getState().actions.setActiveCamera(CLIP_ID);
+    loadClip(store);
+    for (let i = 0; i < 4; i++) await macrotask();
+    expect(probe.calls).toEqual([`${CLIP_GP}meta.json`]);
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(urlsOf(worker())).toEqual([`${DATA_GP}stations.json`, `${DATA_GP}visual.json`]);
+    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(CLIP_ID);
+    for (let i = 0; i < 4; i++) await macrotask();
+    expect(probe.calls).toHaveLength(1);
+    expect(FakeWorker.instances).toHaveLength(1);
+  });
+
+  it("ignores the old worker after a restart and rebuilds the catalogue from the new one", async () => {
+    const { eph } = await loadModules();
+    const store = storeAt(T_PASS_ISO);
+    stops.push(eph.startEphemeris(store, { fetch: probeFetch(metaJson).fn }));
+    const w0 = worker();
+    w0.reply({
+      type: "groupLoaded",
+      group: "stations",
+      totalCount: 1,
+      fetchedAtMs: 1,
+      catalog: delta(0, [{ norad: 25544, name: "ISS (ZARYA)", group: 0 }]),
+    });
+    expect(eph.ephemeris.catalog.count).toBe(1);
+    store.getState().actions.setActiveCamera(CLIP_ID);
+    loadClip(store);
+    await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(2));
+    expect(eph.ephemeris.catalog.count).toBe(0);
+    expect(store.getState().data.gp.stations.status).toBe("loading");
+    worker().reply({
+      type: "groupLoaded",
+      group: "stations",
+      totalCount: 1,
+      fetchedAtMs: SNAPSHOT_MS,
+      catalog: delta(0, [{ norad: 25544, name: "ISS (ZARYA)", group: 0 }]),
+    });
+    expect(eph.ephemeris.catalog.count).toBe(1);
+    expect(store.getState().data.gp.stations).toEqual({
+      status: "ready",
+      fetchedAtMs: SNAPSHOT_MS,
+      count: 1,
+    });
+  });
+});
+
 // ---- part 2: the real worker, in-process
 
 const fixture = (file: string): string =>
@@ -742,5 +911,327 @@ describe("updateEphemerisFrame with the real worker", () => {
     for (let i = 175; i < catalog.count; i++) if (((frame.flags[i] ?? 0) & 1) === 1) valid++;
     expect(valid).toBeGreaterThan(11000);
     expect(frame.mercator.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("updateEphemerisFrame with the terrain horizon (M6 step 10)", () => {
+  it("uses the ready profile for above-horizon and visible, and recomputes a paused frame when it arrives", async () => {
+    const run = await runRealWorker(T_PASS_ISO); // paused replay
+    for (let f = 0; f < 3 && !run.eph.ephemeris.frame.ready; f++) await run.frame(f * 16);
+    const i = issIndex(run.eph);
+    const { frame } = run.eph.ephemeris;
+    expect(frame.flags[i]).toBe(0b1111); // the geometric horizon until the profile is ready
+    const { setHorizon } = run.store.getState().actions;
+    // A 40° ridge everywhere: the ISS at apparent 28.9° is behind it. Same time, same samples: only the profile changed.
+    setHorizon("synthetic-maunakea", {
+      status: "ready",
+      profileDeg: new Float32Array(360).fill(40),
+    });
+    await run.frame(100);
+    expect(frame.timeMs).toBe(T_PASS);
+    expect(frame.flags[i]).toBe(0b0011); // valid and sunlit; neither above the horizon nor visible
+    // A sea horizon below 0° changes nothing for an object above 0°.
+    setHorizon("synthetic-maunakea", { profileDeg: new Float32Array(360).fill(-1.93) });
+    await run.frame(200);
+    expect(frame.flags[i]).toBe(0b1111);
+  });
+});
+
+// ---- [M8] the incoming check's camera, profile and requests (M8 step 6.2)
+
+describe("M8: setCamera, setHorizonProfile and incoming requests", () => {
+  it("sends setCamera for the active camera and each calibration change, and the profile after setSite", async () => {
+    const { eph } = await loadModules();
+    const store = storeAt(T_PASS_ISO);
+    stops.push(eph.startEphemeris(store));
+    const w = worker();
+    const camera = store.getState().camera.registry[DEFAULT_CAMERA_ID];
+    if (camera === undefined) throw new Error("no default camera");
+    expect(w.of("setCamera")).toEqual([
+      {
+        type: "setCamera",
+        camera: {
+          lens: camera.lens,
+          calibration: camera.defaults,
+          widthPx: camera.imageSize.widthPx,
+          heightPx: camera.imageSize.heightPx,
+        },
+      },
+    ]);
+    const { actions } = store.getState();
+    actions.updateCalibration({ rollDeg: 5 });
+    expect(w.of("setCamera")).toHaveLength(2);
+    expect(w.of("setCamera")[1]?.camera?.calibration.rollDeg).toBe(5);
+    for (let i = 1; i <= 10; i++) actions.tick(T_PASS + 16 * i); // ticks send nothing
+    expect(w.of("setCamera")).toHaveLength(2);
+    expect(w.of("setHorizonProfile")).toHaveLength(0);
+
+    const profile = new Float32Array(360).fill(-1.9);
+    actions.setHorizon(DEFAULT_CAMERA_ID, { status: "ready", profileDeg: profile });
+    expect(w.of("setHorizonProfile")).toHaveLength(1);
+    expect(w.of("setHorizonProfile")[0]?.profileDeg).toEqual(profile); // a structured-clone copy
+    expect(w.of("setHorizonProfile")[0]?.profileDeg).not.toBe(profile);
+
+    // Another site: setSite (which resets the worker's profile) before that camera's profile.
+    actions.setActiveCamera("synthetic-walenstadt");
+    const types = w.sent.map((m) => m.type);
+    expect(types.slice(types.lastIndexOf("setSite"))).toEqual([
+      "setSite",
+      "setCamera",
+      "setHorizonProfile",
+    ]);
+    expect(w.of("setHorizonProfile").at(-1)?.profileDeg).toBeNull();
+  });
+
+  it("posts incoming at most once per wall second, routes replies, and clears them on a flush or when inactive", async () => {
+    const { eph, clock } = await loadModules();
+    let wallMs = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => wallMs);
+    const store = storeAt(T_PASS_ISO);
+    stops.push(eph.startEphemeris(store));
+    const w = worker();
+    const frames = manualFrames(clock, store);
+    stops.push(frames.stop);
+    const run = (ms: number): void => {
+      wallMs = ms;
+      frames.run(ms);
+    };
+    run(0);
+    expect(w.of("incoming")).toEqual([
+      { type: "incoming", requestId: 1, timeMs: T_PASS, groups: 0b011 },
+    ]);
+    run(16); // one in flight
+    expect(w.of("incoming")).toHaveLength(1);
+    const reply: Extract<PropagationOut, { type: "incoming" }> = {
+      type: "incoming",
+      requestId: 1,
+      timeMs: T_PASS,
+      computeMs: 0.3,
+      entries: [{ index: 0, etaSec: 35 }],
+    };
+    w.reply(reply);
+    expect(eph.ephemeris.incoming).toEqual(reply);
+    run(2_000); // paused and unchanged
+    expect(w.of("incoming")).toHaveLength(1);
+
+    // A group load flushes: the entries go, and the next frame asks again.
+    w.reply({
+      type: "groupLoaded",
+      group: "stations",
+      totalCount: 1,
+      fetchedAtMs: SNAPSHOT_MS,
+      catalog: delta(0, [{ norad: 25544, name: "ISS (ZARYA)", group: 0 }]),
+    });
+    expect(eph.ephemeris.incoming).toBeNull();
+    w.reply(reply); // a late answer to the flushed request
+    expect(eph.ephemeris.incoming).toBeNull();
+    run(2_016);
+    expect(w.of("incoming").at(-1)).toMatchObject({ requestId: 2, groups: 0b011 });
+
+    // Both satellite layers off: inactive, nothing posted, nothing held.
+    w.reply({ ...reply, requestId: 2 });
+    expect(eph.ephemeris.incoming?.requestId).toBe(2);
+    store.getState().actions.setLayer("satellites", false);
+    run(4_000);
+    expect(eph.ephemeris.incoming).toBeNull();
+    expect(w.of("incoming")).toHaveLength(2);
+    store.getState().actions.setLayer("satellites", true);
+    run(4_016);
+    expect(w.of("incoming")).toHaveLength(3);
+
+    // Playing at 60×: alerts pause.
+    w.reply({ ...reply, requestId: 3 });
+    store.getState().actions.setRate(60);
+    store.getState().actions.play();
+    run(6_000);
+    run(8_000);
+    expect(eph.ephemeris.incoming).toBeNull();
+    expect(w.of("incoming")).toHaveLength(3);
+  });
+
+  it("sends no incoming request before a camera is known", async () => {
+    const { eph, clock } = await loadModules();
+    const store = createAppStore(initialState(T_PASS, DEFAULT_CAMERA_ID)); // cameras.json not loaded yet
+    stops.push(eph.startEphemeris(store));
+    const frames = manualFrames(clock, store);
+    stops.push(frames.stop);
+    frames.run(0);
+    frames.run(2_000);
+    expect(worker().sent).toEqual([]);
+    expect(eph.ephemeris.incoming).toBeNull();
+  });
+
+  it("heightKmOf is null before the frame is ready and for an invalid index", async () => {
+    const { eph } = await loadModules();
+    const store = storeAt(T_PASS_ISO);
+    stops.push(eph.startEphemeris(store));
+    expect(eph.heightKmOf(0)).toBeNull();
+    worker().reply({
+      type: "groupLoaded",
+      group: "stations",
+      totalCount: 1,
+      fetchedAtMs: SNAPSHOT_MS,
+      catalog: delta(0, [{ norad: 25544, name: "ISS (ZARYA)", group: 0 }]),
+    });
+    expect(eph.heightKmOf(0)).toBeNull(); // no sample yet
+    expect(eph.heightKmOf(7)).toBeNull();
+  });
+});
+
+describe("M8 with the real worker", () => {
+  const T_INCOMING_ISO = "2026-10-11T15:05:07Z";
+  const T_INCOMING = Date.parse(T_INCOMING_ISO);
+
+  it("lists the ISS and SL-3 R/B 19046 on synthetic-maunakea at 15:05:07Z (the e2e chip)", async () => {
+    const run = await runRealWorker(T_INCOMING_ISO);
+    for (let f = 0; f < 5 && run.eph.ephemeris.incoming === null; f++) await run.frame(f * 16);
+    const reply = run.eph.ephemeris.incoming;
+    expect(reply?.timeMs).toBe(T_INCOMING);
+    expect(reply?.computeMs).toBeGreaterThan(0);
+    const { noradIds } = run.eph.ephemeris.catalog;
+    expect(reply?.entries.map((e) => [noradIds[e.index], e.etaSec])).toEqual([
+      [25544, 35],
+      [19046, 55],
+    ]);
+  });
+
+  it("heightKmOf gives the ISS's geodetic height, 422.400 km at 15:05:07Z (e2e test 4)", async () => {
+    const run = await runRealWorker(T_INCOMING_ISO);
+    for (let f = 0; f < 3 && !run.eph.ephemeris.frame.ready; f++) await run.frame(f * 16);
+    const h = run.eph.heightKmOf(issIndex(run.eph));
+    const omm = parseGpFile(JSON.parse(fixture("stations.json"))).find(
+      (o) => Number(o.NORAD_CAT_ID) === ISS_NORAD_ID,
+    );
+    if (omm === undefined) throw new Error("no ISS in the snapshot");
+    const date = new Date(T_INCOMING);
+    const pv = propagate(json2satrec(omm), date);
+    if (pv === null || typeof pv.position === "boolean") throw new Error("ISS propagation failed");
+    const reference = eciToGeodetic(pv.position, gstime(date)).height;
+    expect(reference).toBeCloseTo(422.4, 3);
+    expect(h).not.toBeNull();
+    expect(Math.abs((h ?? Number.NaN) - reference)).toBeLessThan(0.005); // Float32 ENU samples
+  });
+});
+
+describe("[M9] step 4: the Starlink sky cut-off and interleaved ground updates", () => {
+  const STARLINK = 2; // GP_GROUPS index
+  const O = new Float64Array(3);
+  geodeticToEcefKm(SITE.latDeg, SITE.lonDeg, SITE.heightM, O, 0);
+  const M = enuToEcefMatrix(SITE.latDeg, SITE.lonDeg);
+  const ecef = new Float64Array(3);
+  const latLon = new Float64Array(2);
+
+  type Frame = EphemerisModule["ephemeris"]["frame"];
+  const enuOf = (f: Frame, i: number): [number, number, number] => [
+    f.enuKm[3 * i] ?? 0,
+    f.enuKm[3 * i + 1] ?? 0,
+    f.enuKm[3 * i + 2] ?? 0,
+  ];
+  /** Rows whose lonLatDeg is not O + M·ENU → Bowring of this frame's ENU (every valid row, after a full run). */
+  function staleGroundRows(f: Frame, count: number): number[] {
+    const stale: number[] = [];
+    for (let i = 0; i < count; i++) {
+      if (((f.flags[i] ?? 0) & 1) === 0) continue;
+      enuToEcef(M, ...enuOf(f, i), ecef, 0);
+      ecefToLatLonDeg(
+        (O[0] ?? 0) + (ecef[0] ?? 0),
+        (O[1] ?? 0) + (ecef[1] ?? 0),
+        (O[2] ?? 0) + (ecef[2] ?? 0),
+        latLon,
+        0,
+      );
+      if (f.lonLatDeg[2 * i] !== latLon[1] || f.lonLatDeg[2 * i + 1] !== latLon[0]) stale.push(i);
+    }
+    return stale;
+  }
+
+  it("cuts Starlink rows below −3° from the sky only, keeps their ground position, and never cuts the selected row", async () => {
+    const run = await runRealWorker(T_PASS_ISO, { starlink: true }); // paused replay
+    for (let f = 0; f < 4 && !run.eph.ephemeris.frame.ready; f++) await run.frame(f * 16);
+    const { catalog, frame } = run.eph.ephemeris;
+    let cut = 0;
+    let starlinkUp = 0;
+    let firstCut = -1;
+    for (let i = 0; i < catalog.count; i++) {
+      const flags = frame.flags[i] ?? 0;
+      if ((flags & 1) === 0) continue;
+      const alt = frame.azAltDeg[2 * i + 1] ?? Number.NaN;
+      const starlink = catalog.groupIndex[i] === STARLINK;
+      const below = belowSkyCutoff(...enuOf(frame, i));
+      expect(Number.isNaN(alt)).toBe(starlink && below);
+      if (Number.isNaN(alt)) {
+        cut++;
+        if (firstCut < 0) firstCut = i;
+        expect(flags & 0b1100).toBe(0); // neither above the horizon nor visible
+        expect(Number.isNaN(frame.rangeKm[i] ?? 0)).toBe(true);
+      } else if (starlink && alt > 0) {
+        starlinkUp++;
+      }
+      expect(Number.isFinite(frame.mercator[2 * i] ?? Number.NaN)).toBe(true);
+    }
+    expect(cut).toBeGreaterThan(9_000);
+    expect(starlinkUp).toBeGreaterThan(100); // the sky view still draws its Starlinks
+    expect(staleGroundRows(frame, catalog.count)).toEqual([]);
+
+    // Selecting a cut row recomputes the paused frame: the selected object always has its az/alt.
+    run.store.getState().actions.select(`sat:${catalog.noradIds[firstCut] ?? 0}`);
+    await run.frame(64);
+    const alt = frame.azAltDeg[2 * firstCut + 1] ?? Number.NaN;
+    expect(alt).toBeLessThan(-2);
+    expect(frame.rangeKm[firstCut]).toBeGreaterThan(0);
+    // And hovering another one does the same.
+    const other = catalog.groupIndex.findIndex(
+      (g, i) => g === STARLINK && i > firstCut && Number.isNaN(frame.azAltDeg[2 * i + 1] ?? 0),
+    );
+    run.store.getState().actions.hover(`sat:${catalog.noradIds[other] ?? 0}`);
+    await run.frame(80);
+    expect(Number.isFinite(frame.azAltDeg[2 * other + 1] ?? Number.NaN)).toBe(true);
+  });
+
+  it("updates half the Starlink rows on the ground per frame while playing, then every row once paused", async () => {
+    const run = await runRealWorker(T_PASS_ISO, { starlink: true });
+    const { actions } = run.store.getState();
+    const { catalog, frame } = run.eph.ephemeris;
+    actions.setRate(60);
+    actions.play();
+    const iss = issIndex(run.eph);
+    let selected = -1;
+    let interleaved = 0;
+    let prev: Float64Array | null = null;
+    for (let f = 0; f < 40; f++) {
+      await run.frame(f * (1000 / 60));
+      if (!frame.ready) continue;
+      if (selected < 0) {
+        selected = catalog.groupIndex.indexOf(STARLINK);
+        actions.select(`sat:${catalog.noradIds[selected] ?? 0}`);
+      }
+      const cur = Float64Array.from(frame.lonLatDeg);
+      if (prev !== null && cur[2 * iss] !== prev[2 * iss]) {
+        // The ISS moved, so every freshly computed row moved: the rows that did not are the kept parity.
+        const kept = new Set<number>();
+        const moved = new Set<number>();
+        for (let i = 0; i < catalog.count; i++) {
+          if (catalog.groupIndex[i] !== STARLINK || ((frame.flags[i] ?? 0) & 1) === 0) continue;
+          const same = cur[2 * i] === prev[2 * i] && cur[2 * i + 1] === prev[2 * i + 1];
+          if (i === selected)
+            expect(same).toBe(false); // exempt: updated every frame
+          else (same ? kept : moved).add(i & 1);
+        }
+        expect(kept.size).toBeLessThanOrEqual(1);
+        if (kept.size === 1) {
+          expect(moved.has([...kept][0] ?? -1)).toBe(false);
+          interleaved++;
+        }
+      }
+      prev = cur;
+    }
+    expect(interleaved).toBeGreaterThan(10);
+    // Kept rows that are drawn in the sky have this frame's ENU and last frame's ground point (rows skipped
+    // entirely, below the cut-off, keep both).
+    expect(staleGroundRows(frame, catalog.count).length).toBeGreaterThan(100);
+    // Paused: the next frame runs every row once, though nothing else changed.
+    actions.pause();
+    await run.frame(41 * (1000 / 60));
+    expect(staleGroundRows(frame, catalog.count)).toEqual([]);
   });
 });

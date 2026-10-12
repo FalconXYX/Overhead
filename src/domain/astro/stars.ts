@@ -10,6 +10,8 @@ import { SKY_RECOMPUTE_MS } from "../time";
 
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
+/** [M9] Refraction("normal", −1): the clamp value astronomy-engine scales toward the nadir below −1°. */
+const REFRACTION_AT_MINUS_1_DEG = Refraction("normal", -1);
 
 /**
  * stars.json row. Rows are sorted by vmag, then HR, so a magnitude limit is a prefix. name: the IAU-CSN proper
@@ -41,7 +43,7 @@ export function starUnitVectors(rows: readonly StarRow[]): Float64Array {
 
 /**
  * One Rotation_EQJ_HOR per call, inlined over the first `count` stars; az = (360 − atan2(w, n)) mod 360,
- * alt = atan2(u, hypot(n, w)) + Refraction('normal', alt). Writes [azDeg, altDeg] pairs. Allocates nothing per star.
+ * alt = atan2(u, √(n² + w²)) + Refraction('normal', alt). Writes [azDeg, altDeg] pairs. Allocates nothing per star.
  */
 export function rotateStarsAzAltDeg(
   time: AstroTime,
@@ -71,9 +73,14 @@ export function rotateStarsAzAltDeg(
     let az = -Math.atan2(w, n) * R2D;
     if (az < 0) az += 360;
     if (az >= 360) az -= 360;
-    const alt = Math.atan2(u, Math.hypot(n, w)) * R2D;
+    // [M9] sqrt rather than Math.hypot (a unit vector cannot overflow; hypot cost about 10 ns a star).
+    const alt = Math.atan2(u, Math.sqrt(n * n + w * w)) * R2D;
     outAzAltDeg[2 * i] = az;
-    outAzAltDeg[2 * i + 1] = alt + Refraction("normal", alt);
+    // [M9] Below −1° astronomy-engine's 'normal' refraction is its −1° value scaled by (alt + 90) / 89: the same
+    // arithmetic without a tan per star (about half the catalogue is below the horizon).
+    outAzAltDeg[2 * i + 1] =
+      alt +
+      (alt < -1 ? REFRACTION_AT_MINUS_1_DEG * ((alt + 90.0) / 89.0) : Refraction("normal", alt));
   }
 }
 

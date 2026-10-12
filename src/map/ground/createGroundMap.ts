@@ -24,14 +24,21 @@ import { registerMap } from "../registry";
 import type { SkySatelliteIds } from "../sky/layers/satellites";
 import type { SelectionTargets } from "../sky/layers/selection";
 import { bindFollow } from "../sync/bindFollow";
+import { bindFootprint } from "../sync/bindFootprint";
 import { bindTrueColorDate } from "../sync/bindGibs";
+import { bindGoesDomainPoll, bindGoesLayer, createGoesSession } from "../sync/bindGoes";
+import { bindHillshadeSun, bindHillshadeTexel } from "../sync/bindHillshade";
 import { bindLayerVisible } from "../sync/bindLayers";
 import { bindSelection } from "../sync/bindSelection";
 import { bindSite } from "../sync/bindSite";
 import { bindTracks } from "../sync/bindTracks";
+import { createFootprintLayer } from "./layers/footprint";
 import { createOverlayLayers, createTrueColorLayer, type GibsCapabilities } from "./layers/gibs";
+import { createGoesLayer } from "./layers/goes";
+import { createHillshadeLayer } from "./layers/hillshade";
 import {
   createGroundSatellites,
+  type GroundDrawWindow,
   writeGroundMarkers,
   writeGroundSatellites,
 } from "./layers/satellites";
@@ -42,7 +49,8 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 /**
  * Builds the map in `target` and returns its cleanup (registerMap). caps null: no GIBS layers. Layer order, bottom to
- * top: GIBS, site, tracks (canvas), satellites and starlink (WebGLVector), markers (canvas).
+ * top: GIBS (with the M6 hillshade above true colour), the M8 footprint (canvas), site, tracks (canvas), satellites
+ * and starlink (WebGLVector), markers (canvas).
  */
 export function createGroundMap(
   target: HTMLElement,
@@ -54,6 +62,8 @@ export function createGroundMap(
   const layers: BaseLayer[] = [];
   const disposers: (() => void)[] = [];
 
+  // [M6] The Sun-lit relief: above true colour, below GOES and the overlays; the bottom layer without GIBS.
+  const hillshade = createHillshadeLayer();
   const date = selectTrueColorDate(store.getState());
   if (caps !== null && date !== null) {
     // Built with the computed date, so the black capabilities Default is never requested.
@@ -61,19 +71,33 @@ export function createGroundMap(
     const source = trueColor.getSource();
     if (source === null) throw new Error("createTrueColorLayer returned a layer without a source");
     const overlays = createOverlayLayers(caps);
-    layers.push(trueColor, ...overlays);
+    // [M7] GOES-West sits above true colour (and M6's hillshade) and below the overlays, so coastlines and labels draw
+    // on top of the clouds. One session per map: the steps whose tiles failed.
+    const goes = createGoesLayer(caps);
+    const goesSession = createGoesSession();
+    layers.push(trueColor, hillshade.layer, goes.layer, ...overlays);
     disposers.push(
       bindLayerVisible(store, "trueColor", trueColor),
       bindTrueColorDate(store, source),
+      bindGoesLayer(store, goes.layer, goes.source, goesSession),
+      bindGoesDomainPoll(store, goesSession, {
+        fetchFn: (url, init) => fetch(url, init), // the wrapper is required (Illegal invocation)
+        nowMs: () => Date.now(),
+      }),
     );
     for (const overlay of overlays) disposers.push(bindLayerVisible(store, "coastlines", overlay));
+  } else {
+    layers.push(hillshade.layer);
   }
 
+  // [M8] Directly below the site layer: above GIBS, the hillshade and GOES; below the marker, wedge, tracks and dots.
+  const footprint = createFootprintLayer();
   const site = createSiteLayer();
   const tracks = createTracksLayer();
   // WebGL layers are disposed by registerMap's cleanup with every other layer (README Map lifecycle).
   const sats = createGroundSatellites();
   layers.push(
+    footprint.layer,
     site.layer,
     tracks.layer,
     sats.satellitesLayer,
@@ -100,6 +124,19 @@ export function createGroundMap(
     hoverIndex: null,
     issIndex: null,
   };
+  // [M9] The Starlink draw window (step 4): the view's bounding circle, doubled so a pan reveals points already
+  // there (WebGLVector does not rebuild while the view moves). Rewritten in place every frame.
+  const drawWindow: GroundDrawWindow = { centerX: 0, centerY: 0, halfSizeM: 0 };
+  function windowOfView(): GroundDrawWindow | null {
+    const center = view.getCenter();
+    const resolution = view.getResolution();
+    const size = map.getSize();
+    if (center === undefined || resolution === undefined || size === undefined) return null;
+    drawWindow.centerX = center[0] ?? 0;
+    drawWindow.centerY = center[1] ?? 0;
+    drawWindow.halfSizeM = resolution * Math.sqrt((size[0] ?? 0) ** 2 + (size[1] ?? 0) ** 2);
+    return drawWindow;
+  }
 
   /** Class points and markers for `frame`; each write fires a change only when something moved. */
   function draw(frame: SatFrame): void {
@@ -111,7 +148,15 @@ export function createGroundMap(
     ids.iss = issIndex;
     ids.selected = selectedIndex;
     ids.hovered = hoverIndex;
-    writeGroundSatellites(sats, frame, catalog, ids, satellitesOn, sats.starlinkLayer.getVisible());
+    writeGroundSatellites(
+      sats,
+      frame,
+      catalog,
+      ids,
+      satellitesOn,
+      sats.starlinkLayer.getVisible(),
+      windowOfView(),
+    );
     targets.selectedId = selectedId;
     targets.hoverId = hoverId;
     targets.selectedIndex = selectedIndex;
@@ -159,7 +204,13 @@ export function createGroundMap(
   sats.markers.layer.on("postrender", () => recordHighlight("ground", sats.drawnSelectedId));
 
   disposers.push(
-    bindSite(store, site.feature, view),
+    bindSite(store, site.feature, view, site.wedge),
+    bindLayerVisible(store, "footprint", footprint.layer), // [M8]
+    bindFootprint(store, footprint.polygon), // [M8]
+    // [M6] Its WebGL context is released by registerMap's layer disposal.
+    bindLayerVisible(store, "hillshade", hillshade.layer),
+    bindHillshadeTexel(map, hillshade.layer, hillshade.source),
+    bindHillshadeSun(store, hillshade.layer),
     bindLayerVisible(store, "satellites", sats.satellitesLayer),
     bindLayerVisible(store, "starlink", sats.starlinkLayer),
     bindSelection(store, (nextSelected, nextHover) => {

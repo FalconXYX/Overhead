@@ -62,6 +62,20 @@ describe("RequestGate", () => {
   });
 });
 
+describe("RequestGate.reset", () => {
+  it("lets the same request through again after a reset, still at most once per 100 ms", () => {
+    const gate = new RequestGate();
+    const set = Int32Array.from([3]);
+    expect(gate.offer(0, 1, 7, set, 1)).toBe(true);
+    expect(gate.offer(200, 1, 7, set, 1)).toBe(false); // unchanged
+    gate.reset(); // a worker restart cleared the tracks already received
+    expect(gate.offer(250, 1, 7, set, 1)).toBe(true);
+    gate.reset();
+    expect(gate.offer(300, 1, 7, set, 1)).toBe(false); // the rate limit holds
+    expect(gate.offer(350, 1, 7, set, 1)).toBe(true);
+  });
+});
+
 describe("framedTrackIndices", () => {
   const sats: FakeSat[] = [
     { norad: 25544, group: 0, altDeg: 30 }, // 0 in frame

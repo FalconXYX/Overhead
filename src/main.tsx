@@ -1,17 +1,28 @@
 // src/main.tsx — boot: URL state, keyboard, the clock loop, render, then cameras.json and the GIBS snapshot (M1 step 16),
-// the star catalogue (M2 step 7), and the satellite ephemeris and test hooks (M3 steps 11 and 16).
+// the star catalogue (M2 step 7), the satellite ephemeris and test hooks (M3 steps 11 and 16), and saved calibrations
+// (M4 step 8); [M9] the visual design (step 12), the accessibility styles (step 11) and the ?demo=1 tour (step 10).
 import "ol/ol.css"; // OpenLayers' own control styles: without it the hidden rotate button shows
-import { StrictMode } from "react";
+import "./app/theme.css"; // [M9] the visual design (step 12): tokens, type and controls, after ol/ol.css
+import "./app/layout.css"; // [M9] the split view and the panels
+import "./app/a11y.css"; // [M9] after ol/ol.css, which it overrides
+import { Profiler, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { enabledCameras, parseCameraRegistry } from "./app/cameras";
 import { installKeyboard } from "./app/keyboard";
-import { createTestHooks, installTestHooks } from "./app/testHooks";
+import { browserStorage, restoreCalibrations, startCalibrationPersistence } from "./app/persist";
+import { createTestHooks, installTestHooks, recordCommit } from "./app/testHooks";
 import { parseUrlState, startUrlSync } from "./app/url";
 import { loadGibsCapabilities } from "./map/ground/layers/gibs";
 import { registry } from "./map/registry";
 import { startClockLoop } from "./state/clockLoop";
-import { indexOfObjectId, startEphemeris, updateEphemerisFrame } from "./state/ephemeris";
+import {
+  ephemeris,
+  indexOfObjectId,
+  startEphemeris,
+  updateEphemerisFrame,
+} from "./state/ephemeris";
+import { footprintStatus } from "./state/footprintStatus";
 import { DEFAULT_CAMERA_ID } from "./state/initialState";
 import { loadStars, skyCache } from "./state/skyCache";
 import { store } from "./state/store";
@@ -42,6 +53,10 @@ if (url.sel !== null) {
     "Ignoring ?sel=: it must be an object id such as sat:25544, planet:Jupiter, star:424, moon or sun",
   );
 }
+// [M9] Only ?demo=1 starts the tour (once the camera list is in, below); ?demo=0 is a valid "no".
+if (!url.demo && urlParams.has("demo") && urlParams.get("demo") !== "0") {
+  console.warn("Ignoring ?demo=: use ?demo=1 for the guided tour");
+}
 
 // 2. Module scope, never inside an effect: StrictMode runs effects twice in development.
 installKeyboard(store);
@@ -56,6 +71,8 @@ if (navigator.webdriver) {
     indexOfObjectId,
     sky: skyCache,
     maps: registry,
+    footprint: footprintStatus, // [M8]
+    satellites: ephemeris, // [M8]
   });
   installTestHooks(hooks);
 }
@@ -63,7 +80,10 @@ startClockLoop(store);
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    {/* [M9] Counts React commits for commits.perf.ts (step 5); inert in production builds. */}
+    <Profiler id="overhead" onRender={recordCommit}>
+      <App />
+    </Profiler>
   </StrictMode>,
 );
 
@@ -85,8 +105,18 @@ async function loadCameras(): Promise<void> {
     const all = parseCameraRegistry(await res.json());
     const enabled = enabledCameras(all);
     actions.setRegistry(enabled);
+    // [M4] Saved calibrations need the registry to validate against; persistence starts after the restore so the
+    // restore itself is not written back.
+    const storage = browserStorage();
+    restoreCalibrations(store, storage);
+    startCalibrationPersistence(store, storage);
     if (url.cam !== null && Object.hasOwn(enabled, url.cam)) {
       actions.setActiveCamera(url.cam);
+      // [M5] A clip camera is always replay (step 12.2): replay instead of the live mode set at boot, paused.
+      if (enabled[url.cam]?.kind === "local-video") {
+        actions.setMode("replay");
+        actions.pause();
+      }
     } else {
       if (url.cam !== null) {
         console.warn(
@@ -99,9 +129,28 @@ async function loadCameras(): Promise<void> {
     }
     actions.setLoadStatus("cameras", "ready");
     startUrlSync(store, writeUrl);
+    if (url.demo) void startTour(); // [M9]
   } catch (error) {
     console.error("Camera list failed to load", error);
     actions.setLoadStatus("cameras", "error");
+  }
+}
+
+/**
+ * [M9] ?demo=1 (M9 step 10 rule 6): the lazy tour module, then the computed-sky anchor from the element sets'
+ * snapshot (loadDemoAnchorMs never rejects), then the runner and startDemo(). After the camera list: the anchor needs
+ * the computed-sky camera's site, and the intro step activates the clip camera.
+ */
+async function startTour(): Promise<void> {
+  try {
+    const { loadDemoAnchorMs, startDemoRunner } = await import("./app/demo");
+    const site = store.getState().camera.registry[DEFAULT_CAMERA_ID]?.site;
+    if (site === undefined) throw new Error(`The camera list has no ${DEFAULT_CAMERA_ID}`);
+    const anchorMs = await loadDemoAnchorMs(import.meta.env.BASE_URL, site);
+    startDemoRunner(store, anchorMs);
+    actions.startDemo();
+  } catch (error) {
+    console.error("The tour could not start", error);
   }
 }
 

@@ -568,7 +568,7 @@ Captions, exact text. `caption(ctx)` picks the clip text when `ctx.clip` is not 
 | intro | "A guided tour of Overhead: satellites, the ISS, the Moon, planets and bright stars, computed and drawn over a sky camera, with the same moment on a ground map." | Same |
 | clip | "The Subaru-Asahi StarCam on Maunakea, recorded on 2026-10-11 at 15:09 UTC. The overlay is computed from public orbital elements and a star catalogue through this camera's lens model; nothing is placed by hand. The ISS enters from the right in about 20 seconds." | "The computed sky over Maunakea at the time of a bright ISS pass. Every label comes from public orbital data; nothing is placed by hand." |
 | linked | "Select an object on the video or on the map, and the other view highlights it on the next frame. The video keeps a light overlay; the ground map carries the detail: the ground track, the camera's view at the satellite's height, and the next satellite to enter the frame." | Same |
-| sensor | "A lens is a map projection: rectilinear is gnomonic, a fisheye is azimuthal. On this clip, 73 stars fixed the pointing to 0.03°, and the camera's burned-in clock agrees with the ISS to 0.3 s." | "A lens is a map projection: rectilinear is gnomonic, a fisheye is azimuthal. Stars fix the pointing; a fast satellite fixes the clock." |
+| sensor | "A lens is a map projection: rectilinear is gnomonic, a fisheye is azimuthal. On this clip, 73 stars fixed the pointing to 0.04°, and the camera's burned-in clock agrees with the ISS to 0.3 s." | "A lens is a map projection: rectilinear is gnomonic, a fisheye is azimuthal. Stars fix the pointing; a fast satellite fixes the clock." |
 | ogc | "The camera pose as OGC GeoPose 1.0 Basic-YPR, validated against the official schema." | Same |
 | imagery | "GOES-West infrared from NASA GIBS over WMTS. The Time dimension follows the clock in 10-minute steps." plus `goesWindowNote` | Same |
 | architecture | "Starlink is on: about 11,100 satellites move on the ground map while the video keeps its light overlay. Two maps, one clock: orbits run in a Web Worker, and React re-renders four times a second." | "Two maps, one clock. Orbits run in a Web Worker; about 11,300 satellites move at 60 fps, and React re-renders four times a second." |
@@ -576,7 +576,7 @@ Captions, exact text. `caption(ctx)` picks the clip text when `ctx.clip` is not 
 | live | "The live Subaru StarCam, with the same light overlay drawn on the YouTube player. The stream runs about 50 seconds behind real time; the Calibration panel's stream-delay control sets the offset." | Same |
 | end | "End of the tour." | Same |
 
-The caption numbers come from the clip's sidecar and README section 8: 73 stars and `rmsDeg` 0.0294 for the pointing, and `startUncertaintyS` 0.3 for the clock. Starlink is 11,102 objects in the fixture snapshot (M3's toggle label says "about 11,100"), and 11,277 objects are loaded in all. The stream delay is `subaru-starcam`'s default `streamDelayMs`, 50,000.
+The caption numbers come from the clip's sidecar and README section 8: 73 stars and `rmsDeg` 0.0415 for the pointing, and `startUncertaintyS` 0.3 for the clock. Starlink is 11,102 objects in the fixture snapshot (M3's toggle label says "about 11,100"), and 11,277 objects are loaded in all. The stream delay is `subaru-starcam`'s default `streamDelayMs`, 50,000.
 
 Rules for the runner and the captions:
 

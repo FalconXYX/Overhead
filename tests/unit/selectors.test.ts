@@ -1,17 +1,33 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseCameraRegistry } from "../../src/app/cameras";
+import type { TimeInterval } from "../../src/domain/time";
 import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
 import {
   selectActiveCamera,
   selectCalibration,
+  selectGoesLabel,
+  selectGoesStepMs,
+  selectGoesVisible,
   selectGroupMask,
   selectGroupStatus,
+  selectHorizonProfileDeg,
+  selectHorizonStatus,
+  selectIncomingActive,
+  selectIncomingMask,
+  selectLiveLocked,
   selectSampleStepMs,
   selectSite,
+  selectSkyDenseLabels,
+  selectSkyLayerVisible,
+  selectSkyOverVideo,
   selectStarMagLimit,
+  selectStreamDelayMs,
   selectTrueColorDate,
 } from "../../src/state/selectors";
 import { createAppStore } from "../../src/state/store";
 import type { AppState, Calibration } from "../../src/state/types";
+import { withM5CameraEntries } from "../helpers/m5Cameras";
 import { storeAt } from "../helpers/store";
 
 afterEach(() => {
@@ -172,6 +188,216 @@ describe("M3 selectors", () => {
     ];
     for (let i = 1; i <= 100; i += 1) {
       store.getState().actions.tick(Date.parse("2026-10-11T15:09:50Z") + i * 16);
+    }
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    expect(fired).toEqual([]);
+  });
+});
+
+describe("M5 selectors", () => {
+  /** The committed cameras plus M5's entries (the two clip cameras), at 2026-10-11T08:00Z. */
+  function videoStore(activeId: string) {
+    const store = storeAt("2026-10-11T08:00:00Z");
+    const json: unknown = JSON.parse(
+      readFileSync(new URL("../../public/data/cameras.json", import.meta.url), "utf8"),
+    );
+    store.getState().actions.setRegistry(parseCameraRegistry(withM5CameraEntries(json)));
+    store.getState().actions.setActiveCamera(activeId);
+    return store;
+  }
+
+  it("selectStreamDelayMs: the camera's default, then the stored delay; 0 for other kinds", () => {
+    const store = videoStore("subaru-starcam");
+    expect(selectStreamDelayMs(store.getState())).toBe(50_000);
+    store.getState().actions.setStreamDelayMs(22_000);
+    expect(selectStreamDelayMs(store.getState())).toBe(22_000);
+    store.getState().actions.setActiveCamera("synthetic-maunakea");
+    expect(selectStreamDelayMs(store.getState())).toBe(0);
+    store.getState().actions.setActiveCamera("subaru-2026-10-11-iss");
+    expect(selectStreamDelayMs(store.getState())).toBe(0);
+  });
+
+  it("selectLiveLocked: live mode on a youtube camera only", () => {
+    const store = videoStore("subaru-starcam");
+    const { actions } = store.getState();
+    actions.setMode("live");
+    expect(selectLiveLocked(store.getState())).toBe(true);
+    actions.setMode("replay");
+    expect(selectLiveLocked(store.getState())).toBe(false);
+    actions.setActiveCamera("synthetic-maunakea");
+    actions.setMode("live");
+    expect(selectLiveLocked(store.getState())).toBe(false);
+  });
+
+  it("selectSkyOverVideo and selectStarMagLimit by camera kind and panel", () => {
+    const store = videoStore("subaru-starcam");
+    const { actions } = store.getState();
+    const at = (id: string) => {
+      actions.setActiveCamera(id);
+      return [selectSkyOverVideo(store.getState()), selectStarMagLimit(store.getState())];
+    };
+    expect(at("subaru-starcam")).toEqual([true, 2]);
+    expect(at("local-replay")).toEqual([true, 2]);
+    expect(at("synthetic-maunakea")).toEqual([false, 4.5]);
+    expect(at("cfht-nanaao")).toEqual([false, 4.5]);
+    actions.setActiveCamera("subaru-starcam");
+    actions.openPanel("calibration");
+    expect(selectStarMagLimit(store.getState())).toBe(4);
+    actions.openPanel(null);
+    actions.setStarMagLimit(1.5);
+    expect(selectStarMagLimit(store.getState())).toBe(1.5); // the layer limit still caps it
+  });
+
+  it("selectSkyLayerVisible: grid and Starlink need their layers.video gate over a video", () => {
+    const store = videoStore("subaru-starcam");
+    const { actions } = store.getState();
+    const grid = selectSkyLayerVisible("grid");
+    const starlink = selectSkyLayerVisible("starlink");
+    expect(grid(store.getState())).toBe(false);
+    actions.setVideoLayer("grid", true);
+    expect(grid(store.getState())).toBe(true);
+    actions.setLayer("grid", false);
+    expect(grid(store.getState())).toBe(false);
+    expect(starlink(store.getState())).toBe(false);
+    actions.setLayer("starlink", true);
+    expect(starlink(store.getState())).toBe(false);
+    actions.setVideoLayer("starlink", true);
+    expect(starlink(store.getState())).toBe(true);
+    actions.setLayer("starlink", false);
+    expect(starlink(store.getState())).toBe(false);
+    expect(selectSkyLayerVisible("stars")(store.getState())).toBe(true);
+    // A synthetic camera follows the plain toggle.
+    actions.setActiveCamera("synthetic-maunakea");
+    actions.setVideoLayer("grid", false);
+    actions.setLayer("grid", true);
+    expect(grid(store.getState())).toBe(true);
+  });
+
+  it("selectSkyDenseLabels: off over a video until layers.video.denseLabels", () => {
+    const store = videoStore("subaru-starcam");
+    expect(selectSkyDenseLabels(store.getState())).toBe(false);
+    store.getState().actions.setVideoLayer("denseLabels", true);
+    expect(selectSkyDenseLabels(store.getState())).toBe(true);
+    store.getState().actions.setVideoLayer("denseLabels", false);
+    store.getState().actions.setActiveCamera("synthetic-maunakea");
+    expect(selectSkyDenseLabels(store.getState())).toBe(true);
+  });
+});
+
+describe("M7 selectors", () => {
+  const at = (iso: string): number => Date.parse(iso);
+  /** parseGoesDomain of tests/fixtures/gibs/goes-domain.xml. */
+  const FIXTURE: readonly TimeInterval[] = [
+    [at("2026-10-07T12:00:00Z"), at("2026-10-07T19:20:00Z")],
+    [at("2026-10-07T19:40:00Z"), at("2026-10-07T21:00:00Z")],
+    [at("2026-10-07T21:20:00Z"), at("2026-10-11T00:00:00Z")],
+  ];
+
+  it("selectGoesLabel and selectGoesVisible follow the caption table (M7 step 3)", () => {
+    const store = storeAt("2026-10-11T00:05:00Z");
+    const { actions } = store.getState();
+    const label = () => selectGoesLabel(store.getState());
+    const visible = () => selectGoesVisible(store.getState());
+    expect(label()).toBeNull(); // off
+    expect(visible()).toBe(false);
+    actions.setLayer("goesIr", true);
+    expect(label()).toBe("Loading GOES-West availability…"); // idle
+    actions.setGoesStatus("loading");
+    expect(label()).toBe("Loading GOES-West availability…");
+    actions.setGoesStatus("error");
+    expect(label()).toBe("GOES-West availability failed to load");
+    expect(visible()).toBe(false);
+    actions.setGoesDomain(FIXTURE, at("2026-10-10T23:40:00Z"));
+    expect(label()).toBe("GOES-West tiles failed to load"); // the tile guard's error
+    actions.setGoesStatus("ready");
+    expect(label()).toBe("Imagery as of 2026-10-10 23:40 UTC");
+    expect(visible()).toBe(true);
+    actions.seek(at("2026-10-10T12:05:00Z"));
+    expect(label()).toBe("Imagery as of 12:00 UTC");
+    expect(selectGoesStepMs(store.getState())).toBe(at("2026-10-10T12:00:00Z"));
+    actions.setGoesDomain([[at("2026-10-10T13:00:00Z"), at("2026-10-10T23:40:00Z")]], null);
+    expect(label()).toBe("No GOES-West imagery for this time (NASA GIBS keeps 90 days)");
+    expect(visible()).toBe(false);
+    expect(selectGoesStepMs(store.getState())).toBeNull();
+    actions.setLayer("goesIr", false);
+    expect(label()).toBeNull();
+  });
+
+  it("selectGoesStepMs changes once per 10-minute step", () => {
+    const store = storeAt("2026-10-10T09:58:00Z");
+    store.getState().actions.setGoesDomain(FIXTURE, at("2026-10-11T00:00:00Z"));
+    const fired: (number | null)[] = [];
+    const unsubscribe = store.subscribe(selectGoesStepMs, (stepMs) => fired.push(stepMs));
+    for (let i = 0; i < 240; i += 1) store.getState().actions.stepBy(1000);
+    unsubscribe();
+    expect(fired).toEqual([at("2026-10-10T10:00:00Z")]);
+  });
+});
+
+describe("M6 selectors", () => {
+  it("selectHorizonProfileDeg and selectHorizonStatus read the active camera's entry: null and idle without one", () => {
+    const store = storeAt("2026-10-11T15:20:00Z");
+    const { actions } = store.getState();
+    expect(selectHorizonProfileDeg(store.getState())).toBeNull();
+    expect(selectHorizonStatus(store.getState())).toBe("idle");
+    actions.setHorizon("synthetic-maunakea", { status: "loading" });
+    expect(selectHorizonStatus(store.getState())).toBe("loading");
+    expect(selectHorizonProfileDeg(store.getState())).toBeNull();
+    const profile = new Float32Array(360).fill(-1.9);
+    actions.setHorizon("synthetic-maunakea", { status: "ready", profileDeg: profile });
+    expect(selectHorizonProfileDeg(store.getState())).toBe(profile); // the existing reference
+    expect(selectHorizonStatus(store.getState())).toBe("ready");
+    // Another camera's entry is not the active one's.
+    actions.setActiveCamera("synthetic-walenstadt");
+    expect(selectHorizonProfileDeg(store.getState())).toBeNull();
+    expect(selectHorizonStatus(store.getState())).toBe("idle");
+    actions.setActiveCamera("synthetic-maunakea");
+    expect(selectHorizonProfileDeg(store.getState())).toBe(profile);
+  });
+});
+
+describe("M8 selectors", () => {
+  it("selectIncomingMask: 0b011 by default, 0b111 with starlink, 0b100 with only starlink, 0 with both off", () => {
+    const store = storeAt("2026-10-11T15:05:07Z");
+    const { actions } = store.getState();
+    const mask = () => selectIncomingMask(store.getState());
+    expect(mask()).toBe(0b011);
+    actions.setLayer("starlink", true);
+    expect(mask()).toBe(0b111);
+    actions.setLayer("satellites", false);
+    expect(mask()).toBe(0b100);
+    actions.setLayer("starlink", false);
+    expect(mask()).toBe(0);
+  });
+
+  it("selectIncomingActive: on at 1× and 10× playing, off at 60× and 600× playing in replay, on at 60× paused", () => {
+    const store = storeAt("2026-10-11T15:05:07Z");
+    const { actions } = store.getState();
+    const active = () => selectIncomingActive(store.getState());
+    const results: boolean[] = [];
+    for (const rate of [1, 10, 60, 600] as const) {
+      actions.setRate(rate);
+      actions.play();
+      results.push(active());
+    }
+    expect(results).toEqual([true, true, false, false]);
+    actions.setRate(60);
+    actions.pause();
+    expect(active()).toBe(true);
+    // Both satellite layers off: nothing to alert about.
+    actions.setLayer("satellites", false);
+    expect(active()).toBe(false);
+  });
+
+  it("both return primitives that do not change on ticks", () => {
+    const store = storeAt("2026-10-11T15:05:07Z");
+    const fired: string[] = [];
+    const unsubscribes = [
+      store.subscribe(selectIncomingMask, () => fired.push("mask")),
+      store.subscribe(selectIncomingActive, () => fired.push("active")),
+    ];
+    for (let i = 1; i <= 100; i += 1) {
+      store.getState().actions.tick(Date.parse("2026-10-11T15:05:07Z") + i * 16);
     }
     for (const unsubscribe of unsubscribes) unsubscribe();
     expect(fired).toEqual([]);

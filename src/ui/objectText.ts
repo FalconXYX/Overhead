@@ -10,9 +10,10 @@ import {
   STALE_ELEMENTS_DAYS,
   SUN_CUTOFF_DEG,
 } from "../domain/orbits";
+import { horizonAltAtAzDeg } from "../domain/terrain";
 import { formatUtcHhMm, isoDateUtc } from "../domain/time";
 import { type BodyId, bodyLabel } from "../map/sky/layers/bodies";
-import type { GroupData, ObjectId } from "../state/types";
+import type { GroupData, LoadStatus, ObjectId } from "../state/types";
 
 // ---- Field formats (the hover card and the Inspector share them) ----
 
@@ -64,18 +65,54 @@ export function elementAgeText(epochMs: number, timeMs: number): string {
 /** The lighting and horizon facts of one frame that decide visibility. */
 export interface VisibilityFacts {
   readonly sunlit: boolean;
-  readonly aboveHorizon: boolean; // apparent alt > 0 (the geometric horizon until M6)
+  /** [M6] Apparent alt above the terrain horizon at its azimuth (0°, the geometric horizon, until a profile is ready). */
+  readonly aboveHorizon: boolean;
   readonly visible: boolean; // the frame's visible flag (isVisible)
   readonly sunAltDeg: number; // geometric
+  readonly altDeg: number; // apparent
 }
 
-/** "Visible to the eye", or the first failing reason in the order shadow, Sun, horizon. */
+/**
+ * "Visible to the eye", or the first failing reason in the order shadow, Sun, horizon. [M6] Not above the horizon
+ * while above 0° means at or below the terrain horizon: "behind terrain".
+ */
 export function visibilityText(facts: VisibilityFacts, group: GpGroup): string {
   if (facts.visible) return "Visible to the eye";
   if (!facts.sunlit) return "Not visible: in Earth's shadow";
   if (!(facts.sunAltDeg <= SUN_CUTOFF_DEG[group])) return "Not visible: Sun too high";
-  if (!facts.aboveHorizon) return "Not visible: below the horizon";
+  if (!facts.aboveHorizon) {
+    return facts.altDeg > 0 ? "Not visible: behind terrain" : "Not visible: below the horizon";
+  }
   return "Not visible to the eye";
+}
+
+/** [M6] An object at or below the terrain horizon at its azimuth: the Inspector's flag and the list suffix. */
+export function behindTerrain(
+  profileDeg: Float32Array | null,
+  azDeg: number,
+  altDeg: number,
+): boolean {
+  return profileDeg !== null && altDeg <= horizonAltAtAzDeg(profileDeg, azDeg);
+}
+
+/**
+ * [M6] The Inspector's terrain lines for an object at (azDeg, altDeg), both apparent: ready gives "Terrain horizon
+ * here: +32.7°" (signed, one decimal, at the object's azimuth) and "Behind terrain" when the object is at or below
+ * it; loading and error give one status line; idle gives none. Text, never colour alone.
+ */
+export function terrainLines(
+  status: LoadStatus,
+  profileDeg: Float32Array | null,
+  azDeg: number,
+  altDeg: number,
+): string[] {
+  if (status === "loading") return ["Terrain horizon: loading"];
+  if (status === "error") return ["Terrain horizon: unavailable (geometric horizon used)"];
+  if (status !== "ready" || profileDeg === null) return [];
+  const text = signedFixed(horizonAltAtAzDeg(profileDeg, azDeg), 1);
+  const lines = [`Terrain horizon here: ${text.startsWith("−") ? text : `+${text}`}°`];
+  if (behindTerrain(profileDeg, azDeg, altDeg)) lines.push("Behind terrain");
+  return lines;
 }
 
 export function dockedText(names: readonly string[]): string {
@@ -115,6 +152,23 @@ export function groupStatusText(groups: readonly GroupData[]): string | null {
   return fetchedAtMs === null
     ? objects
     : `${objects}, elements fetched ${isoDateUtc(fetchedAtMs)} ${formatUtcHhMm(fetchedAtMs)} UTC`;
+}
+
+/**
+ * [M6] The "Terrain horizon" toggle's status: nothing while idle, "Loading terrain…", "Terrain ready", or "Terrain
+ * unavailable: geometric horizon".
+ */
+export function horizonStatusText(status: LoadStatus): string | null {
+  switch (status) {
+    case "idle":
+      return null;
+    case "loading":
+      return "Loading terrain…";
+    case "ready":
+      return "Terrain ready";
+    case "error":
+      return "Terrain unavailable: geometric horizon";
+  }
 }
 
 // ---- Object details ----

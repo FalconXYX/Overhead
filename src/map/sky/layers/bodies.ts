@@ -1,5 +1,5 @@
 // src/map/sky/layers/bodies.ts — the Sun, Moon and planets with labels (M2 step 8.5).
-// Colours, fonts and sizes are visual design, settled from screenshots; the values here are placeholders.
+// Colours, fonts and sizes are visual design (M9 step 12): warm-white discs and light labels on dark halos.
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import VectorLayer from "ol/layer/Vector";
@@ -58,12 +58,12 @@ export interface BodiesLayer {
   readonly styleKeys: string[]; // "label|radius|hollow"
 }
 
-const MARKER_FILL = new Fill({ color: "#222" });
-const MARKER_STROKE = new Stroke({ color: "#fff", width: 1 });
+const MARKER_FILL = new Fill({ color: "#f3eee3" });
+const MARKER_STROKE = new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 1 });
 /** The new Moon's hollow marker: shape, not colour, de-emphasises it; the label carries the meaning. */
-const NEW_MOON_STROKE = new Stroke({ color: "#222", width: 1.5 });
-const LABEL_FILL = new Fill({ color: "#222" });
-const LABEL_HALO = new Stroke({ color: "#fff", width: 3 });
+const NEW_MOON_STROKE = new Stroke({ color: "#f3eee3", width: 1.5 });
+const LABEL_FILL = new Fill({ color: "#dfe6f0" });
+const LABEL_HALO = new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 3 });
 
 function bodyStyle(label: string, radiusPx: number, hollow: boolean): Style {
   return new Style({
@@ -74,7 +74,7 @@ function bodyStyle(label: string, radiusPx: number, hollow: boolean): Style {
     }),
     text: new Text({
       text: label,
-      font: "12px sans-serif",
+      font: "12px system-ui, -apple-system, 'Segoe UI', sans-serif",
       offsetY: -(radiusPx + 9),
       fill: LABEL_FILL,
       stroke: LABEL_HALO,
@@ -95,7 +95,9 @@ export function createBodiesLayer(): BodiesLayer {
     return f;
   });
   const layer = new VectorLayer({
-    source: new VectorSource({ useSpatialIndex: false, features }),
+    // [M9] A copy: without a spatial index the source adopts the array it is given, and a removeFeature would then
+    // shift the indices this layer reads (M9 gotcha 4).
+    source: new VectorSource({ useSpatialIndex: false, features: [...features] }),
     style: (feature) => {
       const i = feature.get("bodyIndex");
       return typeof i === "number" && visible[i] === 1 ? styles[i] : undefined;

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { apparentAltDeg } from "../../src/domain/astro";
 import { enuToAzAltDeg, type ObserverSite } from "../../src/domain/geo";
 import {
+  belowSkyCutoff,
   createPropagationContext,
   GP_GROUPS,
   type GpGroup,
@@ -15,10 +16,12 @@ import {
   isVisible,
   parseGpFile,
   SAMPLE_STRIDE,
+  SKY_CUTOFF_GEOMETRIC_DEG,
   SUN_CUTOFF_DEG,
   sunlitAt,
   writeSample,
 } from "../../src/domain/orbits";
+import { horizonAltAtAzDeg } from "../../src/domain/terrain";
 import type { ClockRate } from "../../src/domain/time";
 
 describe("SUN_CUTOFF_DEG", () => {
@@ -174,5 +177,61 @@ describe("the ISS from Maunakea", () => {
       expect(pass?.length).toBeGreaterThan(15);
       expect(pass?.every((s) => s.altDeg > 0 && s.sunAltDeg > -6 && !s.visible)).toBe(true);
     }
+  });
+});
+
+describe("isVisible with the terrain horizon (M6)", () => {
+  // Walenstadt-like profile: the Churfirsten wall north at 32.75°, the Walensee gap west at 1.96°.
+  const profile = new Float32Array(360);
+  profile[0] = 32.75;
+  profile[270] = 1.96;
+
+  it("a lit satellite at 20° with the Sun at −10° is behind terrain at az 0° and visible at az 270°", () => {
+    expect(isVisible(true, -10, "stations", 20, horizonAltAtAzDeg(profile, 0))).toBe(false);
+    expect(isVisible(true, -10, "stations", 20, horizonAltAtAzDeg(profile, 270))).toBe(true);
+  });
+
+  it("uses the geometric horizon (0°) until a profile exists", () => {
+    expect(isVisible(true, -10, "stations", 20, horizonAltAtAzDeg(null, 0))).toBe(true);
+    expect(isVisible(true, -10, "stations", -0.5, horizonAltAtAzDeg(null, 0))).toBe(false);
+  });
+
+  it("counts an object between a negative sea horizon and 0° as visible", () => {
+    const sea = new Float32Array(360).fill(-1.93);
+    expect(isVisible(true, -10, "visual", -1, horizonAltAtAzDeg(sea, 65))).toBe(true);
+  });
+});
+
+describe("belowSkyCutoff (M9 step 4)", () => {
+  /** ENU (km) at azimuth azDeg and geometric altitude altDeg, range rangeKm. */
+  const enu = (azDeg: number, altDeg: number, rangeKm: number): [number, number, number] => {
+    const az = (azDeg * Math.PI) / 180;
+    const alt = (altDeg * Math.PI) / 180;
+    return [
+      rangeKm * Math.cos(alt) * Math.sin(az),
+      rangeKm * Math.cos(alt) * Math.cos(az),
+      rangeKm * Math.sin(alt),
+    ];
+  };
+
+  it("is true at geometric −3.01° and false at −2.99° and 0°, at any azimuth and range", () => {
+    expect(SKY_CUTOFF_GEOMETRIC_DEG).toBe(-3);
+    for (const azDeg of [0, 61, 180, 299.5]) {
+      for (const rangeKm of [500, 2_400, 4_150]) {
+        expect(belowSkyCutoff(...enu(azDeg, -3.01, rangeKm))).toBe(true);
+        expect(belowSkyCutoff(...enu(azDeg, -2.99, rangeKm))).toBe(false);
+        expect(belowSkyCutoff(...enu(azDeg, 0, rangeKm))).toBe(false);
+        expect(belowSkyCutoff(...enu(azDeg, 45, rangeKm))).toBe(false);
+        expect(belowSkyCutoff(...enu(azDeg, -89, rangeKm))).toBe(true);
+      }
+    }
+    expect(belowSkyCutoff(0, 0, 0)).toBe(false);
+  });
+
+  it("refracts to below the lowest horizon in the registry (the −1.94° sea horizon from 4,204 m)", () => {
+    expect(apparentAltDeg(SKY_CUTOFF_GEOMETRIC_DEG)).toBeLessThan(-1.94);
+    expect(apparentAltDeg(SKY_CUTOFF_GEOMETRIC_DEG)).toBeCloseTo(-2.368, 3);
+    // A −2° cut-off would hide objects that can be drawn: −1.361° apparent.
+    expect(apparentAltDeg(-2)).toBeGreaterThan(-1.94);
   });
 });

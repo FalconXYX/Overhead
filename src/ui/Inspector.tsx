@@ -5,9 +5,11 @@ import type { ReactNode } from "react";
 import { registry } from "../map/registry";
 import { ephemeris, indexOfObjectId } from "../state/ephemeris";
 import { useActions, useAppState, useTick4Hz } from "../state/hooks";
+import { selectHorizonProfileDeg, selectHorizonStatus } from "../state/selectors";
 import { skyCache } from "../state/skyCache";
 import { store } from "../state/store";
 import type { ObjectId } from "../state/types";
+import { inspectorIncomingText } from "./incomingText";
 import {
   altText,
   azText,
@@ -22,6 +24,7 @@ import {
   rangeText,
   satelliteGroupsPending,
   starMagnitudeText,
+  terrainLines,
   visibilityText,
 } from "./objectText";
 
@@ -64,7 +67,18 @@ function Lines({ lines }: { lines: readonly string[] }) {
 
 /** The text of one object's details, in reading order after its name. */
 function detailLines(d: Exclude<ObjectDetails, { kind: "missing-satellite" }>): string[] {
-  const simTimeMs = store.getState().clock.simTimeMs;
+  const state = store.getState();
+  const simTimeMs = state.clock.simTimeMs;
+  // [M6] The terrain horizon at the object's azimuth, and "Behind terrain"; read during the 4 Hz render.
+  const terrain = (live: { azDeg: number; altDeg: number } | null): string[] =>
+    live === null
+      ? []
+      : terrainLines(
+          selectHorizonStatus(state),
+          selectHorizonProfileDeg(state),
+          live.azDeg,
+          live.altDeg,
+        );
   switch (d.kind) {
     case "satellite": {
       const lines = [`NORAD ${d.noradId}`, GROUP_LABELS[d.group]];
@@ -81,8 +95,16 @@ function detailLines(d: Exclude<ObjectDetails, { kind: "missing-satellite" }>): 
           `Range ${rangeText(d.live.rangeKm)}`,
           litText(d.live.sunlit),
           visibilityText(d.live, d.group),
+          ...terrain(d.live),
         );
       }
+      // [M8] In the latest incoming reply: N counted as the chip counts it (a docked id reads its host's entry).
+      const incoming = inspectorIncomingText(
+        ephemeris.incoming,
+        indexOfObjectId(`sat:${d.noradId}`),
+        simTimeMs,
+      );
+      if (incoming !== null) lines.push(incoming);
       lines.push(elementAgeText(d.epochMs, simTimeMs));
       if (d.docked.length > 0) lines.push(dockedText(d.docked));
       return lines;
@@ -92,13 +114,18 @@ function detailLines(d: Exclude<ObjectDetails, { kind: "missing-satellite" }>): 
       if (d.vmag !== null) lines.push(starMagnitudeText(d.vmag));
       lines.push(
         d.live === null ? (d.note ?? "") : `${azText(d.live.azDeg)}, ${altText(d.live.altDeg)}`,
+        ...terrain(d.live),
       );
       return lines;
     }
     case "body":
       return d.live === null
         ? [d.note ?? ""]
-        : [`${azText(d.live.azDeg)}, ${altText(d.live.altDeg)}`, bodyMagnitudeText(d.live.mag)];
+        : [
+            `${azText(d.live.azDeg)}, ${altText(d.live.altDeg)}`,
+            bodyMagnitudeText(d.live.mag),
+            ...terrain(d.live),
+          ];
   }
 }
 
@@ -168,8 +195,8 @@ export function Inspector() {
   }
 
   return (
-    <section aria-label="Inspector">
-      <h2>Inspector</h2>
+    <section aria-label="Inspector" className="inspector">
+      <h2 className="pane-title">Inspector</h2>
       {body}
     </section>
   );
