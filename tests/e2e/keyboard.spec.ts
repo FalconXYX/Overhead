@@ -5,8 +5,12 @@ import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import {
   CLIP_START_ISO,
+  cameraButton,
+  cameraOption,
+  chooseCamera,
   clipReady,
   expect,
+  expectCamera,
   expectSimTime,
   focusBody,
   objectCard,
@@ -115,6 +119,59 @@ test("on a live camera Space, ← / → and [ / ] do nothing; L and C still work
   );
   await page.keyboard.press("c");
   await expect(page.getByRole("region", { name: "Camera alignment (advanced)" })).toBeVisible();
+});
+
+test("[Polish] the camera menu: ↓ opens it on the active camera, ↑ ↓ Home End move, Enter chooses, Esc closes", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("./?sel=sat:25544");
+  await clipReady(page, "paused");
+  const button = cameraButton(page);
+  const menu = page.getByRole("menu", { name: "Cameras" });
+  await expect(menu).toBeHidden();
+  await button.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(menu).toBeVisible();
+  // Grouped: the recording, then the live cameras; focus on the active row.
+  await expect(
+    menu.getByRole("group", { name: "Recorded" }).getByRole("menuitemradio"),
+  ).toHaveCount(1);
+  await expect(menu.getByRole("group", { name: "Live" }).getByRole("menuitemradio")).toHaveCount(2);
+  await expect(cameraOption(page, "ISS pass (recorded)")).toBeFocused();
+  await expect(cameraOption(page, "ISS pass (recorded)")).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(cameraOption(page, "Subaru live")).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(cameraOption(page, "CFHT live")).toBeFocused();
+  await page.keyboard.press("ArrowDown"); // wraps
+  await expect(cameraOption(page, "ISS pass (recorded)")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(cameraOption(page, "CFHT live")).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(cameraOption(page, "ISS pass (recorded)")).toBeFocused();
+  // The arrows moved focus, not time, and Esc closes the menu (back to its button) without clearing the selection.
+  await expectSimTime(page, CLIP_START_ISO);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(button).toBeFocused();
+  await expect(objectCard(page)).toBeVisible();
+  // Enter on a row chooses it and closes the menu.
+  await page.keyboard.press("Enter");
+  await expect(cameraOption(page, "ISS pass (recorded)")).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(menu).toBeHidden();
+  await expectCamera(page, "Subaru live");
+  await expect(page).toHaveURL(/[?&]cam=subaru-starcam(&|$)/);
+  await expect(button).toBeFocused();
+  // A pointer choice; a press outside closes the menu.
+  await chooseCamera(page, "CFHT live");
+  await button.click();
+  await expect(menu).toBeVisible();
+  await page.getByRole("heading", { name: "Overhead", level: 1 }).click();
+  await expect(menu).toBeHidden();
 });
 
 test("Esc exits the tour: the Tour region goes and the URL loses demo", async ({ page }) => {

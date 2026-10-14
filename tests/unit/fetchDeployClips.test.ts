@@ -13,6 +13,8 @@ import {
   DEPLOY_CLIP_MAX_BYTES,
   type DeployClipFile,
   fetchDeployClip,
+  fetchDeployClips,
+  MissingReleaseAssetError,
 } from "../../scripts/fetch-deploy-clips";
 import { sidecarFileName } from "../../src/app/clip";
 import { committedCameras } from "../helpers/store";
@@ -162,6 +164,33 @@ describe("DEPLOY_CLIP_FILES and DEPLOY_CLIP_GP", () => {
     for (const { clip, fromDir } of DEPLOY_CLIP_GP) {
       expect(existsSync(join(fromDir, "meta.json")), clip).toBe(true);
     }
+  });
+});
+
+describe("fetchDeployClips", () => {
+  it("deploys without the recordings when the release is not published (404), with a warning", async () => {
+    const warnings: string[] = [];
+    const { fn } = fakeFetch(404);
+    const out = join(tmp, "recordings");
+    await expect(fetchDeployClips(out, fn, (m) => warnings.push(m))).resolves.toBe(false);
+    expect(existsSync(out) ? await readdir(out) : []).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/HTTP 404 .*the release is not published/);
+  });
+
+  it("still fails the deploy on a size mismatch: integrity failures are never skipped", async () => {
+    const fn: typeof fetch = async () => new Response("x", { status: 200 });
+    const out = join(tmp, "recordings");
+    const result = fetchDeployClips(out, fn, () => {});
+    await expect(result).rejects.toThrow(/expected/);
+    await expect(result).rejects.not.toBeInstanceOf(MissingReleaseAssetError);
+  });
+
+  it("still fails the deploy on anything but a 404", async () => {
+    const { fn } = fakeFetch(500);
+    await expect(fetchDeployClips(join(tmp, "recordings"), fn, () => {})).rejects.toThrow(
+      /HTTP 500/,
+    );
   });
 });
 

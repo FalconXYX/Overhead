@@ -177,7 +177,7 @@ function CopyLink() {
   };
   return (
     <div className="cb-copy">
-      <button type="button" onClick={copy}>
+      <button type="button" title="Copy link" onClick={copy}>
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <path
             d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.8.8M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.8-.8"
@@ -187,7 +187,8 @@ function CopyLink() {
             strokeLinecap="round"
           />
         </svg>
-        Copy link
+        {/* [Polish] Phones show the icon alone (layout.css); the words stay its name. */}
+        <span className="cb-copy-text">Copy link</span>
       </button>
       {/* Always mounted: a status region must exist before its text changes to be announced. */}
       <span role="status" className="cb-toast" data-shown={state.kind === "copied"}>
@@ -305,7 +306,7 @@ export function Timeline() {
       </div>
       <div className="cb-tools">
         {kind === "youtube" && recorded ? (
-          <button type="button" onClick={() => watchRecordedPass(store)}>
+          <button type="button" className="cb-recorded" onClick={() => watchRecordedPass(store)}>
             Watch the recorded ISS pass
           </button>
         ) : null}

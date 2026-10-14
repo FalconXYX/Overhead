@@ -635,3 +635,46 @@ Apple M2; Node 26.11.1 arm64; Chromium 156.0.8078.4 (Chrome for Testing), headle
 - `npm run build:dev && PERF_OUTDIR=dist-dev npm run perf -- commits`: 40 React commits in 10 s while playing at 60× with no input (gate 31–41).
 - `vite build`: entry chunk 855.16 kB (262.34 kB gzipped), propagation worker 40.75 kB with no ajv. Lint, typecheck, 1,514 unit tests and 74 e2e pass.
 - `docs/overview.png` (1440 × 900, 1.38 MB) is tour step 1 on the recorded clip at media 1:35.4 (15:10:05Z), captured headless from `npm run dev` at 1440 × 900 and DPR 2 with the tour paused, then scaled to 1440 px wide. Reason: step 1 starts at media 60 s and the ISS enters the frame at about 79 s, so the overlay is on the ISS only from then on.
+
+## Redesign · 2026-10-12 to 2026-10-14
+
+Parth rejected the M9 interface: too dark, too dense, too technical, credits everywhere, rate controls on live cameras, and computed-sky and local-replay cameras without images. He chose video cameras only, a video-first layout with no sidebar, twilight blue with colour-coded objects, and plain language. These lines supersede the "Visual design" lines of the M9 section, and every earlier line about the computed-sky, Nānā ao and local-replay cameras being enabled.
+
+- Enabled cameras in order: subaru-2026-10-11-iss, subaru-starcam, cfht-starcam; the default is the recorded clip; other entries stay in cameras.json for unit tests only. Reason: Parth wants video only.
+- A clip opens at the last whole 10 s at least 15 s before its pass enters the frame (60 s for the 2026-10-11 clip; 0 without a pass); ?t= is kept only inside the clip when ?cam= names it or is absent. Reason: the ISS enters within about 20 s of opening.
+- The clip loader runs from main.tsx (startClipLoader); switching to a loaded clip with the clock outside it reopens it at the opening time. Reason: the clip must load whatever the layout renders.
+- Live has no time controls: keys are inert, ?t= is ignored and never written, and switching to live jumps to now. Reason: Parth, "replay rate on live doesn't make sense".
+- Only 1× and 10× exist, for clips and keyboard-only; ClockRate keeps 60/600 for the perf harness. Reason: no visible rate buttons.
+- The tour is 5 plain steps; a missing clip goes straight to live; no computed-sky fallback. Reason: plain language, video only.
+- "Save sidecar" and sidecarToSave are removed; local-replay is never enabled. Reason: Parth, "local clip replay … is black".
+- No YouTube error codes on screen (kept in data-error-code). Reason: plain language.
+- Friendly names in src/ui/friendly.ts: known-names table, then "… DEB" → "Space debris (X)", "… R/B" → "Spent rocket stage (X)", ISS/CSS modules, Starlink and named vehicles, else title case + "(satellite)"; planets "X (planet)"; stars "Name (star)" or "A star". Reason: visitors don't know catalogue names.
+- Where to look: 8 compass words; < 20° "Low", 20–50° "Halfway up", ≥ 50° "High", ≥ 80° "Almost overhead", < 0° "Below the horizon, to the X"; degrees only in More details. Reason: plain language.
+- Visibility order: below the horizon, behind the mountains, "In Earth's shadow, not visible", "Lit by the Sun, but the sky is too bright to see it", else "Lit by the Sun, visible to the eye". Reason: the reason a person can't see it comes first.
+- More details speed is the circular-orbit speed from height, "about …", rounded to 100 km/h. Reason: a friendly figure without a velocity vector.
+- Accessible names no longer carry NORAD ids; chip and list buttons carry data-object-id and lists stay keyed by NORAD id. Reason: plain names; replaces gotcha 14.
+- "In view" = drawn and inside the active camera's frame; Starlink counted, not listed. Reason: the list is the keyboard path to what the camera shows.
+- Incoming chip "ISS appears in 35 s"; accessible name spells "seconds"; announcement "… will appear in the camera view in about N seconds."; pause note "Alerts pause while the clock runs fast." Reason: plain language.
+- Theme: page gradient #121a3f → #1f2d63 → #2a3b7a; panels #26356f; text #f5f7ff and #c9d1f3 (10.8:1 and 7.6:1 on panels); focus ring 2 px #ffd166; the one warm call to action #ff8a3d. Reason: Parth chose twilight blue over the near-black theme.
+- Object colours (src/map/kindColors.ts): ISS #ff8a3d, satellites #4fd1ff, Starlink #b58cff, planets and Moon #ffd166, stars white; sunlit = coloured disc with a dark rim, shadowed = dark square with a coloured edge; selection = orange ring on a dark casing; path ahead = orange dots on a casing. Reason: one colour per kind on the video, the map, the key and the card; shapes kept.
+- Layout from 900 px: main area centred under the header; video width = round(down, min(100cqw, (100dvh − chrome) × ratio), 16 px); map clamp(320px, 31vw, 560px) wide, sharing the video column's top and bottom edges; the clip's stage is 16:9 like the live player. Reason: video-first, no sidebar.
+- Below 900 px everything stacks; below 600 px the object card renders under the video (matchMedia in SkyView) and In view becomes a bottom sheet. Reason: usable on phones.
+- Starlink and Grid lines are each one switch that sets both layers.X and layers.video.X; new layers.tracks ("Satellite paths", default on). The true-colour, coastline, "All labels" and star-limit toggles left the UI. Reason: plain, few controls.
+- Header popovers hang from the tools group's right edge; below 1400 px the incoming chip shows only its first entry. Reason: no wrapping.
+- "Camera alignment (advanced)" is a non-modal drawer that holds CalibrationPanel; Esc closes it unless a calibration point is pending. Reason: advanced tools out of the way.
+- Control bar: on the clip, play/pause, scrubber "Position in the recording", "m:ss / m:ss" and "HH:MM in Hawaii" (UTC only in the tooltip and dateTime); on live, "● LIVE", "about N s behind real time" and "Watch the recorded ISS pass"; both have In view (N), Fullscreen (the stage column) and Copy link; no rate or step buttons. "Fit frame" is renamed "Reset zoom". Reason: Parth, "replay rate on live doesn't make sense".
+- Satellite labels on both maps use friendly short names ("ISS", "Rocket stage"); selection.ts imports src/ui/friendly.ts. Reason: one naming rule.
+- The recorded clip autoplays muted once loaded and when chosen again (also from a ?t= link); paused under reduced motion; the tour holds it. Reason: Parth's call; it should feel like a video player.
+- Optional shortName and siteName on cameras.json entries feed the switcher and the map's site label (fallback name). Reason: plain names live in data, not code.
+- Test hooks gain read-only clock() and view(id) plus a perf-only playReplay(rate, fromMs). Reason: 60× and 600× have no control any more.
+- The e2e terrain fixture holds both StarCams' whole horizons (46 real tiles). Reason: real summit relief for the horizon tests.
+- setMediaClock(clock, simTimeMs) remembers the time the video was seeked to. Reason: a step made before the next frame was lost.
+- The incoming chip stays silent until the recorded clip has loaded (selectClipWaiting). Reason: it announced objects for a moment nobody sees.
+- Hit targets use friendly names; switcher radios are named by their short name only. Reason: plain language, clean accessible names.
+- The camera switcher is a menu button with rows grouped "Recorded" and "Live"; the button is named "Camera: <short name>", each row by its short name and described by its full name, place, sky and status. Reason: eight cameras must fit at 390 px.
+- The menu shows the sky at each site (day when the Sun is above −0.833°, twilight down to −12°, else night), read when it opens; status words are "Live" and "Offline", an unchecked camera shows the dot alone, and a recording whose clip failed shows "Unavailable". Reason: plain words.
+- cameras.json entries gain optional `placeName`, falling back to the time zone. The ground map's accessible name uses `siteName`. Reason: place names belong in data; plain language.
+- Labels near the frame edge align inward or move below the dot, and a dot outside the frame draws no label (`src/map/labelEdge.ts`). Reason: the ISS label was cut off at the video edge.
+- A seek or step past either end of the clip takes the clamped time on the same frame. Reason: one frame was drawn outside the clip.
+- From 900 px the main area is top-aligned, the video column is exactly as wide as the video (a multiple of 16 px), and the map takes the rest with a least width of clamp(320px, 25vw, 520px); "Reset zoom" sits at the stage's top-left, "Exit tour" in the tour header, and on phones Copy link is icon-only. Reason: no empty band, aligned edges, findings from three screenshot rounds.
+- `fetch-deploy-clips.ts` treats a 404 for a release asset as "this build has no recorded clip" (a GitHub Actions warning, nothing half-written) instead of failing the deploy; a size or sha256 mismatch still fails it. Reason: the unpublished release failed every deploy from M1 on, so production stayed on the M0 page until 2026-10-14, when the release `clips-2026-10-11` was published.

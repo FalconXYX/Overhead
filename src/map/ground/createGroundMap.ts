@@ -4,6 +4,7 @@
 
 import { defaults as defaultControls } from "ol/control/defaults";
 import type { Coordinate } from "ol/coordinate";
+import type { Extent } from "ol/extent";
 import type BaseLayer from "ol/layer/Base";
 import OlMap from "ol/Map";
 import View from "ol/View";
@@ -19,6 +20,7 @@ import {
 import { selectTrueColorDate } from "../../state/selectors";
 import type { AppStore } from "../../state/store";
 import type { ObjectId } from "../../state/types";
+import { viewExtentOf } from "../labelEdge";
 import { PICK_RADIUS_PX, pickNearest, WORLD_WIDTH_M } from "../pick";
 import { registerMap } from "../registry";
 import type { SkySatelliteIds } from "../sky/layers/satellites";
@@ -95,7 +97,9 @@ export function createGroundMap(
   const site = createSiteLayer();
   const tracks = createTracksLayer();
   // WebGL layers are disposed by registerMap's cleanup with every other layer (README Map lifecycle).
-  const sats = createGroundSatellites();
+  // [Polish] Labels stay inside the map's frame: its view extent, once the map below exists.
+  let viewExtent: (() => Extent | null) | null = null;
+  const sats = createGroundSatellites(256, () => viewExtent?.() ?? null);
   layers.push(
     footprint.layer,
     site.layer,
@@ -112,6 +116,8 @@ export function createGroundMap(
     view,
     controls: defaultControls({ attribution: false }),
   });
+
+  viewExtent = viewExtentOf(map);
 
   let selectedId: ObjectId | null = null;
   let hoverId: ObjectId | null = null;

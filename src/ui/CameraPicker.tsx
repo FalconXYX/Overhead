@@ -168,16 +168,26 @@ export function CameraPickerView({
   const active = activeEntry?.camera;
   const live = entries.find((e) => e.camera.id === LIVE_CAMERA_ID)?.camera;
 
+  // Focus moves between the button and the menu right under it without scrolling the page (the button is where the
+  // visitor just was; a programmatic choice from a scrolled page must not bring the header back).
   const close = (refocus: boolean): void => {
     setOpen(false);
-    if (refocus) buttonRef.current?.focus();
+    if (refocus) buttonRef.current?.focus({ preventScroll: true });
   };
 
-  // Opening moves focus to the active camera's row (else the first); a press outside closes the menu.
+  // Opening moves focus to the active camera's row (else the first), scrolled into the menu's view; a press outside
+  // closes the menu.
   useEffect(() => {
     if (!open) return;
-    const rows = menuRows(menuRef.current);
-    (rows.find((row) => row.getAttribute("aria-checked") === "true") ?? rows[0])?.focus();
+    const menu = menuRef.current;
+    const rows = menuRows(menu);
+    const row = rows.find((r) => r.getAttribute("aria-checked") === "true") ?? rows[0];
+    row?.focus({ preventScroll: true });
+    if (menu !== null && row !== undefined) {
+      const below = row.offsetTop + row.offsetHeight - (menu.scrollTop + menu.clientHeight);
+      if (row.offsetTop < menu.scrollTop) menu.scrollTop = row.offsetTop;
+      else if (below > 0) menu.scrollTop += below;
+    }
     const onPointerDown = (e: PointerEvent): void => {
       const root = rootRef.current;
       if (root !== null && e.target instanceof Node && !root.contains(e.target)) setOpen(false);

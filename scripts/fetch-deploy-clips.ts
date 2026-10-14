@@ -3,7 +3,7 @@
 // repository into dist/recordings/<clip>.gp/, checking size and sha256. Recordings never enter git (O2): the deploy
 // copy is a release asset of the public repository, downloaded without credentials (H1).
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 /** Ceiling for one deploy copy: 25 MiB, a sixth of the 148.6 MB master per full play (M9 step 14, "Size"). */
@@ -47,7 +47,13 @@ const GP_GROUPS = ["stations", "visual", "starlink"] as const;
 
 const sha256Hex = (data: Uint8Array): string => createHash("sha256").update(data).digest("hex");
 
-/** Throws, naming the file, on any failure, and writes nothing; the deploy then fails and production keeps its last deploy. */
+/** The release asset is not there (HTTP 404): the release has not been published yet. */
+export class MissingReleaseAssetError extends Error {}
+
+/**
+ * Throws, naming the file, on any failure, and writes nothing. A 404 throws MissingReleaseAssetError, which main
+ * treats as "this clip is not part of this build"; any other failure (a size or sha256 mismatch) fails the deploy.
+ */
 export async function fetchDeployClip(
   file: DeployClipFile,
   outDir: string,
@@ -59,7 +65,8 @@ export async function fetchDeployClip(
   const res = await fetchFn(file.url, { redirect: "follow" });
   if (res.status !== 200) {
     await res.body?.cancel();
-    throw new Error(`${file.name}: HTTP ${res.status} from ${file.url}`);
+    const message = `${file.name}: HTTP ${res.status} from ${file.url}`;
+    throw res.status === 404 ? new MissingReleaseAssetError(message) : new Error(message);
   }
   const data = new Uint8Array(await res.arrayBuffer());
   if (data.byteLength !== file.bytes) {
@@ -99,11 +106,35 @@ export async function copyClipGp(fromDir: string, toDir: string): Promise<void> 
   console.log(`${toDir}: ${GP_GROUPS.join(", ")} and meta.json, sha256 ok`);
 }
 
-async function main(): Promise<void> {
-  for (const file of DEPLOY_CLIP_FILES) await fetchDeployClip(file, "dist/recordings");
-  for (const { clip, fromDir } of DEPLOY_CLIP_GP) {
-    await copyClipGp(fromDir, `dist/recordings/${clip}.gp`);
+/**
+ * Fetches every deploy clip file, then copies the element sets. A release that is not published yet (any 404) leaves
+ * the recordings out of this build with a warning, so the site still deploys and offers the live cameras; the app
+ * already says "not part of this build" for a sidecar it cannot load. Returns whether the clips were included.
+ */
+export async function fetchDeployClips(
+  outDir: string,
+  fetchFn: typeof fetch = fetch,
+  warn: (message: string) => void = (m) => console.log(`::warning::${m}`),
+): Promise<boolean> {
+  const fetched: DeployClipFile[] = [];
+  for (const file of DEPLOY_CLIP_FILES) {
+    try {
+      await fetchDeployClip(file, outDir, fetchFn);
+      fetched.push(file);
+    } catch (error) {
+      if (!(error instanceof MissingReleaseAssetError)) throw error;
+      warn(`${error.message}: the release is not published, so this build has no recorded clip`);
+      // A sidecar without its video (or the reverse) is worse than neither.
+      for (const done of fetched) await rm(`${outDir}/${done.name}`, { force: true });
+      return false;
+    }
   }
+  for (const { clip, fromDir } of DEPLOY_CLIP_GP) await copyClipGp(fromDir, `${outDir}/${clip}.gp`);
+  return true;
+}
+
+async function main(): Promise<void> {
+  await fetchDeployClips("dist/recordings");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

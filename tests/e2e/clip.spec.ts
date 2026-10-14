@@ -11,11 +11,13 @@ import type {} from "../../src/app/testHooks"; // window.__overhead
 import {
   CLIP_ID,
   CLIP_START_ISO,
-  cameraRadio,
+  cameraButton,
+  cameraOption,
   clipReady,
   clockTime,
   creditsList,
   expect,
+  expectCamera,
   expectSimTime,
   focusBody,
   openAlignment,
@@ -70,7 +72,7 @@ test("the recorded clip loads from its sidecar URL and plays on its own, muted",
     };
   });
   await page.goto("./");
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
   await expect(page.getByTestId("video-status")).toHaveAttribute(
     "data-status",
     /^(playing|ended)$/,
@@ -231,7 +233,7 @@ test.describe("reduced motion: the clip opens paused", () => {
     );
     await expect(position(page)).toHaveText("–:–– / –:––");
     await panel.getByRole("button", { name: "Watch live" }).click();
-    await expect(cameraRadio(page, "Subaru live")).toBeChecked();
+    await expectCamera(page, "Subaru live");
   });
 
   test("the clip camera offers its pointing to its source camera", async ({ page }) => {
@@ -270,11 +272,18 @@ test.describe("reduced motion: the clip opens paused", () => {
     await expect(page.getByRole("region", { name: /^Video: / }).getByText("Details")).toHaveCount(
       0,
     );
+    // [Polish] The switcher says so too: "unavailable" on its button, and in the recording's row.
+    await expect(cameraButton(page)).toHaveAccessibleDescription(/Unavailable$/);
+    await expect(cameraButton(page)).toContainText("unavailable");
+    await cameraButton(page).click();
+    await expect(cameraOption(page, "ISS pass (recorded)")).toContainText("Unavailable");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu", { name: "Cameras" })).toBeHidden();
     await page
       .getByRole("region", { name: /^Video: / })
       .getByRole("button", { name: "Watch live" })
       .click();
-    await expect(cameraRadio(page, "Subaru live")).toBeChecked();
+    await expectCamera(page, "Subaru live");
     await expect(page.getByTestId("time-mode")).toHaveText("Live");
   });
 });

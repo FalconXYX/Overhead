@@ -41,31 +41,36 @@ export function DemoCaptions() {
 
   return (
     <section aria-label="Tour" className="tour">
-      <h2 className="tour-title">Tour</h2>
+      {/* [Polish] "Exit tour" sits beside the title, a quiet button, so the step's buttons keep one row. */}
+      <div className="tour-head">
+        <h2 className="tour-title">Tour</h2>
+        <button type="button" className="btn-quiet tour-exit" onClick={actions.stopDemo}>
+          Exit tour
+        </button>
+      </div>
       {number === null ? null : (
         <p className="tour-step">{`Step ${number.n} of ${number.total}`}</p>
       )}
       {/* The one live region: it announces each step's caption, never a ticking value. */}
       <p aria-live="polite">{step?.caption(ctx) ?? ""}</p>
       {isIntro ? (
-        <>
-          <p>{intro === "loading" ? INTRO_LOADING : intro === "missing" ? INTRO_NO_CLIP : ""}</p>
-          <p>
-            <button
-              ref={startRef}
-              type="button"
-              className="btn-primary"
-              disabled={startDisabled}
-              onClick={() => actions.setDemoStep(1)}
-            >
-              Start the tour
-            </button>
-          </p>
-        </>
+        <p>{intro === "loading" ? INTRO_LOADING : intro === "missing" ? INTRO_NO_CLIP : ""}</p>
       ) : null}
       <p className="tour-actions">
-        {isIntro ? null : (
-          <button type="button" onClick={() => actions.setDemoStep(demo.step - 1)}>
+        {isIntro ? (
+          <button
+            key="start"
+            ref={startRef}
+            type="button"
+            className="btn-primary"
+            disabled={startDisabled}
+            onClick={() => actions.setDemoStep(1)}
+          >
+            Start the tour
+          </button>
+        ) : (
+          // Its own key: the start button's element is never reused as Previous (focus would stay on it).
+          <button key="previous" type="button" onClick={() => actions.setDemoStep(demo.step - 1)}>
             Previous
           </button>
         )}{" "}
@@ -85,15 +90,10 @@ export function DemoCaptions() {
           </>
         )}
         {isEnd ? (
-          <>
-            <button type="button" onClick={() => actions.setDemoStep(0)}>
-              Restart tour
-            </button>{" "}
-          </>
+          <button type="button" onClick={() => actions.setDemoStep(0)}>
+            Restart tour
+          </button>
         ) : null}
-        <button type="button" onClick={actions.stopDemo}>
-          Exit tour
-        </button>
       </p>
     </section>
   );

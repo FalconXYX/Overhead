@@ -4,6 +4,7 @@
 // freezes while the view moves, so those three are drawn only on the canvas layer (gotcha 11). Picking is ours
 // (pick.ts), so the WebGL layers disable hit detection. [Redesign] Colour-coded as on the video (kindColors.ts):
 // satellites cyan, Starlink violet, the ISS orange; lit and shadowed differ in shape (circle, square).
+import type { Extent } from "ol/extent";
 import Feature from "ol/Feature";
 import MultiPoint from "ol/geom/MultiPoint";
 import LayerGroup from "ol/layer/Group";
@@ -110,8 +111,14 @@ function createClass(source: VectorSource, lit: boolean): GroundClass {
   return { source, feature, flat: [] };
 }
 
-/** The three layers, empty. `skip` starts at `capacity` objects and grows with the catalog. */
-export function createGroundSatellites(capacity = 256): GroundSatellites {
+/**
+ * The three layers, empty. `skip` starts at `capacity` objects and grows with the catalog. [Polish] `viewExtent`: the
+ * map's view extent, so the markers' labels stay inside the map's frame (labelEdge.ts).
+ */
+export function createGroundSatellites(
+  capacity = 256,
+  viewExtent?: () => Extent | null,
+): GroundSatellites {
   const satellitesSource = new VectorSource({ useSpatialIndex: false });
   const starlinkEvenSource = new VectorSource({ useSpatialIndex: false });
   const starlinkOddSource = new VectorSource({ useSpatialIndex: false });
@@ -130,7 +137,7 @@ export function createGroundSatellites(capacity = 256): GroundSatellites {
     starlinkLayer: new LayerGroup({
       layers: [starlinkLayer(starlinkEvenSource), starlinkLayer(starlinkOddSource)],
     }),
-    markers: createMarkerLayer(true),
+    markers: createMarkerLayer(true, [], viewExtent, WORLD_WIDTH_M),
     classes: [
       createClass(satellitesSource, true),
       createClass(satellitesSource, false),

@@ -615,20 +615,37 @@ describe("clockLoop, M5 local clips (media clocks)", () => {
     expect(seeks).toEqual([3, -57, 4]);
   });
 
-  it("seek(S + 9,000) on a 7 s clip → seekToSec(9), then the next frame reads the clamped end, S + 7,000", () => {
+  it("[Polish] seek(S + 9,000) on a 7 s clip → seekToSec(9), and that same frame takes the clamped end, S + 7,000", () => {
     const store = clipStore();
     const { clock, seeks } = fakeClip(2.25, 7);
     register(clock);
     const scheduler = new ManualScheduler();
     start(store, scheduler);
     scheduler.frame(0);
+    const drawn: number[] = [];
+    cleanups.push(registerFrameUpdater((simTimeMs) => drawn.push(simTimeMs)));
     store.getState().actions.seek(S + 9_000);
     scheduler.frame(16);
     expect(seeks).toEqual([9]);
-    expect(store.getState().clock.simTimeMs).toBe(S + 9_000);
+    expect(store.getState().clock.simTimeMs).toBe(S + 7_000);
     scheduler.frame(32);
     expect(store.getState().clock.simTimeMs).toBe(S + 7_000);
     expect(seeks).toEqual([9]);
+    // Every frame after the seek ran at the clip's end, never at a time past it.
+    expect(drawn).toEqual([S + 7_000, S + 7_000]);
+  });
+
+  it("[Polish] a step before the clip's start takes media 0 on the same frame", () => {
+    const store = clipStore();
+    const { clock, seeks } = fakeClip(0.5, 7);
+    register(clock);
+    const scheduler = new ManualScheduler();
+    start(store, scheduler);
+    scheduler.frame(0);
+    store.getState().actions.stepBy(-1_000);
+    scheduler.frame(16);
+    expect(seeks).toEqual([-0.5]);
+    expect(store.getState().clock.simTimeMs).toBe(S);
   });
 
   it("the first frame after setMediaClock reads the video, even when the store's time differs", () => {

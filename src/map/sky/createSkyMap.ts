@@ -51,6 +51,7 @@ import type { AppStore } from "../../state/store";
 import type { AppState, CalibrationUiState, CameraKind, ObjectId } from "../../state/types";
 import { friendlyName } from "../../ui/friendly";
 import { SKY_PATH_STEP_MS } from "../../workers/protocol";
+import { viewExtentOf } from "../labelEdge";
 import { PICK_RADIUS_PX, pickNearest } from "../pick";
 import { MAX_TRACKED, RequestGate } from "../sync/bindTracks";
 import { applyPairClick, calibrationClickAt, satelliteCheckClickAt } from "./calibrationClick";
@@ -269,9 +270,9 @@ export function createSkyMap(target: HTMLElement, store: AppStore, cache: SkyCac
   const backgroundLayer = new ImageLayer<ImageSource>();
   const gridLayer = createGridLayer();
   const stars = createStarsLayer(STAR_CAPACITY, STAR_FILL);
-  const bodies = createBodiesLayer();
+  const bodies = createBodiesLayer(viewExtentOf(map));
   const sats = createSkySatellites();
-  const selection = createSkySelection();
+  const selection = createSkySelection(viewExtentOf(map)); // [Polish] labels stay inside the video's frame
   // [M6] Rebuilt only by setCameraModel and setHorizonProfile, never per frame.
   const horizonLayer = createHorizonLayer();
   let horizonProfile: Float32Array | null = null;

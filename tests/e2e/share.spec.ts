@@ -4,9 +4,9 @@
 import {
   APP_ORIGIN,
   CLIP_ID,
-  cameraRadio,
   clipReady,
   expect,
+  expectCamera,
   expectSimTime,
   objectCard,
   test,
@@ -15,7 +15,7 @@ import {
 test.use({ reducedMotion: "reduce" });
 
 const VIEW = "./?t=2026-10-11T08:00:01Z&sel=sat:25544";
-const controls = (page: Parameters<typeof cameraRadio>[0]) =>
+const controls = (page: Parameters<typeof expectCamera>[0]) =>
   page.getByRole("region", { name: "Video controls" });
 
 test("Copy link while the clip plays: the current t, cam and sel, and the link opens the same view", async ({
@@ -50,7 +50,7 @@ test("Copy link while the clip plays: the current t, cam and sel, and the link o
     if (m.type() === "error") openedErrors.push(m.text());
   });
   await opened.goto(link);
-  await expect(cameraRadio(opened, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(opened, "ISS pass (recorded)");
   await clipReady(opened, "paused");
   await expectSimTime(opened, t);
   await expect(objectCard(opened)).toContainText("International Space Station");

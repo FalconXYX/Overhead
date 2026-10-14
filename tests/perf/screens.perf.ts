@@ -1,6 +1,7 @@
 // tests/perf/screens.perf.ts — [M9] the visual design pass's screenshots; [Redesign] the twilight-blue, video-first
-// layout's states (redesign spec sections 2–4): 4 viewports × 9 states, full page, saved to
-// test-results/screens/<viewport>/<state>.png (the tour saves its intro and its first step). Run by hand with
+// layout's states (redesign spec sections 2–4): 4 viewports × 10 states, full page, saved to
+// test-results/screens/<viewport>/<state>.png (the tour saves its intro and its first step; [Polish] the camera menu
+// saves itself open, and with 8 rows). Run by hand with
 // `npm run build && CI=1 npm run perf -- screens`, never in CI; no gate. Tile the set into one contact sheet per viewport
 // with `npx tsx scripts/contact-sheet.ts --ffmpeg <path to ffmpeg>`.
 //
@@ -201,6 +202,48 @@ for (const viewport of VIEWPORTS) {
       await layers.getByRole("button", { name: "Camera alignment (advanced)" }).click();
       await expect(page.getByRole("region", { name: "Camera alignment (advanced)" })).toBeVisible();
       await shoot(page, viewport.name, "08-alignment-open");
+    });
+
+    test("10 the camera menu: open, then with 8 cameras", async ({ page }) => {
+      await routeRealClip(page);
+      const gibs = recordGibsRequests(page);
+      await page.goto("./");
+      await clipLoaded(page);
+      await settle(page, gibs.quiet);
+      await page.getByRole("button", { name: /^Camera: / }).click();
+      const menu = page.getByRole("menu", { name: "Cameras" });
+      await expect(menu).toBeVisible();
+      await shoot(page, viewport.name, "10-camera-menu");
+      // [Polish] The 5 StarCams to come, as clones of the last live row: a layout check that 8 rows fit (the DOM only;
+      // the unit tests render 8 real entries).
+      await menu.evaluate((el) => {
+        const group = el.querySelectorAll("fieldset")[1];
+        const last = group?.querySelector('[role="menuitemradio"]:last-of-type');
+        if (group === undefined || last === null || last === undefined) return;
+        const coming = [
+          ["Kiso live", "Kiso Observatory, Japan · day", "Live"],
+          ["Kōzushima live", "Kōzushima, Japan · day", "Offline"],
+          ["Fukushima live", "Fukushima, Japan · day", ""],
+          ["ALMA live", "ALMA, Chile · twilight", "Live"],
+          ["Marugame live", "Marugame, Japan · day", ""],
+        ];
+        for (const [name = "", place = "", word = ""] of coming) {
+          const row = last.cloneNode(true) as HTMLElement;
+          row.setAttribute("data-status", word === "" ? "unknown" : word.toLowerCase());
+          row.querySelector(".cam-item-name")?.replaceChildren(name);
+          row.querySelector(".cam-item-place")?.replaceChildren(place);
+          row.querySelector(".cam-item-word")?.remove();
+          if (word !== "") {
+            const wordEl = document.createElement("span");
+            wordEl.className = "cam-item-word";
+            wordEl.setAttribute("aria-hidden", "true");
+            wordEl.append(word);
+            row.querySelector(".cam-item-text")?.after(wordEl);
+          }
+          group.append(row);
+        }
+      });
+      await shoot(page, viewport.name, "11-camera-menu-8");
     });
 
     test("09 Starlink on", async ({ page }) => {

@@ -12,24 +12,22 @@ Recordings themselves never go in the repository: the deployed clip is a release
 
 | Link | What it shows |
 | ---- | ------------- |
-| [`?demo=1`](https://parthjain.ca/Overhead/?demo=1) | The captioned tour: the recorded ISS pass, linked selection, the sensor model, GeoPose, GOES imagery, Starlink, terrain, then the live StarCam |
-| [`?cam=subaru-2026-10-11-iss`](https://parthjain.ca/Overhead/?cam=subaru-2026-10-11-iss) | The recorded clip: the ISS crossing the Subaru StarCam on 2026-10-11, with the overlay on the video |
+| [`?demo=1`](https://parthjain.ca/Overhead/?demo=1) | A five-step captioned tour: the recorded ISS pass, the map, how the labels are made, then the live StarCam |
+| [`?cam=subaru-2026-10-11-iss`](https://parthjain.ca/Overhead/?cam=subaru-2026-10-11-iss) | The recorded clip (the default view): the ISS crossing the Subaru StarCam on 2026-10-11, with the overlay on the video |
 | [`?cam=subaru-2026-10-11-iss&t=2026-10-11T15:11:00Z&sel=sat:25544`](https://parthjain.ca/Overhead/?cam=subaru-2026-10-11-iss&t=2026-10-11T15:11:00Z&sel=sat:25544) | The same clip at media 150 s, with the ISS selected in both views |
 | [`?cam=subaru-starcam`](https://parthjain.ca/Overhead/?cam=subaru-starcam) | The live overlay, drawn on the Subaru-Asahi StarCam's YouTube player |
-| [`?cam=cfht-nanaao`](https://parthjain.ca/Overhead/?cam=cfht-nanaao) | The CFHT Nānā ao all-sky still image (only at night in Hawaii; the hatch is closed by day) |
-| [`?cam=synthetic-walenstadt`](https://parthjain.ca/Overhead/?cam=synthetic-walenstadt) | The computed sky over Walenstadt, under the Churfirsten skyline |
-| [`?t=2026-10-11T15:09:50Z&sel=sat:25544`](https://parthjain.ca/Overhead/?t=2026-10-11T15:09:50Z&sel=sat:25544) | The computed sky over Maunakea, paused at a sunlit ISS pass, with the ISS selected |
+| [`?cam=cfht-starcam`](https://parthjain.ca/Overhead/?cam=cfht-starcam) | The second live StarCam on Maunakea, looking west |
 
 URL parameters:
 
 | Parameter | Example | Effect |
 | --------- | ------- | ------ |
-| `cam` | `subaru-starcam` | An enabled camera from `public/data/cameras.json`; any other id falls back to `synthetic-maunakea` |
-| `t` | `2026-10-11T15:09:50Z` | Opens paused replay at that UTC time; it must end in `Z`. Without `t` the app starts live |
+| `cam` | `subaru-starcam` | An enabled camera from `public/data/cameras.json`; any other id opens the recorded ISS pass, `subaru-2026-10-11-iss` |
+| `t` | `2026-10-11T15:11:00Z` | On the recorded clip, opens at that UTC time if it falls inside the clip; it must end in `Z`. Live cameras ignore it |
 | `sel` | `sat:25544`, `planet:Jupiter`, `star:424`, `moon`, `sun` | Selects that object on load and follows the selection |
 | `demo` | `1` | Starts the tour; leaving the tour removes it |
 
-The Timeline's "Copy link" builds a link to the current view: the camera, the selection, and in replay the current time.
+"Copy link" in the video controls builds a link to the current view: the camera, the selection, and on the recording its current time.
 
 ## Architecture
 
@@ -156,19 +154,21 @@ Every key also has an on-screen control. The handler ignores keys typed into inp
 
 | Key | Effect | Notes |
 | --- | ------ | ----- |
-| Space | `togglePlay()` | |
-| ← / → | `stepBy(∓1000)` | Shift: ∓60,000 ms; off while Calibration is open |
-| `[` / `]` | previous / next offered rate | 1, 10, 60, 600; 1 and 10 with a clip (M5) |
-| L | `togglePanel("layers")` | |
-| C | `togglePanel("calibration")` | |
-| ← → ↑ ↓ with Calibration open | `azDeg` ∓0.05° (`rollDeg` on a zenith-locked fisheye); `altDeg` ±0.05° | Shift: 0.5° |
-| Esc | tour active → `stopDemo()`; else pending point → `cancelImagePoint()`; else `select(null)` | first match only |
-| arrows, `+`, `−` on a focused map | pan and zoom | OpenLayers `KeyboardPan` and `KeyboardZoom` defaults |
+| Space | Play or pause the recorded video | recording only |
+| ← / → | Back or forward 1 second in the recorded video | Shift: 1 minute; recording only; off while Camera alignment is open |
+| `[` / `]` | Normal speed or 10 times faster | recording only |
+| L | Open or close Layers | |
+| C | Open or close Camera alignment (advanced) | |
+| ← → ↑ ↓ with Camera alignment open | Nudge the camera's pointing by 0.05° | Shift: 0.5° |
+| Esc | Exit the tour; else cancel an alignment point; else close the object card | first match only |
+| Arrows, + and − on a focused map | Move and zoom the map | OpenLayers `KeyboardPan` and `KeyboardZoom` defaults |
+
+Live cameras have no time keys: the live video sets the time.
 
 ## Accessibility
 
 - Every control is reachable with the keyboard and shows a visible focus ring; the browser's ring is never removed without a replacement.
-- Pointer targets are at least 24 × 24 CSS px, OpenLayers' control buttons included. The hit targets over the video are named buttons but not tab stops: keyboard users select the Sun, Moon, planets and satellites from the sky view's text alternative, the "Above the horizon" list and the "Satellites above the horizon" buttons.
+- Pointer targets are at least 24 × 24 CSS px, OpenLayers' control buttons included. The hit targets over the video are named buttons but not tab stops: keyboard users select the satellites, planets, Moon and Sun from the "In view" list under the video, which names each one in plain words with where to look.
 - `prefers-reduced-motion: reduce` turns trails off (their toggle reads "(off: reduced motion)"), makes "Show on map" and Follow jump instead of animating, turns CSS transitions and animations off, and changes tour steps without animation.
 - Meaning never rides on colour alone: sunlit and shadowed satellites differ in shape, and camera statuses, "Behind terrain", "Imagery as of" and the incoming chip are text.
 - One `<main>`, named `<section>` regions, and an `aria-label` on each map container; a map that takes keyboard pan and zoom is focusable (`role="application"`). Live regions announce changes, never a ticking value: the incoming chip announces only a new first entry, and the tour holds its caption in one polite region.
@@ -177,7 +177,7 @@ Lighthouse 13.5.0 accessibility, run by hand (`npx --yes lighthouse@13.5.0 … -
 
 | URL | Desktop | Mobile |
 | --- | ------: | -----: |
-| `/Overhead/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z` | pending | pending |
+| `/Overhead/?cam=subaru-2026-10-11-iss&t=2026-10-11T15:11:00Z` | pending | pending |
 | the same with `&sel=sat:25544` | pending | pending |
 | `/Overhead/?demo=1` | pending | pending |
 | `https://parthjain.ca/Overhead/` (production) | pending | |
@@ -352,7 +352,7 @@ npx tsx scripts/contact-sheet.ts --ffmpeg <path to ffmpeg>   # test-results/scre
 GitHub Pages, deployed from GitHub Actions (public repository `FalconXYX/Overhead`). `.github/workflows/deploy.yml` builds `main` with `npm ci` and `npm run build:pages` into `dist/`, using Node from `.nvmrc`, and publishes it on every push to `main` and on `workflow_dispatch` (which `fetch-gp.yml` uses after a data commit). Vite's `base` is `/Overhead/` (Pages paths are case-sensitive and follow the repo name).
 
 - Production: `https://parthjain.ca/Overhead/`. `parthjain.ca` is the `FalconXYX.github.io` user site, so project sites appear under it.
-- No per-branch previews: CI checks every pull request (`ci.yml` builds with plain `npm run build` and never downloads the clip), and `npm run build && npm run preview` shows a build locally at `http://localhost:4173/Overhead/`. A local build has no `recordings/`, so the clip camera reports "This clip is not part of this build" and the tour runs on the computed sky.
+- No per-branch previews: CI checks every pull request (`ci.yml` builds with plain `npm run build` and never downloads the clip), and `npm run build && npm run preview` shows a build locally at `http://localhost:4173/Overhead/`. A local build has no `recordings/`, so the recorded camera says the recording is unavailable and offers "Watch live", and the tour goes straight to the live StarCam. A deploy whose release asset answers 404 does the same instead of failing.
 - Pages is enabled with Source: **GitHub Actions** (done 2026-10-11).
 
 **The recorded clip in production.** The deployed build serves the 2026-10-11 clip from its own origin, so `?demo=1` opens on it and the canvas stays readable without CORS. GitHub Pages answers byte ranges with 206, so the video streams and seeks from its URL.
@@ -409,7 +409,10 @@ curl -sI https://parthjain.ca/Overhead/recordings/subaru-2026-10-11-iss.gp/stati
 - [x] M6 · Terrain
 - [x] M7 · Weather imagery
 - [x] M8 · Footprint and alerts
-- [ ] M9 · Polish and ship
+- [x] M9 · Polish and ship
+- [x] Redesign (2026-10-14): video cameras only, a video-first twilight-blue layout, plain language
+
+The milestone sections below record what each milestone built. On 2026-10-14 the interface was redesigned ([DECISIONS](docs/DECISIONS.md), "Redesign"): the site keeps only the recorded ISS pass and the live StarCams, the computed-sky, Nānā ao and local-replay cameras are no longer enabled, time controls exist only for the recording, credits sit behind one Credits button, and objects are described in plain words (NORAD ids and degrees appear under "More details").
 
 ### M0 · Scaffold
 

@@ -154,7 +154,8 @@ describe("Timeline ([Redesign] the control bar)", () => {
     expect(html).toContain('<section id="');
     expect(html).toContain('aria-label="In view"');
     expect(html).toContain('aria-label="Fullscreen"');
-    expect(html).toMatch(/<\/svg>Copy link<\/button>/);
+    // [Polish] Its words in a span (phones show the icon alone): still its name.
+    expect(html).toMatch(/<\/svg><span class="cb-copy-text">Copy link<\/span><\/button>/);
   });
 });
 

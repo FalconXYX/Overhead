@@ -42,6 +42,8 @@ export function GroundView() {
   const ref = useRef<HTMLDivElement>(null);
   const cameras = useAppState((s) => s.data.cameras);
   const gibs = useAppState((s) => s.data.gibs);
+  // [Polish] Named by the camera's plain site name ("Subaru Telescope camera", like the map's site label).
+  const siteName = useAppState((s) => selectActiveCamera(s)?.siteName ?? null);
   const cameraName = useAppState((s) => selectActiveCamera(s)?.name ?? null);
 
   useEffect(() => {
@@ -80,9 +82,11 @@ export function GroundView() {
         role="application"
         aria-roledescription="map"
         aria-label={
-          cameraName === null
-            ? "Ground map around the camera site"
-            : `Ground map around the camera site: ${cameraName}`
+          siteName !== null
+            ? `Ground map around the ${siteName}`
+            : cameraName === null
+              ? "Ground map around the camera site"
+              : `Ground map around the camera site: ${cameraName}`
         }
         // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable so OpenLayers KeyboardPan and KeyboardZoom work
         tabIndex={0}

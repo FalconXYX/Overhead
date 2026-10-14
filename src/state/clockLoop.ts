@@ -68,7 +68,10 @@ export interface YoutubeMediaClock {
 export interface LocalMediaClock {
   readonly kind: "local-video";
   readonly startUtcMs: number;
-  /** rVFC metadata.mediaTime of the frame on screen while playing; video.currentTime when paused or seeking. */
+  /**
+   * rVFC metadata.mediaTime of the frame on screen while playing; video.currentTime when paused or seeking (a seek
+   * reads back its clamped target at once).
+   */
   mediaSec(): number;
   /** Sets video.currentTime clamped to [0, duration]. */
   seekToSec(mediaSec: number): void;
@@ -120,11 +123,15 @@ function liveTimeMs(state: AppState): number | null {
  * [M5] A local clip's sim time this frame (M5 step 6.2). A clock.simTimeMs that differs from the value remembered
  * after the last frame was written by the user (a seek, step, scrub or recentre): seek the video there once and keep
  * it. Otherwise, including the first frame after setMediaClock without a time (nothing remembered), the video wins.
+ * [Polish] The video clamps a seek to [0, duration] and reads the clamped time back at once: a step or seek past either
+ * end takes that time on this frame, so no frame is drawn outside the clip (sub-millisecond read-back rounding keeps
+ * the user's time).
  */
 function localClipTimeMs(clip: LocalMediaClock, simTimeMs: number): number {
   if (rememberedSimMs !== null && simTimeMs !== rememberedSimMs) {
     clip.seekToSec((simTimeMs - clip.startUtcMs) / 1000);
-    return simTimeMs;
+    const shownMs = localVideoTimeMs(clip.startUtcMs, clip.mediaSec());
+    return Math.abs(shownMs - simTimeMs) < 1 ? simTimeMs : shownMs;
   }
   return localVideoTimeMs(clip.startUtcMs, clip.mediaSec());
 }

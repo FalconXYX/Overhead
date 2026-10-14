@@ -4,10 +4,10 @@ import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import {
   CLIP_START_ISO,
-  cameraRadio,
   clipReady,
   clockTime,
   expect,
+  expectCamera,
   expectSimTime,
   test,
 } from "./fixtures";
@@ -31,7 +31,7 @@ test("the shell loads with every pane, on the recorded ISS pass", async ({ page 
   for (const name of ["Layers", "Credits", "Keyboard shortcuts"]) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   }
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
   await expect(page.getByTestId("clip-position")).toHaveText(/^0:0\d \/ 0:07$/);
   // The local time in words; UTC only in the dateTime and the tooltip.
   await expect(clockTime(page)).toHaveText(/^\d\d:\d\d in Hawaii$/);

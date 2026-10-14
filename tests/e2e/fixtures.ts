@@ -284,9 +284,24 @@ export async function clipStartingAt(
   );
 }
 
-/** The header's camera switcher: a radio named by its short name, described by its full name and status. */
-export const cameraRadio = (page: Page, shortName: string) =>
-  page.getByRole("radio", { name: shortName, exact: true });
+/**
+ * [Polish] The header's camera switcher: a menu button named "Camera: <short name>" of the active camera, described by
+ * its full name, place and status (the status in words last).
+ */
+export const cameraButton = (page: Page) => page.getByRole("button", { name: /^Camera: / });
+/** The active camera is `shortName`: the switcher's button says so. */
+export const expectCamera = (page: Page, shortName: string) =>
+  expect(cameraButton(page)).toHaveAccessibleName(`Camera: ${shortName}`);
+/** A row of the switcher's menu (a menuitemradio named by its short name); `includeHidden` while the menu is closed. */
+export const cameraOption = (page: Page, shortName: string, includeHidden = false) =>
+  page.getByRole("menuitemradio", { name: shortName, exact: true, includeHidden });
+/** Opens the switcher's menu and chooses `shortName`, as a visitor does. */
+export async function chooseCamera(page: Page, shortName: string): Promise<void> {
+  const button = cameraButton(page);
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+  await cameraOption(page, shortName).click();
+  await expectCamera(page, shortName);
+}
 
 /** The control bar's clock: the local time in words, with the sim time as an ISO UTC dateTime. */
 export const clockTime = (page: Page) => page.getByTestId("time-local");

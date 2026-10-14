@@ -1,5 +1,6 @@
 // src/map/sky/layers/bodies.ts — the Sun, Moon and planets with labels (M2 step 8.5).
 // [Redesign] Gold discs (kindColors.ts: planets and the Moon) with dark rims, and gold-white labels on dark halos.
+import type { Extent } from "ol/extent";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import VectorLayer from "ol/layer/Vector";
@@ -12,6 +13,7 @@ import Text from "ol/style/Text";
 import { BODY_IDS, BODY_STRIDE } from "../../../domain/astro";
 import { type CameraModel, projectAzAltDeg, toSkyMapCoord } from "../../../domain/camera";
 import { HALO, KIND_COLOR } from "../../kindColors";
+import { edgeTextPlacement, type LabelEdge, labelEdge } from "../../labelEdge";
 
 export type BodyId = (typeof BODY_IDS)[number];
 
@@ -57,6 +59,8 @@ export interface BodiesLayer {
   readonly visible: Uint8Array; // 1 = projected in the last pass; 0 = culled, or no pass yet
   readonly styles: (Style | undefined)[]; // cached per body; rebuilt only when styleKeys[i] changes
   readonly styleKeys: string[]; // "label|radius|hollow"
+  /** [Polish] Each body's label, size and hollowness as last written, for its edge variants (labelEdge.ts). */
+  readonly parts: { label: string; radiusPx: number; hollow: boolean }[];
 }
 
 const MARKER_FILL = new Fill({ color: KIND_COLOR.planet });
@@ -66,28 +70,39 @@ const NEW_MOON_STROKE = new Stroke({ color: KIND_COLOR.planet, width: 1.5 });
 const LABEL_FILL = new Fill({ color: "#ffe6a8" });
 const LABEL_HALO = new Stroke({ color: HALO, width: 3.5 });
 
-function bodyStyle(label: string, radiusPx: number, hollow: boolean): Style {
+function bodyStyle(label: string, radiusPx: number, hollow: boolean, edge: LabelEdge = ""): Style {
   return new Style({
     image: new CircleStyle({
       radius: radiusPx,
       fill: hollow ? undefined : MARKER_FILL,
       stroke: hollow ? NEW_MOON_STROKE : MARKER_STROKE,
     }),
-    text: new Text({
-      text: label,
-      font: "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif",
-      offsetY: -(radiusPx + 9),
-      fill: LABEL_FILL,
-      stroke: LABEL_HALO,
-    }),
+    text:
+      edge === "x"
+        ? undefined
+        : new Text({
+            text: label,
+            font: "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif",
+            ...edgeTextPlacement(edge, radiusPx + 9),
+            fill: LABEL_FILL,
+            stroke: LABEL_HALO,
+          }),
   });
 }
 
-/** 8 Point features, created once. The style function draws only bodies the last pass projected. */
-export function createBodiesLayer(): BodiesLayer {
+/**
+ * 8 Point features, created once. The style function draws only bodies the last pass projected; [Polish] with
+ * `viewExtent` (the sky map's view extent), a label near the frame's edge leans inward so it stays whole.
+ */
+export function createBodiesLayer(viewExtent?: () => Extent | null): BodiesLayer {
   const visible = new Uint8Array(BODY_IDS.length);
   const styles: (Style | undefined)[] = new Array(BODY_IDS.length).fill(undefined);
   const styleKeys: string[] = new Array(BODY_IDS.length).fill("");
+  const parts = BODY_IDS.map(() => ({ label: "", radiusPx: 0, hollow: false }));
+  // [Polish] Each body's last edge variant and the style it leans from: rebuilt only when either changes.
+  const edgeOf: LabelEdge[] = BODY_IDS.map(() => "");
+  const edgeFor: (Style | undefined)[] = BODY_IDS.map(() => undefined);
+  const edgeStyles: (Style | undefined)[] = BODY_IDS.map(() => undefined);
   const points = BODY_IDS.map(() => new Point([0, 0]));
   const features = BODY_IDS.map((id, i) => {
     const f = new Feature(points[i]);
@@ -99,12 +114,24 @@ export function createBodiesLayer(): BodiesLayer {
     // [M9] A copy: without a spatial index the source adopts the array it is given, and a removeFeature would then
     // shift the indices this layer reads (M9 gotcha 4).
     source: new VectorSource({ useSpatialIndex: false, features: [...features] }),
-    style: (feature) => {
+    style: (feature, resolution) => {
       const i = feature.get("bodyIndex");
-      return typeof i === "number" && visible[i] === 1 ? styles[i] : undefined;
+      if (typeof i !== "number" || visible[i] !== 1) return undefined;
+      const part = parts[i];
+      const extent = part === undefined || viewExtent === undefined ? null : viewExtent();
+      if (part === undefined || extent === null) return styles[i];
+      const [x = 0, y = 0] = points[i]?.getFlatCoordinates() ?? [];
+      const edge = labelEdge(x, y, extent, resolution, part.label, 12, part.radiusPx + 9);
+      if (edge === "") return styles[i];
+      if (edge !== edgeOf[i] || edgeFor[i] !== styles[i]) {
+        edgeOf[i] = edge;
+        edgeFor[i] = styles[i];
+        edgeStyles[i] = bodyStyle(part.label, part.radiusPx, part.hollow, edge);
+      }
+      return edgeStyles[i];
     },
   });
-  return { layer, features, points, visible, styles, styleKeys };
+  return { layer, features, points, visible, styles, styleKeys, parts };
 }
 
 /**
@@ -131,6 +158,7 @@ export function writeBodies(bodies: BodiesLayer, model: CameraModel, values: Flo
       if (bodies.styleKeys[i] !== key) {
         bodies.styleKeys[i] = key;
         bodies.styles[i] = bodyStyle(label, radius, hollow);
+        bodies.parts[i] = { label, radiusPx: radius, hollow };
       }
     } else {
       bodies.visible[i] = 0;

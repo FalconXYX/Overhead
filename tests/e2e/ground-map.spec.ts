@@ -4,10 +4,10 @@ import type {} from "../../src/app/testHooks"; // window.__overhead
 import {
   CLIP_ID,
   CLIP_START_ISO,
-  cameraRadio,
   clipReady,
   creditsList,
   expect,
+  expectCamera,
   expectSimTime,
   openLayers,
   openPopover,
@@ -62,7 +62,7 @@ test("arrow keys pan a focused map and leave the clock alone", async ({ page }) 
   });
   const prevented = () =>
     page.evaluate(() => (window as unknown as { __prevented: string[] }).__prevented);
-  const map = page.getByRole("application", { name: /^Ground map around the camera site/ });
+  const map = page.getByRole("application", { name: /^Ground map around the / });
   const controls = page.getByRole("region", { name: "Video controls" });
   await map.focus();
   await page.keyboard.press("ArrowRight"); // KeyboardPan pans and prevents it
@@ -93,11 +93,11 @@ test("the site opens on the recorded ISS pass; a live camera ignores ?t= and nev
 }) => {
   await page.goto("./");
   await clipReady(page, "paused");
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
   await expect(page).toHaveURL(new RegExp(`\\?cam=${CLIP_ID}&t=${CLIP_START_ISO}$`));
   // "Watch live" switches to the live Subaru StarCam: live, and no t in the URL.
   await page.getByRole("button", { name: "Watch live" }).click();
-  await expect(cameraRadio(page, "Subaru live")).toBeChecked();
+  await expectCamera(page, "Subaru live");
   await expect(page.getByTestId("time-mode")).toHaveText("Live");
   await expect(page).toHaveURL(/\?cam=subaru-starcam$/);
 
@@ -116,7 +116,7 @@ test("URL fallbacks: an unknown or retired camera, and a zone-less t, open the r
   for (const cam of ["nope", "synthetic-maunakea", "cfht-nanaao"]) {
     await page.goto(`./?cam=${cam}&t=2026-10-11T08:00:03Z`);
     await clipReady(page, "paused");
-    await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+    await expectCamera(page, "ISS pass (recorded)");
     await expect(page).toHaveURL(new RegExp(`\\?cam=${CLIP_ID}&t=2026-10-11T08:00:0[03]Z$`));
   }
   // A ?t= inside the clip is kept when ?cam= names the clip, or nothing.
@@ -134,7 +134,7 @@ test("map container is named", async ({ page }) => {
   await page.goto("./");
   await expect(
     page.getByRole("application", {
-      name: "Ground map around the camera site: Subaru StarCam: ISS pass, 2026-10-11 (recorded)",
+      name: "Ground map around the Subaru Telescope camera",
     }),
   ).toBeVisible();
 });

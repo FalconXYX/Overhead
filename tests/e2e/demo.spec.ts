@@ -5,7 +5,7 @@
 // file, and the tour goes straight to live (no computed-sky fallback any more).
 import { fileURLToPath } from "node:url";
 import type { Page, Request, Route } from "@playwright/test";
-import { cameraRadio, expect, focusBody, simTimeMs, test } from "./fixtures";
+import { expect, expectCamera, focusBody, simTimeMs, test } from "./fixtures";
 
 const INTRO =
   "This is a sky camera on Maunakea, Hawaii, filmed on the night the International Space Station flew over. The labels on the video are added by this site.";
@@ -63,7 +63,7 @@ test("clip path: the intro on the recorded clip, the ISS step at media 60 s, the
   await expect(tour(page)).toBeVisible();
   await expect(caption(page)).toHaveText(INTRO);
   await expect(tour(page)).toContainText("Step 1 of 5");
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
   await expect(startButton(page)).toBeEnabled();
   await expect(startButton(page)).toBeFocused();
   await expect(tour(page)).not.toContainText(NO_CLIP);
@@ -72,7 +72,7 @@ test("clip path: the intro on the recorded clip, the ISS step at media 60 s, the
 
   await startButton(page).click();
   await expect(tour(page)).toContainText("Step 2 of 5");
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
   // The 60 s seek stops at the 7 s test pattern's end.
   await expectTimeWithin(page, "2026-10-11T08:00:00Z", "2026-10-11T08:00:07Z");
   await expect(page.getByRole("region", { name: "Selected object" })).toContainText(
@@ -96,7 +96,7 @@ test("clip path: the intro on the recorded clip, the ISS step at media 60 s, the
 
   await nextUntil(page, 2, 5);
   await expect(caption(page)).toHaveText(LIVE_CAPTION);
-  await expect(cameraRadio(page, "Subaru live")).toBeChecked();
+  await expectCamera(page, "Subaru live");
   await expect(page.getByTestId("time-mode")).toHaveText("Live");
   await expect.poll(async () => (await ytStub(page)).players).toBe(1);
   expect((await ytStub(page)).fs).toEqual([0]);
@@ -181,9 +181,9 @@ test("no-clip path: without the clip the tour says so and goes straight to live"
   await startButton(page).click();
   await expect(tour(page)).toContainText("Step 2 of 2");
   await expect(caption(page)).toHaveText(LIVE_CAPTION);
-  await expect(cameraRadio(page, "Subaru live")).toBeChecked();
+  await expectCamera(page, "Subaru live");
   await expect(page.getByTestId("time-mode")).toHaveText("Live");
   await tour(page).getByRole("button", { name: "Previous" }).click();
   await expect(tour(page)).toContainText("Step 1 of 2");
-  await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+  await expectCamera(page, "ISS pass (recorded)");
 });

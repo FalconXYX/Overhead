@@ -10,9 +10,11 @@ import type { ObjectId } from "../../src/state/types";
 import {
   CLIP_ID,
   CLIP_START_ISO,
-  cameraRadio,
+  cameraButton,
+  cameraOption,
   creditsList,
   expect,
+  expectCamera,
   expectSimTime,
   objectCard,
   openAlignment,
@@ -184,7 +186,8 @@ test.describe("YouTube StarCam", () => {
     const credits = creditsList(page);
     await expect(credits).toContainText("NAOJ & Asahi Shimbun");
     await expect(credits).toContainText("Non-commercial use only");
-    await expect(cameraRadio(page, "Subaru live")).toHaveAccessibleDescription(/Live$/);
+    await expectCamera(page, "Subaru live");
+    await expect(cameraButton(page)).toHaveAccessibleDescription(/Live$/);
     // The live badge and the delay, and no time controls.
     const controls = page.getByRole("region", { name: "Video controls" });
     await expect(page.getByTestId("time-mode")).toHaveText("Live");
@@ -378,7 +381,7 @@ test.describe("YouTube StarCam", () => {
       .getByRole("region", { name: "Video controls" })
       .getByRole("button", { name: "Watch the recorded ISS pass" })
       .click();
-    await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+    await expectCamera(page, "ISS pass (recorded)");
     await expect(page).toHaveURL(new RegExp(`[?&]cam=${CLIP_ID}(&|$)`));
   });
 
@@ -417,7 +420,8 @@ test.describe("YouTube StarCam", () => {
       ).toHaveAttribute("href", "https://www.youtube.com/watch?v=Fixture0001");
       await expect(playerIframes(page)).toHaveCount(0);
       await expect(page.getByTestId("sky-stage").getByTestId("sky-map")).toHaveCount(1);
-      await expect(cameraRadio(page, "Subaru live")).toHaveAccessibleDescription(/Offline$/);
+      await expectCamera(page, "Subaru live");
+      await expect(cameraButton(page)).toHaveAccessibleDescription(/Offline$/);
       await expect(page.getByTestId("time-mode")).toHaveText("Not live");
       if (code !== 153) return;
       await videoPanel(page).getByRole("button", { name: "Watch the recorded ISS pass" }).click();
@@ -481,9 +485,10 @@ test.describe("YouTube StarCam", () => {
       const plays = await playCalls(page);
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
       await expect(page.getByTestId("sky-stage")).not.toBeInViewport({ ratio: 0.5 });
-      // A click() on the radio itself: a pointer click would scroll the header (and the stage) back into view.
-      await cameraRadio(page, name).evaluate((el) => (el as HTMLInputElement).click());
-      await expect(cameraRadio(page, name)).toBeChecked();
+      // [Polish] A click() on the menu's row itself: opening the menu by pointer would scroll the header (and the
+      // stage) back into view.
+      await cameraOption(page, name, true).evaluate((el) => (el as HTMLElement).click());
+      await expectCamera(page, name);
       await expect
         .poll(() => page.evaluate(() => window.__ytStub?.players.length ?? 0))
         .toBe(created + 1);
@@ -529,13 +534,13 @@ test.describe("YouTube StarCam", () => {
   test("16. the CFHT StarCam: its own resolver, credit and site", async ({ page }) => {
     await openAt(page, "./?cam=cfht-starcam");
     await waitForStatus(page, "playing");
-    await expect(cameraRadio(page, "CFHT live")).toBeChecked();
+    await expectCamera(page, "CFHT live");
     await expect(creditsList(page)).toContainText(
       "CFHT & Asahi Shimbun in collaboration with Subaru Telescope, NAOJ",
     );
     await expect(
       page.getByRole("application", {
-        name: "Ground map around the camera site: CFHT-Asahi StarCam (west, live)",
+        name: "Ground map around the CFHT camera",
       }),
     ).toBeVisible();
   });
