@@ -1,9 +1,9 @@
 // src/map/sky/layers/satellites.ts — satellites and trails on the sky view (M3 steps 13.2, 13.3, 13.5, 13.9), and a
 // still image's exposure arcs (M4 step 16). Canvas VectorLayers, one MultiPoint per group and class, written in place
 // each frame (writeClassPoints). The ISS, the selected and the hovered objects are left out of the classes:
-// selection.ts draws them with labels. Marker looks are visual design (M9 step 12): light marks on the dark night sky
-// and on night video, each with a dark outline so it also reads on a bright frame. Lit and shadowed differ in shape
-// (filled circle, dim square), not only in colour (README Accessibility rule 3).
+// selection.ts draws them with labels. [Redesign] Colour-coded (src/map/kindColors.ts): satellites cyan, Starlink
+// violet, each with a dark rim so it also reads on a bright frame. Lit and shadowed differ in shape (filled circle,
+// dark square with a coloured edge), not only in colour (README Accessibility rule 3).
 import Feature from "ol/Feature";
 import MultiLineString from "ol/geom/MultiLineString";
 import MultiPoint from "ol/geom/MultiPoint";
@@ -21,6 +21,7 @@ import { SAMPLE_STRIDE, SampleField } from "../../../domain/orbits";
 import type { ExposureArc, SatCatalog, SatFrame } from "../../../state/ephemeris";
 import { SKY_PATH_STEP_MS, type SkyPathOut } from "../../../workers/protocol";
 import { writeClassPoints } from "../../classPoints";
+import { INK, KIND_COLOR, KIND_SHADOW_FILL } from "../../kindColors";
 
 /** Trails cover the last 30 s of sim time (step 13.3). */
 export const TRAIL_MS = 30_000;
@@ -33,28 +34,26 @@ const FLAG_SUNLIT = 2;
 /** GP_GROUPS indices. */
 const STARLINK_GROUP = 2;
 
-// ---- Class styles (M9 step 12) ----
-/** The dark outline and casing: the theme's sky colour. */
-const INK = "#04060b";
+// ---- Class styles ([Redesign] colour-coded, kindColors.ts) ----
 /** A sunlit satellite's fill. */
-const LIT_FILL = "#f2f5f9";
-/** A shadowed satellite: a dim fill inside a light edge, so it still reads on the night sky. */
-const SHADOW_FILL = "#3e4a5c";
-const SHADOW_STROKE = "#b4bfce";
+const LIT_FILL = KIND_COLOR.satellite;
+/** A shadowed satellite: a dark fill inside its kind's edge, so it reads on a night sky and a bright one. */
+const SHADOW_FILL = KIND_SHADOW_FILL.satellite;
+const SHADOW_STROKE = KIND_COLOR.satellite;
 
-/** A sunlit satellite: a filled circle. */
-export function litImage(radiusPx: number, fill = LIT_FILL): CircleStyle {
+/** A sunlit satellite: a filled circle with a dark rim. */
+export function litImage(radiusPx: number, fill: string = LIT_FILL): CircleStyle {
   return new CircleStyle({
     radius: radiusPx,
     fill: new Fill({ color: fill }),
-    stroke: new Stroke({ color: INK, width: 1 }),
+    stroke: new Stroke({ color: INK, width: radiusPx >= 3 ? 1.5 : 1 }),
   });
 }
 /** A satellite in Earth's shadow: a square (a different shape, not only a different colour). */
 export function shadowedImage(
   radiusPx: number,
-  fill = SHADOW_FILL,
-  stroke = SHADOW_STROKE,
+  fill: string = SHADOW_FILL,
+  stroke: string = SHADOW_STROKE,
 ): RegularShape {
   return new RegularShape({
     points: 4,
@@ -124,24 +123,26 @@ function createClass(source: VectorSource, style: Style): SatClass {
   return { source, feature, style, flat: [] };
 }
 
-const TRAIL_STYLE = new Style({
-  stroke: new Stroke({ color: "rgba(205, 216, 232, 0.5)", width: 1.5 }),
-});
+/** [Redesign] A cyan trail on a faint dark casing, so it reads on a bright sky too. */
+const TRAIL_STYLE = [
+  new Style({ stroke: new Stroke({ color: "rgba(13, 20, 51, 0.45)", width: 3.5 }) }),
+  new Style({ stroke: new Stroke({ color: "rgba(79, 209, 255, 0.7)", width: 1.5 }) }),
+];
 
-/** A light line on a dark casing, so it reads on a night image and on a bright one alike. */
-function arcStyle(widthPx: number): Style[] {
+/** A coloured line on a dark casing, so it reads on a night image and on a bright one alike. */
+function arcStyle(widthPx: number, color: string): Style[] {
   return [
     new Style({ stroke: new Stroke({ color: INK, width: widthPx + 2 }) }),
-    new Style({ stroke: new Stroke({ color: LIT_FILL, width: widthPx }) }),
+    new Style({ stroke: new Stroke({ color, width: widthPx }) }),
   ];
 }
 
 /** Arcs are sunlit segments only, so each group has one arc style: its lit class, as a line. */
-function createArcLine(source: VectorSource, widthPx: number): SkyArcLine {
+function createArcLine(source: VectorSource, widthPx: number, color: string): SkyArcLine {
   // Empty: LineWriter rewrites its flat coordinates and ends in place. Added to the source only while non-empty.
   const line = new MultiLineString([], "XY", []);
   const feature = new Feature(line);
-  feature.setStyle(arcStyle(widthPx));
+  feature.setStyle(arcStyle(widthPx, color));
   return { source, feature, line, writer: new LineWriter(line) };
 }
 
@@ -154,8 +155,13 @@ export function createSkySatellites(capacity = 256): SkySatellites {
     createClass(satellitesSource, new Style({ image: shadowedImage(3.5) })),
     createClass(satellitesSource, new Style({ image: litImage(3) })),
     createClass(satellitesSource, new Style({ image: shadowedImage(3) })),
-    createClass(starlinkSource, new Style({ image: litImage(2) })),
-    createClass(starlinkSource, new Style({ image: shadowedImage(2) })),
+    createClass(starlinkSource, new Style({ image: litImage(2, KIND_COLOR.starlink) })),
+    createClass(
+      starlinkSource,
+      new Style({
+        image: shadowedImage(2, KIND_SHADOW_FILL.starlink, KIND_COLOR.starlink),
+      }),
+    ),
   ];
   // Empty: LineWriter rewrites its flat coordinates and ends in place.
   const trails = new MultiLineString([], "XY", []);
@@ -170,9 +176,9 @@ export function createSkySatellites(capacity = 256): SkySatellites {
     classes,
     trails,
     arcs: [
-      createArcLine(satellitesSource, 2),
-      createArcLine(satellitesSource, 1.5),
-      createArcLine(starlinkSource, 1),
+      createArcLine(satellitesSource, 2, KIND_COLOR.satellite),
+      createArcLine(satellitesSource, 1.5, KIND_COLOR.satellite),
+      createArcLine(starlinkSource, 1, KIND_COLOR.starlink),
     ],
     arcsShown: false,
     arcDrawn: null,

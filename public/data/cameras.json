@@ -16,7 +16,7 @@
     "termsNote": "GNU Free Documentation License 1.3 or later"
   },
   {
-    "id": "subaru-starcam", "name": "Subaru-Asahi StarCam (east, live)", "kind": "youtube",
+    "id": "subaru-starcam", "name": "Subaru-Asahi StarCam (east, live)", "shortName": "Subaru live", "siteName": "Subaru Telescope camera", "placeName": "Maunakea, Hawaii", "kind": "youtube",
     "source": { "youtubeVideoId": "Kj5DjRYkzD8", "resolverUrl": "https://astroasahi.github.io/maunakea_east/" },
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
@@ -25,7 +25,7 @@
     "termsNote": "Non-commercial use only"
   },
   {
-    "id": "cfht-starcam", "name": "CFHT-Asahi StarCam (west, live)", "kind": "youtube",
+    "id": "cfht-starcam", "name": "CFHT-Asahi StarCam (west, live)", "shortName": "CFHT live", "siteName": "CFHT camera", "placeName": "Maunakea, Hawaii", "kind": "youtube",
     "source": { "youtubeVideoId": "Q3UhCgsWDw8", "resolverUrl": "https://astroasahi.github.io/maunakea_west/" },
     "site": { "latDeg": 19.8253, "lonDeg": -155.4689, "heightM": 4204, "mastM": 33, "geoidSepM": 24.23, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",
@@ -43,7 +43,7 @@
     "termsNote": "Played from this device only; never uploaded"
   },
   {
-    "id": "subaru-2026-10-11-iss", "name": "Subaru StarCam: ISS pass, 2026-10-11 (recorded)", "kind": "local-video",
+    "id": "subaru-2026-10-11-iss", "name": "Subaru StarCam: ISS pass, 2026-10-11 (recorded)", "shortName": "ISS pass (recorded)", "siteName": "Subaru Telescope camera", "placeName": "Maunakea, Hawaii", "kind": "local-video",
     "source": { "sidecarUrl": "recordings/subaru-2026-10-11-iss.json", "sourceCameraId": "subaru-starcam", "videoUrl": null, "startUtcMs": null },
     "site": { "latDeg": 19.82552, "lonDeg": -155.47587, "heightM": 4148, "mastM": 13, "geoidSepM": 24.32, "timeZone": "Pacific/Honolulu" },
     "imageSize": { "widthPx": 3840, "heightPx": 2160 }, "lens": "rectilinear",

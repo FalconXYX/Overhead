@@ -32,6 +32,12 @@ export interface CameraSite {
 interface CameraBase {
   id: string;
   name: string;
+  /** [Redesign] The camera switcher's plain name ("Subaru live", "ISS pass (recorded)"); else `name`. */
+  shortName?: string;
+  /** [Redesign] The ground map's site label in plain words ("Subaru Telescope camera"); else `name`. */
+  siteName?: string;
+  /** [Polish] The switcher's place line ("Maunakea, Hawaii"); else the site's time zone as a place (placeOfZone). */
+  placeName?: string;
   site: CameraSite;
   imageSize: { widthPx: number; heightPx: number };
   lens: LensModel;
@@ -107,6 +113,7 @@ export interface LayersState {
   satellites: boolean; // stations + visual
   starlink: boolean; // also triggers the lazy load of gp/starlink.json
   trails: boolean;
+  tracks: boolean; // [Redesign] "Satellite paths" on the ground map
   grid: boolean;
   horizon: boolean; // terrain skyline and behind-terrain dimming
   footprintHeightKm: number | null; // null: selected satellite's current height (420 when none)
@@ -172,8 +179,11 @@ export interface UiState {
   panel: "calibration" | "layers" | null;
   demo: { active: boolean; step: number; paused: boolean };
 }
-/** [M9] DEMO_STEPS.length (src/app/demo.ts, lazy-loaded): setDemoStep clamps to [0, DEMO_STEP_COUNT − 1]. */
-export const DEMO_STEP_COUNT = 10;
+/**
+ * [M9] DEMO_STEPS.length (src/app/demo.ts, lazy-loaded): setDemoStep clamps to [0, DEMO_STEP_COUNT − 1]. [Redesign]
+ * Five steps: the recorded ISS pass, then live.
+ */
+export const DEMO_STEP_COUNT = 5;
 
 export interface StateData {
   clock: ClockState;

@@ -61,7 +61,7 @@ describe("committed fixture tree", () => {
     const plans = terrainFixturePlans();
     expect(plans.map((p) => [p.site, p.keys.length])).toEqual([
       ["walenstadt", 45],
-      ["maunakea", 10],
+      ["maunakea", 46], // [Redesign] the Subaru and CFHT StarCams' whole horizons (M6: 10, azimuth 0° only)
     ]);
     for (const { site, keys } of plans) {
       const planned = keys.map(keyString).sort();

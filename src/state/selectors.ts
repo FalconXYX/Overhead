@@ -41,6 +41,35 @@ export const selectStreamDelayMs = (s: AppState): number =>
 export const selectLiveLocked = (s: AppState): boolean =>
   s.clock.mode === "live" && s.camera.registry[s.camera.activeId]?.kind === "youtube";
 
+/**
+ * [Redesign] The active camera is live (a YouTube stream): the control bar shows "● LIVE" and the delay, with no play,
+ * rate, step or scrubber, and offers "Watch the recorded ISS pass".
+ */
+export const selectIsLiveCamera = (s: AppState): boolean =>
+  s.camera.registry[s.camera.activeId]?.kind === "youtube";
+
+/** [Redesign] The active camera is a recorded clip: the video-player control bar, and "Watch live". */
+export const selectIsClipCamera = (s: AppState): boolean =>
+  s.camera.registry[s.camera.activeId]?.kind === "local-video";
+
+/**
+ * [Redesign] The active camera is a recorded clip whose video has not loaded (or never will): its time is not the
+ * clip's yet (the clock still reads the page's opening time), so the incoming chip lists nothing and announces nothing.
+ */
+export const selectClipWaiting = (s: AppState): boolean => {
+  const camera = s.camera.registry[s.camera.activeId];
+  return camera?.kind === "local-video" && camera.source.videoUrl === null;
+};
+
+/**
+ * [Redesign] The active recorded clip cannot be shown: it is not part of this build (camera status "offline"), or its
+ * load or playback failed (video status "error"). The stage then says so in plain words and offers "Watch live" (as
+ * ClipControls does), never a black box.
+ */
+export const selectClipUnavailable = (s: AppState): boolean =>
+  selectIsClipCamera(s) &&
+  (s.camera.status[s.camera.activeId] === "offline" || s.video.status === "error");
+
 /** [M5] The sky map is drawn over a video: youtube and local-video cameras get the light overlay set. */
 export const selectSkyOverVideo = (s: AppState): boolean => {
   const kind = s.camera.registry[s.camera.activeId]?.kind;

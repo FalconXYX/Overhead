@@ -1,6 +1,8 @@
 // tests/perf/incoming.perf.ts — the worker's incoming pass with Starlink (M8 section 5; README section 9). Run by hand
 // with `npm run perf`, never in CI. Budget: computeMs p95 ≤ 20 ms over 60 consecutive replies (acceptance 5; measured
 // 9.6 ms in Chromium 156 on an M2). Re-run tests/perf/propagation.perf.ts on the same branch afterwards (M3's gate).
+// [Redesign] On the live Subaru StarCam's rectilinear frame, played at 1× from 06:00Z through the perf test hook (the
+// computed fisheye is gone, and a live camera has no time controls). A new baseline: M8's figure was the fisheye's.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import { expect, test } from "../e2e/fixtures";
@@ -19,22 +21,29 @@ const latest = (page: Page) =>
     return reply === null ? null : { timeMs: reply.timeMs, computeMs: reply.computeMs };
   });
 
-test("incoming pass with Starlink on synthetic-maunakea, 1× from 06:00Z", async ({
-  page,
-  browser,
-}) => {
+test("incoming pass with Starlink on subaru-starcam, 1× from 06:00Z", async ({ page, browser }) => {
   test.setTimeout(300_000);
-  await page.goto("./?cam=synthetic-maunakea&t=2026-10-11T06:00:00Z");
+  await page.goto("./?cam=subaru-starcam");
   await expect
     .poll(() => page.evaluate(() => (window.__overhead?.readyFrame() ?? null) !== null))
     .toBe(true);
-  await page.getByRole("button", { name: "Layers" }).click();
-  const starlink = page.getByRole("checkbox", { name: "Starlink (about 11,100; loads 4.7 MB)" });
+  await page.getByRole("button", { name: "Layers", exact: true }).click();
+  const starlink = page
+    .getByRole("region", { name: "Layers" })
+    .getByRole("checkbox", { name: "Starlink", exact: true });
+  // The switch reads "Also on the map" as soon as it is on: wait for the group's file too, then its parse.
+  const loaded = page.waitForResponse("**/data/gp/starlink.json", { timeout: 60_000 });
   await starlink.check();
-  await expect(starlink).toHaveAccessibleDescription(/^11,102 objects/, { timeout: 30_000 });
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await expect(timeline.getByRole("radio", { name: "1×" })).toBeChecked();
-  await timeline.getByRole("button", { name: "Play" }).click();
+  await loaded;
+  await expect(starlink).toHaveAccessibleDescription("Also on the map", { timeout: 30_000 });
+  await page.waitForTimeout(1_000); // the worker parses 11,102 elements
+  await page.evaluate(
+    (from) => window.__overhead?.playReplay(1, from),
+    Date.parse("2026-10-11T06:00:00Z"),
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__overhead?.clock() ?? null))
+    .toMatchObject({ mode: "replay", playing: true, rate: 1 });
 
   // One computeMs per new timeMs: the hook keeps only the latest reply, polled faster than the 1 Hz requests.
   const byTime = new Map<number, number>();

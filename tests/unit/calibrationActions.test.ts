@@ -2,9 +2,9 @@
 // the M4 work merges without touching actions.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Calibration } from "../../src/domain/camera";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
-import { committedCameras } from "../helpers/store";
+import { committedCameras, TEST_CAMERA_ID } from "../helpers/store";
 
 const NOW = Date.parse("2026-10-11T08:00:00Z");
 const FIT = { rmsPx: 0.4, rmsDeg: 0.06, maxFitDeg: 0.11, maxHoldoutDeg: 0.2 } as const;
@@ -18,8 +18,8 @@ afterEach(() => {
 });
 
 /** createAppStore with the committed registry (every camera, so cfht-nanaao is there too). */
-function newStore(activeId = DEFAULT_CAMERA_ID): AppStore {
-  const store = createAppStore(initialState(NOW - 3_600_000, DEFAULT_CAMERA_ID));
+function newStore(activeId = TEST_CAMERA_ID): AppStore {
+  const store = createAppStore(initialState(NOW - 3_600_000, TEST_CAMERA_ID));
   store.getState().actions.setRegistry(committedCameras());
   store.getState().actions.setActiveCamera(activeId);
   return store;
@@ -69,7 +69,7 @@ describe("M4 camera actions", () => {
     actions.completePair("star:424");
     actions.addImagePoint(3, 4);
     store.setState((s) => ({ calibrationUi: { ...s.calibrationUi, fit: FIT } }));
-    actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    actions.setActiveCamera(TEST_CAMERA_ID);
     expect(store.getState().calibrationUi).toEqual({ pairs: [], pendingPx: null, fit: null });
     expect(store.getState().camera.frameTimeMs).toBeNull();
   });
@@ -78,10 +78,10 @@ describe("M4 camera actions", () => {
 describe("M4 calibration writes", () => {
   it("updateCalibration on synthetic-maunakea: azDeg 37 folds into roll (azDeg 0, rollDeg 143), stamped now", () => {
     const store = newStore();
-    const defaults = defaultsOf(store, DEFAULT_CAMERA_ID);
+    const defaults = defaultsOf(store, TEST_CAMERA_ID);
     const registryBefore = { ...defaults };
     store.getState().actions.updateCalibration({ azDeg: 37 });
-    const stored = store.getState().camera.calibration[DEFAULT_CAMERA_ID];
+    const stored = store.getState().camera.calibration[TEST_CAMERA_ID];
     expect(stored?.azDeg).toBe(0);
     expect(stored?.altDeg).toBe(90);
     expect(stored?.rollDeg).toBeCloseTo(143, 12); // wrap180(180 − 37)
@@ -169,14 +169,14 @@ describe("M4 calibration writes", () => {
     }
     actions.setPairRole(2, "holdout");
     const fitted = {
-      ...defaultsOf(store, DEFAULT_CAMERA_ID),
+      ...defaultsOf(store, TEST_CAMERA_ID),
       azDeg: 20,
       rollDeg: 175,
       rmsDeg: 0.06,
     };
     actions.applyFit(fitted, [0.3, 4.2, 0.5], [false, true, false], FIT);
     const s = store.getState();
-    const stored = s.camera.calibration[DEFAULT_CAMERA_ID];
+    const stored = s.camera.calibration[TEST_CAMERA_ID];
     expect(stored?.azDeg).toBe(0);
     expect(stored?.rollDeg).toBeCloseTo(155, 9);
     expect(stored?.rmsDeg).toBe(0.06);
@@ -197,7 +197,7 @@ describe("M4 calibration writes", () => {
     actions.addImagePoint(1, 1);
     actions.completePair("star:424");
     const before = store.getState();
-    const bad = { ...defaultsOf(store, DEFAULT_CAMERA_ID), k1: -0.5 };
+    const bad = { ...defaultsOf(store, TEST_CAMERA_ID), k1: -0.5 };
     actions.applyFit(bad, [0.3], [false], FIT);
     expect(store.getState()).toBe(before);
   });

@@ -11,9 +11,9 @@ import {
   bindBackground,
   type StartStillImageRefresh,
 } from "../../src/map/sync/bindBackground";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
-import { committedCameras } from "../helpers/store";
+import { committedCameras, TEST_CAMERA_ID } from "../helpers/store";
 
 const NIGHT = Date.parse("2026-10-11T08:00:00Z"); // 22:00 HST
 const NOON = Date.parse("2026-10-11T22:00:00Z"); // 12:00 HST
@@ -32,8 +32,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(activeId = DEFAULT_CAMERA_ID) {
-  const store: AppStore = createAppStore(initialState(NIGHT, DEFAULT_CAMERA_ID));
+function setup(activeId = TEST_CAMERA_ID) {
+  const store: AppStore = createAppStore(initialState(NIGHT, TEST_CAMERA_ID));
   store.getState().actions.setRegistry(committedCameras()); // cfht-nanaao is committed but not yet enabled
   store.getState().actions.setActiveCamera(activeId);
   const layer = new ImageLayer<ImageSource>();
@@ -149,10 +149,10 @@ describe("bindBackground", () => {
       new ImageStatic({ url: "https://example.invalid/x.png", imageExtent: [0, 0, 1, 1] }),
     );
     run.options.onLoad(NIGHT, 640, 480);
-    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
     expect(running()).toHaveLength(0);
     expect(layer.getSource()).toBeNull();
-    expect(backgroundImageSize).toEqual({ cameraId: DEFAULT_CAMERA_ID, widthPx: 0, heightPx: 0 });
+    expect(backgroundImageSize).toEqual({ cameraId: TEST_CAMERA_ID, widthPx: 0, heightPx: 0 });
     run.options.onLoad(NIGHT + 60_000, 1232, 1232);
     run.options.onError();
     expect(store.getState().camera.frameTimeMs).toBeNull();
@@ -172,7 +172,7 @@ describe("bindBackground", () => {
     const { store, runs, running, unbind } = setup("cfht-nanaao");
     unbind();
     expect(running()).toHaveLength(0);
-    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
     store.getState().actions.setActiveCamera("cfht-nanaao");
     expect(runs).toHaveLength(1);
   });

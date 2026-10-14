@@ -1,8 +1,9 @@
 // src/map/sky/layers/selection.ts — labelled markers for the ISS, the hovered and the selected object, and the selected
 // satellite's dotted next 2 minutes (M3 steps 13.4, 13.6). The marker slots are shared with the ground map's markers
 // layer. Satellites keep their lit/shadowed shape; selected and hovered differ by their ring (solid or dashed), not
-// by colour. Looks are visual design (M9 step 12): the ISS and the selection in the one accent, amber; hover in the
-// light text colour; every label on a dark halo.
+// by colour. [Redesign] Colour-coded (kindColors.ts): each satellite keeps its kind's colour (the ISS orange, Starlink
+// violet, others cyan); the selection is an orange ring on a dark casing, hover a light dashed ring; every label on a
+// dark halo.
 import Feature from "ol/Feature";
 import MultiLineString from "ol/geom/MultiLineString";
 import Point from "ol/geom/Point";
@@ -18,7 +19,18 @@ import { type CameraModel, projectAzAltDeg, toSkyMapCoord } from "../../../domai
 import type { SatCatalog, SatFrame } from "../../../state/ephemeris";
 import type { SkyCache } from "../../../state/skyCache";
 import type { ObjectId } from "../../../state/types";
+import { friendlySatellite } from "../../../ui/friendly";
 import type { SkyPathOut } from "../../../workers/protocol";
+import {
+  HALO,
+  INK,
+  KIND_COLOR,
+  KIND_SHADOW_FILL,
+  LABEL_LIGHT,
+  type SatelliteKind,
+  SELECTION_COLOR,
+  satelliteKind,
+} from "../../kindColors";
 import { bodyLabel } from "./bodies";
 import {
   appendPathPoints,
@@ -52,68 +64,88 @@ export interface MarkerLayer {
   readonly iss: MarkerSlot;
 }
 
-/** The theme's accent (theme.css --c-accent and --c-accent-strong), the light text colour and the dark halo. */
-const ACCENT = "#f5a623";
-const ACCENT_TEXT = "#ffb547";
-const LIGHT = "#e6ebf2";
-const HALO = "rgba(4, 6, 11, 0.92)";
 const MARKER_RADIUS_PX = 4.5;
-const LABEL_FONT = "12px system-ui, -apple-system, 'Segoe UI', sans-serif";
-const LABEL_FONT_BOLD = `600 ${LABEL_FONT}`;
-const LABEL_HALO = new Stroke({ color: HALO, width: 3 });
+const LABEL_FONT = "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+const LABEL_FONT_BOLD = `700 13px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+const LABEL_HALO = new Stroke({ color: HALO, width: 3.5 });
+/** The ISS's label in its colour, lightened for text on the halo; the others in the light text colour. */
 const LABEL_FILLS: Readonly<Record<MarkerRole, Fill>> = {
-  selected: new Fill({ color: ACCENT_TEXT }),
-  iss: new Fill({ color: ACCENT_TEXT }),
-  hover: new Fill({ color: LIGHT }),
+  selected: new Fill({ color: LABEL_LIGHT }),
+  iss: new Fill({ color: "#ffad75" }),
+  hover: new Fill({ color: LABEL_LIGHT }),
 };
 
-const RINGS: Readonly<Record<MarkerRole, Style | null>> = {
-  selected: new Style({
-    image: new CircleStyle({ radius: 10, stroke: new Stroke({ color: ACCENT, width: 2 }) }),
-  }),
-  hover: new Style({
-    image: new CircleStyle({
-      radius: 9,
-      stroke: new Stroke({ color: LIGHT, width: 1.5, lineDash: [3, 3] }),
+const RINGS: Readonly<Record<MarkerRole, Style[] | null>> = {
+  // An orange ring on a dark casing, so the selection reads on a bright frame too.
+  selected: [
+    new Style({
+      image: new CircleStyle({ radius: 11, stroke: new Stroke({ color: INK, width: 5 }) }),
     }),
-  }),
+    new Style({
+      image: new CircleStyle({
+        radius: 11,
+        stroke: new Stroke({ color: SELECTION_COLOR, width: 2.5 }),
+      }),
+    }),
+  ],
+  hover: [
+    new Style({
+      image: new CircleStyle({
+        radius: 9,
+        stroke: new Stroke({ color: LABEL_LIGHT, width: 1.5, lineDash: [3, 3] }),
+      }),
+    }),
+  ],
   iss: null,
 };
 
-/** The ISS keeps its lit or shadowed shape, in the accent. */
-const ISS_SHADOW_FILL = "#4a3612";
-
 const styleCache = new Map<string, Style[]>();
 
+/** [Redesign] Plain short labels ("ISS", "Rocket stage", "Cosmos 1536"), cached per catalogue name. */
+const labelCache = new Map<string, string>();
+
+/** A satellite's marker label: its friendly short name (src/ui/friendly.ts), never a raw catalogue name. */
+export function satelliteLabel(catalogName: string): string {
+  let label = labelCache.get(catalogName);
+  if (label === undefined) {
+    label = catalogName === "" ? "" : friendlySatellite(catalogName).shortName;
+    labelCache.set(catalogName, label);
+  }
+  return label;
+}
+
 /**
- * [ring (selected solid, hovered dashed), shape + label]. The label sits above the marker; the selected one is bold.
- * Cached per role, shape and label.
+ * [rings (selected solid on a casing, hovered dashed), shape + label]. The shape takes the satellite's kind colour (the
+ * ISS slot is always the ISS); the label sits above the marker, and the selected one is bold. Cached per role, shape,
+ * kind and label.
  */
-export function markerStyle(role: MarkerRole, shape: MarkerShape, label: string): Style[] {
-  const key = `${role}|${shape}|${label}`;
+export function markerStyle(
+  role: MarkerRole,
+  shape: MarkerShape,
+  label: string,
+  kind: SatelliteKind = role === "iss" ? "iss" : "satellite",
+): Style[] {
+  const key = `${role}|${shape}|${kind}|${label}`;
   const cached = styleCache.get(key);
   if (cached !== undefined) return cached;
-  const iss = role === "iss";
   const image =
     shape === "lit"
-      ? litImage(MARKER_RADIUS_PX, iss ? ACCENT : undefined)
+      ? litImage(MARKER_RADIUS_PX, KIND_COLOR[kind])
       : shape === "shadowed"
-        ? iss
-          ? shadowedImage(MARKER_RADIUS_PX, ISS_SHADOW_FILL, ACCENT)
-          : shadowedImage(MARKER_RADIUS_PX)
+        ? shadowedImage(MARKER_RADIUS_PX, KIND_SHADOW_FILL[kind], KIND_COLOR[kind])
         : undefined;
   const main = new Style({
     image,
     text: new Text({
       text: label,
       font: role === "selected" ? LABEL_FONT_BOLD : LABEL_FONT,
-      offsetY: -17,
+      offsetY: -18,
       fill: LABEL_FILLS[role],
       stroke: LABEL_HALO,
     }),
   });
-  const ring = RINGS[role];
-  const styles = ring === null ? [main] : [ring, main];
+  const rings = RINGS[role];
+  const styles = rings === null ? [main] : [...rings, main];
   styleCache.set(key, styles);
   return styles;
 }
@@ -132,6 +164,7 @@ export function placeMarker(
   y: number,
   shape: MarkerShape,
   label: string,
+  kind?: SatelliteKind,
 ): boolean {
   let changed = false;
   const c = slot.point.getFlatCoordinates();
@@ -141,11 +174,11 @@ export function placeMarker(
     slot.point.changed();
     changed = true;
   }
-  const key = `${shape}|${label}`;
+  const key = `${shape}|${kind ?? ""}|${label}`;
   if (!slot.visible || slot.key !== key) {
     slot.visible = true;
     slot.key = key;
-    slot.style = markerStyle(slot.role, shape, label);
+    slot.style = markerStyle(slot.role, shape, label, kind);
     slot.feature.changed(); // re-evaluates the style function
     changed = true;
   }
@@ -162,7 +195,10 @@ export function hideMarker(slot: MarkerSlot): boolean {
 
 const NEXT_PATH_STYLES = [
   new Style({
-    stroke: new Stroke({ color: ACCENT, width: 2, lineDash: [1, 5], lineCap: "round" }),
+    stroke: new Stroke({ color: HALO, width: 4.5, lineDash: [1, 5], lineCap: "round" }),
+  }),
+  new Style({
+    stroke: new Stroke({ color: SELECTION_COLOR, width: 2.5, lineDash: [1, 5], lineCap: "round" }),
   }),
 ];
 
@@ -258,7 +294,9 @@ function placeSkySatellite(
   const lit = ((frame.flags[index] ?? 0) & FLAG_SUNLIT) !== 0;
   const x = sats.xy[2 * index] ?? 0;
   const y = sats.xy[2 * index + 1] ?? 0;
-  return placeMarker(slot, x, y, lit ? "lit" : "shadowed", catalog.names[index] ?? "");
+  const kind = satelliteKind(catalog.noradIds[index], catalog.groupIndex[index]);
+  const label = satelliteLabel(catalog.names[index] ?? "");
+  return placeMarker(slot, x, y, lit ? "lit" : "shadowed", label, kind);
 }
 
 /** Places `slot` on object `id` in the sky, or hides it when the object is not drawn there. */

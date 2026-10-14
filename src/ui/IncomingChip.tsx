@@ -1,11 +1,12 @@
-// src/ui/IncomingChip.tsx — satellites that enter the camera frame within 60 s (M8 step 9.2). A page element mounted by
-// App.tsx at all times, outside the sky stage (O1: it never covers the player's controls). Re-renders only through
-// useTick4Hz and reads ephemeris.incoming, the catalogue and store.getState() during render (React rule 5). Its
-// placement and look are visual design, settled from screenshots; nothing animates.
+// src/ui/IncomingChip.tsx — satellites that enter the camera frame within 60 s (M8 step 9.2), in plain words: "ISS
+// appears in 35 s" (redesign spec section 2). A page element mounted by the shell at all times, outside the sky stage
+// (O1: it never covers the player's controls). Two entries can share a name (gotcha 14): each button carries its
+// object id in data-object-id, and the list is keyed by NORAD id. Re-renders only through useTick4Hz and reads
+// ephemeris.incoming, the catalogue and store.getState() during render (React rule 5). Nothing animates.
 import { type CSSProperties, useState } from "react";
 import { ephemeris } from "../state/ephemeris";
 import { useActions, useAppState, useTick4Hz } from "../state/hooks";
-import { selectIncomingActive, selectIncomingMask } from "../state/selectors";
+import { selectClipWaiting, selectIncomingActive, selectIncomingMask } from "../state/selectors";
 import { store } from "../state/store";
 import type { ObjectId } from "../state/types";
 import {
@@ -73,6 +74,7 @@ export function IncomingChipView({
                   type="button"
                   aria-label={incomingButtonName(row)}
                   aria-pressed={selectedId === id}
+                  data-object-id={id}
                   onClick={() => onSelect(id)}
                 >
                   {incomingButtonText(row)}
@@ -100,8 +102,10 @@ export function IncomingChip() {
   // too, not only by the incoming client, so the chip changes in the same render as the toggle or the rate.
   const mask = selectIncomingMask(state);
   const paused = mask !== 0 && !selectIncomingActive(state);
+  // [Redesign] Before the recorded clip has loaded, the clock still reads the page's opening time: nothing the camera
+  // will show, so nothing to list or announce.
   const rows =
-    mask === 0 || paused
+    mask === 0 || paused || selectClipWaiting(state)
       ? []
       : incomingRows(ephemeris.incoming, ephemeris.catalog, state.clock.simTimeMs);
   // The live region changes only for a new first NORAD id: state adjusted during render (React's pattern for

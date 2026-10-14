@@ -183,11 +183,11 @@ describe("writeGroundMarkers", () => {
       targets({ selectedId: "sat:33333", selectedIndex: 6, hoverId: "sat:44444", hoverIndex: 7 }),
       true,
     );
-    expect(labelOf(g, "iss")).toBe("ISS (ZARYA)");
+    expect(labelOf(g, "iss")).toBe("ISS"); // [Redesign] the friendly short name
     expect(g.markers.iss.point.getCoordinates()).toEqual([-17e6, 2.2e6]);
-    expect(labelOf(g, "selected")).toBe("SELECTED");
+    expect(labelOf(g, "selected")).toBe("Selected"); // [Redesign] friendly: title case
     expect(g.markers.selected.point.getCoordinates()).toEqual([9e6, 1e6]);
-    expect(labelOf(g, "hover")).toBe("HOVERED");
+    expect(labelOf(g, "hover")).toBe("Hovered");
     expect(g.drawnSelectedId).toBe("sat:33333");
   });
 
@@ -213,7 +213,7 @@ describe("writeGroundMarkers", () => {
       targets({ selectedId: "sat:36086", selectedIndex: 0 }),
       true,
     );
-    expect(labelOf(g, "selected")).toBe("ISS (ZARYA)");
+    expect(labelOf(g, "selected")).toBe("ISS"); // [Redesign] the friendly short name
     expect(g.markers.iss.visible).toBe(false);
     expect(g.drawnSelectedId).toBe("sat:36086");
   });

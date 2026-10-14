@@ -1,5 +1,6 @@
-// CameraPicker (M4 step 13): every enabled camera in cameras.json order, a native radio group, status as text plus
-// a shape. Rendered with renderToStaticMarkup (no DOM in unit tests).
+// CameraPicker (M4 step 13): every enabled camera, a native radio group, status as text plus a shape. [Redesign] The
+// header's segmented control: short plain names, a status dot, words in the description, and "Watch live" while the
+// recorded clip is on. Rendered with renderToStaticMarkup (no DOM in unit tests).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -49,23 +50,26 @@ function radios(
   });
 }
 
-/** The text of the element with the given id (one level of nesting is enough here). */
+/** The text of the element with the given id (its nested spans' text, tags dropped). */
 function textOfId(html: string, id: string): string {
   const start = html.indexOf(`id="${id}"`);
   const open = html.indexOf(">", start) + 1;
-  const close = html.indexOf("</span></p>", open);
+  const close = html.indexOf("</label>", open);
   return html
     .slice(open, close)
-    .replace(/<span aria-hidden="true">[^<]*<\/span>/g, "")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-describe("CameraPickerView", () => {
-  it("is a fieldset with a legend and one radio per camera, in order, sharing one name", () => {
+/** The visible short names, in order. */
+const names = (html: string): string[] =>
+  [...html.matchAll(/<span class="cam-seg-name">([^<]*)<\/span>/g)].map((m) => m[1] ?? "");
+
+describe("CameraPickerView ([Redesign] the header's segmented control)", () => {
+  it("is a fieldset with a hidden legend and one radio per camera, in order, sharing one name", () => {
     const html = render();
-    expect(html.startsWith("<fieldset><legend>Camera</legend>")).toBe(true);
+    expect(html).toContain('<fieldset><legend class="visually-hidden">Camera</legend>');
     const all = radios(html);
     expect(all.map((r) => r.value)).toEqual([
       "synthetic-maunakea",
@@ -86,31 +90,74 @@ describe("CameraPickerView", () => {
     ).toEqual(["cfht-nanaao"]);
   });
 
-  it("labels each radio with the camera name and describes its kind and status in words", () => {
+  it("names each camera by its short plain name, and describes it by its full name and status in words", () => {
     const html = render();
-    expect(html).toContain(">CFHT Nānā ao all-sky (visible)</label>");
+    expect(names(html)).toEqual([
+      "Computed sky, Maunakea",
+      "CFHT Nānā ao all-sky (visible)",
+      "Subaru live",
+      "CFHT live",
+    ]);
     expect(radios(html).map((r) => textOfId(html, r.describedBy))).toEqual([
-      "Computed sky, Live",
-      "Still image, Offline",
-      "Live video, Not checked",
-      "Live video, Daytime",
+      "Computed sky, Maunakea, Live",
+      "CFHT Nānā ao all-sky (visible), Offline offline",
+      "Subaru-Asahi StarCam (east, live), Not checked",
+      "CFHT-Asahi StarCam (west, live), Daytime daytime",
     ]);
   });
 
-  it("pairs every status with a shape hidden from assistive technology", () => {
+  it("[Redesign] keeps the description out of the radio's name: the described span is aria-hidden, still referenced", () => {
     const html = render();
-    const shapes = [...html.matchAll(/<span aria-hidden="true">([^<]+)<\/span>/g)].map((m) => m[1]);
-    expect(shapes).toEqual(["●", "✕", "?", "☀"]);
+    const spans = [
+      ...html.matchAll(/<span id="([^"]+)" class="visually-hidden" aria-hidden="true">/g),
+    ];
+    expect(spans.map((m) => m[1])).toEqual(radios(html).map((r) => r.describedBy));
+  });
+
+  it("shows a status dot for every camera, and a word only for offline and daytime", () => {
+    const html = render();
+    expect(html.match(/<span aria-hidden="true" class="cam-seg-dot"><\/span>/g)).toHaveLength(4);
+    expect([...html.matchAll(/data-status="([^"]+)"/g)].map((m) => m[1])).toEqual([
+      "live",
+      "offline",
+      "unknown",
+      "daytime",
+    ]);
+    const words = [...html.matchAll(/<span aria-hidden="true">([^<]+)<\/span>/g)].map((m) => m[1]);
+    expect(words).toEqual(["offline", "daytime"]);
+  });
+
+  it("names the recorded clip 'ISS pass (recorded)' and offers Watch live while it is on", () => {
+    const clip = get("subaru-2026-10-11-iss");
+    const live = get("subaru-starcam");
+    const onWatchLive = vi.fn();
+    const html = render({
+      entries: [
+        { camera: clip, status: "unknown" },
+        { camera: live, status: "live" },
+      ],
+      activeId: clip.id,
+      onWatchLive,
+    });
+    expect(names(html)).toEqual(["ISS pass (recorded)", "Subaru live"]);
+    expect(html).toContain('data-status="recorded"');
+    expect(html).toMatch(
+      /<button type="button" class="btn-primary watch-live">.*Watch live<\/button>/,
+    );
+    // On a live camera: no Watch live button.
+    expect(
+      render({ entries: [{ camera: live, status: "live" }], activeId: live.id }),
+    ).not.toContain("Watch live");
   });
 
   it("says when the camera list is loading or failed", () => {
     expect(render({ entries: [], cameras: "loading" })).toContain(
-      '<div role="status">Loading cameras</div>',
+      '<div role="status" class="cam-switch-status">Loading cameras</div>',
     );
     expect(render({ entries: [], cameras: "error" })).toContain(
-      '<div role="status">The camera list failed to load</div>',
+      '<div role="status" class="cam-switch-status">The camera list failed to load</div>',
     );
-    expect(render()).toContain('<div role="status"></div>');
+    expect(render()).toContain('<div role="status" class="cam-switch-status"></div>');
   });
 });
 
@@ -127,10 +174,11 @@ describe("CameraPicker (store-connected)", () => {
       "synthetic-maunakea": get("synthetic-maunakea"),
       "cfht-nanaao": get("cfht-nanaao"),
     });
+    actions.setActiveCamera("synthetic-maunakea"); // [Redesign] the app store opens on the recorded clip
     actions.setLoadStatus("cameras", "ready");
     const before = renderToStaticMarkup(createElement(CameraPicker));
-    expect(before).toContain('Computed sky, <span aria-hidden="true">●</span> Live');
-    expect(before).toContain('Still image, <span aria-hidden="true">?</span> Not checked');
+    expect(before).toContain("Computed sky, Maunakea, Live");
+    expect(before).toContain("CFHT Nānā ao all-sky (visible), Not checked");
     expect(
       radios(before)
         .filter((r) => r.checked)
@@ -140,7 +188,9 @@ describe("CameraPicker (store-connected)", () => {
     actions.setCameraStatus("cfht-nanaao", "offline");
     actions.setActiveCamera("cfht-nanaao");
     const after = renderToStaticMarkup(createElement(CameraPicker));
-    expect(after).toContain('Still image, <span aria-hidden="true">✕</span> Offline');
+    expect(after).toContain(
+      'CFHT Nānā ao all-sky (visible), Offline</span><span aria-hidden="true">offline',
+    );
     expect(
       radios(after)
         .filter((r) => r.checked)

@@ -950,6 +950,10 @@ function HfovInput({
   );
 }
 
+/**
+ * The panel's content for the active camera. [Redesign] The "Camera alignment (advanced)" drawer (CalibrationDrawer)
+ * is its frame, with the heading and Close; it is open while ui.panel is "calibration".
+ */
 export function CalibrationPanel() {
   const actions = useActions();
   const open = useAppState((s) => s.ui.panel === "calibration");
@@ -958,7 +962,6 @@ export function CalibrationPanel() {
   const ui = useAppState((s) => s.calibrationUi);
   const frameTimeMs = useAppState((s) => s.camera.frameTimeMs);
   const stars = useAppState((s) => s.data.stars);
-  const panelId = useId();
   const kind = camera?.kind;
 
   // Opening the panel on a still-image camera switches to live, so the overlay is at frameTimeMs (M4 step 14).
@@ -970,41 +973,30 @@ export function CalibrationPanel() {
 
   return (
     <div className="calibration">
-      <button
-        type="button"
-        className="disclosure"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => actions.togglePanel("calibration")}
-      >
-        Calibration
-      </button>
-      <section id={panelId} className="panel" aria-label="Calibration" hidden={!open}>
-        {camera === undefined || calibration === undefined ? (
-          <p>Loading cameras.</p>
-        ) : (
-          <CalibrationPanelView
-            key={camera.id}
-            open={open}
-            camera={camera}
-            calibration={calibration}
-            ui={ui}
-            frameTimeMs={frameTimeMs}
-            rows={stars === "ready" ? skyCache.rows : NO_ROWS}
-            stars={stars}
-            imageSizeNotice={
-              backgroundImageSize.cameraId === camera.id
-                ? imageSizeNotice(
-                    backgroundImageSize.widthPx,
-                    backgroundImageSize.heightPx,
-                    camera.imageSize,
-                  )
-                : null
-            }
-            actions={actions}
-          />
-        )}
-      </section>
+      {camera === undefined || calibration === undefined ? (
+        <p>Loading cameras.</p>
+      ) : (
+        <CalibrationPanelView
+          key={camera.id}
+          open={open}
+          camera={camera}
+          calibration={calibration}
+          ui={ui}
+          frameTimeMs={frameTimeMs}
+          rows={stars === "ready" ? skyCache.rows : NO_ROWS}
+          stars={stars}
+          imageSizeNotice={
+            backgroundImageSize.cameraId === camera.id
+              ? imageSizeNotice(
+                  backgroundImageSize.widthPx,
+                  backgroundImageSize.heightPx,
+                  camera.imageSize,
+                )
+              : null
+          }
+          actions={actions}
+        />
+      )}
     </div>
   );
 }

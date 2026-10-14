@@ -7,22 +7,27 @@ import {
   behindTerrain,
   bodyMagnitudeText,
   type CatalogView,
+  directionText,
   dockedText,
   elementAgeText,
   GROUP_LABELS,
+  groupFetchedTitle,
   groupStatusText,
+  heightText,
   horizonStatusText,
   isStale,
   litText,
   missingSatelliteText,
   objectDetails,
+  orbitalSpeedKmS,
   rangeText,
   type SatFrameView,
   type SkyView,
   satelliteGroupsPending,
+  satelliteVisibilityText,
+  speedText,
   starMagnitudeText,
   terrainLines,
-  visibilityText,
 } from "../../src/ui/objectText";
 
 const T = Date.parse("2026-10-11T15:09:50Z");
@@ -39,44 +44,59 @@ describe("field formats", () => {
     expect(altText(-3.26)).toBe("alt −3.3°");
   });
 
-  it("range in whole km, Sunlit or In Earth's shadow", () => {
+  it("range in whole km; lit or in Earth's shadow", () => {
     expect(rangeText(794.522)).toBe("795 km"); // 0.02 km above the rounding edge (M3 section 5)
     expect(rangeText(794.494)).toBe("794 km");
     expect(rangeText(1045.48)).toBe("1,045 km");
-    expect(litText(true)).toBe("Sunlit");
+    expect(litText(true)).toBe("Lit by the Sun");
     expect(litText(false)).toBe("In Earth's shadow");
+    expect(directionText(123.812, 28.872)).toBe("Direction: az 123.8°, alt 28.9°");
+  });
+
+  it("height, and the circular-orbit speed for it to the nearest 100 km/h", () => {
+    expect(heightText(417.6)).toBe("Height above Earth: 418 km");
+    expect(heightText(1203.4)).toBe("Height above Earth: 1,203 km");
+    expect(orbitalSpeedKmS(418)).toBeCloseTo(7.662, 3); // √(398600.4418 / 6789)
+    expect(speedText(418)).toBe("Speed: about 27,600 km/h (7.7 km/s)");
+    expect(speedText(550)).toBe("Speed: about 27,300 km/h (7.6 km/s)");
   });
 
   it("magnitudes: V to 0.01 for stars, 0.1 for bodies, with a true minus", () => {
-    expect(starMagnitudeText(2.02)).toBe("V magnitude 2.02");
-    expect(starMagnitudeText(-1.46)).toBe("V magnitude −1.46");
-    expect(bodyMagnitudeText(-2.47)).toBe("Magnitude −2.5");
-    expect(bodyMagnitudeText(0.46)).toBe("Magnitude 0.5");
+    expect(starMagnitudeText(2.02)).toBe("Brightness: V magnitude 2.02 (lower is brighter)");
+    expect(starMagnitudeText(-1.46)).toBe("Brightness: V magnitude −1.46 (lower is brighter)");
+    expect(bodyMagnitudeText(-2.47)).toBe("Brightness: magnitude −2.5 (lower is brighter)");
+    expect(bodyMagnitudeText(0.46)).toBe("Brightness: magnitude 0.5 (lower is brighter)");
   });
 
   it("group names", () => {
     expect(GROUP_LABELS).toEqual({
       stations: "Space stations",
-      visual: "Brightest (CelesTrak visual)",
+      visual: "Brightest satellites",
       starlink: "Starlink",
     });
   });
 
-  it("element age relative to sim time; stale past 7 days either way", () => {
-    expect(elementAgeText(ISS_EPOCH_MS, T)).toBe("Elements 1.7 days old");
-    expect(elementAgeText(T - 1.3 * DAY_MS, T)).toBe("Elements 1.3 days old");
-    expect(elementAgeText(T - 19.92 * DAY_MS, T)).toBe("Stale elements: 19.9 days old");
-    expect(elementAgeText(T - 7 * DAY_MS, T)).toBe("Elements 7.0 days old"); // |age| > 7 is stale
+  it("element age relative to sim time; old past 7 days either way", () => {
+    expect(elementAgeText(ISS_EPOCH_MS, T)).toBe("Orbit data (elements) 1.7 days old");
+    expect(elementAgeText(T - 1.3 * DAY_MS, T)).toBe("Orbit data (elements) 1.3 days old");
+    expect(elementAgeText(T - 19.92 * DAY_MS, T)).toBe(
+      "Old orbit data (elements), 19.9 days old: the position may be off",
+    );
+    expect(elementAgeText(T - 7 * DAY_MS, T)).toBe("Orbit data (elements) 7.0 days old"); // |age| > 7 is stale
     expect(isStale(T - 7 * DAY_MS, T)).toBe(false);
     expect(isStale(T - 7 * DAY_MS - 1, T)).toBe(true);
     // Sim time before the epoch (a seek back): the same rule on |age|.
-    expect(elementAgeText(T + 0.5 * DAY_MS, T)).toBe("Elements 0.5 days ahead of this time");
-    expect(elementAgeText(T + 8.4 * DAY_MS, T)).toBe("Stale elements: 8.4 days ahead of this time");
+    expect(elementAgeText(T + 0.5 * DAY_MS, T)).toBe(
+      "Orbit data (elements) 0.5 days ahead of this time",
+    );
+    expect(elementAgeText(T + 8.4 * DAY_MS, T)).toBe(
+      "Old orbit data (elements), 8.4 days ahead of this time: the position may be off",
+    );
     expect(isStale(T + 8.4 * DAY_MS, T)).toBe(true);
-    expect(elementAgeText(T + 1_000, T)).toBe("Elements 0.0 days old");
+    expect(elementAgeText(T + 1_000, T)).toBe("Orbit data (elements) 0.0 days old");
   });
 
-  it("visibility: Visible to the eye, else the first failing reason", () => {
+  it("visibility in plain words: horizon, mountains, shadow, bright sky, else lit and visible", () => {
     const live = {
       sunlit: true,
       aboveHorizon: true,
@@ -84,29 +104,33 @@ describe("field formats", () => {
       sunAltDeg: -16.2,
       altDeg: 28.9,
     };
-    expect(visibilityText(live, "stations")).toBe("Visible to the eye");
-    expect(visibilityText({ ...live, visible: false, sunlit: false }, "visual")).toBe(
-      "Not visible: in Earth's shadow",
+    expect(satelliteVisibilityText(live, "stations")).toBe("Lit by the Sun, visible to the eye");
+    expect(satelliteVisibilityText({ ...live, visible: false, sunlit: false }, "visual")).toBe(
+      "In Earth's shadow, not visible",
     );
-    expect(
-      visibilityText({ ...live, visible: false, sunlit: false, aboveHorizon: false }, "visual"),
-    ).toBe("Not visible: in Earth's shadow");
     // Starlink's cutoff is −12°, stations and visual −6°.
-    expect(visibilityText({ ...live, visible: false, sunAltDeg: -8 }, "starlink")).toBe(
-      "Not visible: Sun too high",
+    expect(satelliteVisibilityText({ ...live, visible: false, sunAltDeg: -8 }, "starlink")).toBe(
+      "Lit by the Sun, but the sky is too bright to see it",
     );
-    expect(visibilityText({ ...live, visible: false, sunAltDeg: -5 }, "stations")).toBe(
-      "Not visible: Sun too high",
+    expect(satelliteVisibilityText({ ...live, sunAltDeg: -8 }, "stations")).toBe(
+      "Lit by the Sun, visible to the eye",
+    );
+    expect(satelliteVisibilityText({ ...live, visible: false, sunAltDeg: -5 }, "stations")).toBe(
+      "Lit by the Sun, but the sky is too bright to see it",
     );
     expect(
-      visibilityText({ ...live, visible: false, aboveHorizon: false, altDeg: -3 }, "stations"),
-    ).toBe("Not visible: below the horizon");
-    // [M6] Above 0° but at or below the terrain horizon (the flag uses the terrain horizon).
-    expect(visibilityText({ ...live, visible: false, aboveHorizon: false }, "stations")).toBe(
-      "Not visible: behind terrain",
-    );
-    // A flag the three rules do not explain still reads as not visible.
-    expect(visibilityText({ ...live, visible: false }, "stations")).toBe("Not visible to the eye");
+      satelliteVisibilityText(
+        { ...live, visible: false, aboveHorizon: false, altDeg: -3 },
+        "stations",
+      ),
+    ).toBe("Below the horizon");
+    // [M6] Above 0° but at or below the terrain horizon (the flag uses the terrain horizon), even in shadow.
+    expect(
+      satelliteVisibilityText(
+        { ...live, visible: false, aboveHorizon: false, sunlit: false },
+        "stations",
+      ),
+    ).toBe("Behind the mountains");
   });
 
   it("a missing satellite waits while stations or visual has not loaded, or Starlink is loading", () => {
@@ -129,11 +153,29 @@ describe("field formats", () => {
     expect(satelliteGroupsPending(gp("error", "ready", "error"))).toBe(false); // no retry loop: settled
   });
 
-  it("docked vehicles and a satellite outside the loaded groups", () => {
-    expect(dockedText(["POISK", "ISS (NAUKA)"])).toBe("Docked: POISK, ISS (NAUKA)");
-    expect(missingSatelliteText(12345)).toBe(
-      "Satellite 12345 is not in the loaded groups. Turn on Starlink if it is a Starlink satellite.",
+  it("docked vehicles by friendly name, repeats counted, and a satellite outside the loaded groups", () => {
+    expect(dockedText(["POISK"])).toBe("Docked to it: Poisk module");
+    expect(dockedText(["POISK", "ISS (NAUKA)"])).toBe(
+      "Docked to it: Poisk module and Nauka module",
     );
+    expect(
+      dockedText([
+        "POISK",
+        "ISS (NAUKA)",
+        "CYGNUS NG-24",
+        "PROGRESS-MS 34",
+        "SOYUZ-MS 29",
+        "PROGRESS-MS 35",
+        "CREW DRAGON 13",
+      ]),
+    ).toBe(
+      "Docked to it: Poisk module, Nauka module, Cygnus cargo ship, 2 Progress cargo ships, Soyuz crew capsule and Dragon capsule",
+    );
+    expect(dockedText(["SL-3 R/B", "SL-3 R/B"])).toBe("Docked to it: 2 Spent rocket stages (SL-3)");
+    expect(missingSatelliteText()).toBe(
+      "This satellite isn't in the loaded data. If it is a Starlink satellite, turn on Starlink in Layers.",
+    );
+    expect(missingSatelliteText()).not.toMatch(/NORAD|\d/);
   });
 });
 
@@ -145,18 +187,23 @@ describe("groupStatusText", () => {
     fetchedAtMs,
   });
 
-  it("ready: the object count and the fetch stamp to the minute, UTC", () => {
+  it("ready: the object count and the fetch date in plain words; the UTC stamp only in the tooltip", () => {
     expect(groupStatusText([g("ready", 11102, FETCHED)])).toBe(
-      "11,102 objects, elements fetched 2026-10-11 03:50 UTC",
+      "11,102 objects, data from 11 Oct 2026",
     );
     // Stations and visual together: the sum, and the older stamp.
-    expect(groupStatusText([g("ready", 12, FETCHED), g("ready", 153, FETCHED + 3_600_000)])).toBe(
-      "165 objects, elements fetched 2026-10-11 03:50 UTC",
+    expect(groupStatusText([g("ready", 12, FETCHED), g("ready", 153, FETCHED + 86_400_000)])).toBe(
+      "165 objects, data from 11 Oct 2026",
     );
     expect(groupStatusText([g("ready", 1, null)])).toBe("1 object");
     expect(groupStatusText([g("ready", 12, null), g("ready", 153, FETCHED)])).toBe(
-      "165 objects, elements fetched 2026-10-11 03:50 UTC",
+      "165 objects, data from 11 Oct 2026",
     );
+    expect(groupFetchedTitle([g("ready", 12, FETCHED), g("ready", 153, FETCHED + 3_600_000)])).toBe(
+      "Orbit data (CelesTrak elements) fetched 2026-10-11 03:50 UTC",
+    );
+    expect(groupFetchedTitle([g("ready", 1, null)])).toBeNull();
+    expect(groupFetchedTitle([g("ready", 12, FETCHED), g("loading")])).toBeNull();
   });
 
   it("failed beats loading beats ready; all idle shows nothing", () => {
@@ -287,13 +334,13 @@ describe("objectDetails", () => {
   it("no position before the first sample pair, or when the row is not valid", () => {
     expect(objectDetails("sat:25544", sources(false))).toMatchObject({
       live: null,
-      note: "Computing position…",
+      note: "Working out where it is…",
     });
     const f = frame();
     const s = { ...sources(), frame: { ...f, flags: Uint8Array.from([0, 0, 0, 0, 0]) } };
     expect(objectDetails("sat:25544", s)).toMatchObject({
       live: null,
-      note: "No position at this time",
+      note: "Its position is unknown at this time",
     });
   });
 
@@ -319,7 +366,7 @@ describe("objectDetails", () => {
       label: "HR 7001",
       vmag: 5.5,
       live: null,
-      note: "Fainter than the star magnitude limit",
+      note: "Too faint to be drawn",
     });
     expect(objectDetails("star:424", sources(true, false))).toEqual({
       kind: "star",
@@ -327,13 +374,13 @@ describe("objectDetails", () => {
       label: "HR 424",
       vmag: null,
       live: null,
-      note: "Loading star catalogue…",
+      note: "Loading the stars…",
     });
     expect(objectDetails("star:9000", sources())).toMatchObject({
       label: "HR 9000",
       vmag: null,
       live: null,
-      note: "Not in the star catalogue",
+      note: "Not in the star list",
     });
   });
 
@@ -351,7 +398,7 @@ describe("objectDetails", () => {
       id: "sun",
       label: "Sun",
       live: null,
-      note: "Computing position…",
+      note: "Working out where it is…",
     });
   });
 });
@@ -365,25 +412,25 @@ describe("terrain text (M6)", () => {
   profile[270] = 1.96;
   profile[90] = -1.93;
 
-  it("ready: the signed terrain horizon at the object's azimuth, and Behind terrain at or below it", () => {
+  it("ready: the signed skyline height at the object's azimuth, and Behind the mountains at or below it", () => {
     // Capella: az 359.92°, alt 3.37°, under 32.7° (interpolated between az 359 and 0).
     expect(terrainLines("ready", profile, 359.92, 3.37)).toEqual([
-      "Terrain horizon here: +32.7°",
-      "Behind terrain",
+      "Mountain skyline here: +32.7°",
+      "Behind the mountains",
     ]);
     // Polaris: az 0.49°, alt 46.62°.
-    expect(terrainLines("ready", profile, 0.49, 46.62)).toEqual(["Terrain horizon here: +32.8°"]);
-    expect(terrainLines("ready", profile, 90, -1.5)).toEqual(["Terrain horizon here: −1.9°"]);
+    expect(terrainLines("ready", profile, 0.49, 46.62)).toEqual(["Mountain skyline here: +32.8°"]);
+    expect(terrainLines("ready", profile, 90, -1.5)).toEqual(["Mountain skyline here: −1.9°"]);
     expect(terrainLines("ready", profile, 270, 1.96)).toEqual([
-      "Terrain horizon here: +2.0°",
-      "Behind terrain", // at the horizon counts as behind it
+      "Mountain skyline here: +2.0°",
+      "Behind the mountains", // at the horizon counts as behind it
     ]);
   });
 
   it("loading, error and idle", () => {
-    expect(terrainLines("loading", null, 0, 10)).toEqual(["Terrain horizon: loading"]);
+    expect(terrainLines("loading", null, 0, 10)).toEqual(["Mountain skyline: loading"]);
     expect(terrainLines("error", null, 0, 10)).toEqual([
-      "Terrain horizon: unavailable (geometric horizon used)",
+      "Mountain skyline: unavailable (a flat horizon is used)",
     ]);
     expect(terrainLines("idle", null, 0, 10)).toEqual([]);
   });
@@ -394,10 +441,10 @@ describe("terrain text (M6)", () => {
     expect(behindTerrain(null, 0, -5)).toBe(false);
   });
 
-  it("the Terrain horizon toggle's status", () => {
+  it("the Horizon line toggle's status", () => {
     expect(horizonStatusText("idle")).toBeNull();
-    expect(horizonStatusText("loading")).toBe("Loading terrain…");
-    expect(horizonStatusText("ready")).toBe("Terrain ready");
-    expect(horizonStatusText("error")).toBe("Terrain unavailable: geometric horizon");
+    expect(horizonStatusText("loading")).toBe("Loading the mountains…");
+    expect(horizonStatusText("ready")).toBe("Mountains loaded");
+    expect(horizonStatusText("error")).toBe("Mountains unavailable: flat horizon");
   });
 });

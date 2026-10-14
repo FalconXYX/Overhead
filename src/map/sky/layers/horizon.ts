@@ -21,7 +21,7 @@ const LINE_ID = "skyline";
 const FILL_ID = "skyline-fill";
 
 const LINE_STYLE = new Style({
-  stroke: new Stroke({ color: "rgba(168, 150, 128, 0.9)", width: 1.5 }), // [M9] a muted earth tone, never the accent
+  stroke: new Stroke({ color: "rgba(236, 206, 168, 0.95)", width: 1.5 }), // [Redesign] a warm earth tone, never a kind colour
   zIndex: 1,
 });
 const FILL_STYLE = new Style({ fill: new Fill({ color: "rgba(10, 9, 8, 0.55)" }), zIndex: 0 });

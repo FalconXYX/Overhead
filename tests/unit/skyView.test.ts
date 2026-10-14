@@ -4,7 +4,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enabledCameras } from "../../src/app/cameras";
 import { backgroundImageSize } from "../../src/map/sync/bindBackground";
 import { store } from "../../src/state/store";
 import { SkyView } from "../../src/ui/SkyView";
@@ -20,7 +19,7 @@ beforeEach(() => {
   // Server rendering reads getInitialState(); point it at the live state for these renders.
   vi.spyOn(store, "getInitialState").mockImplementation(() => store.getState());
   const { actions } = store.getState();
-  actions.setRegistry(enabledCameras(committedCameras()));
+  actions.setRegistry(committedCameras()); // [Redesign] the computed and still cameras are test-only now
   actions.setActiveCamera("synthetic-maunakea");
   actions.openPanel(null);
   actions.setMode("live");
@@ -42,7 +41,7 @@ describe("SkyView on a synthetic camera (M2 unchanged)", () => {
     );
     expect(mapTag(html)).not.toContain("tabindex");
     expect(mapTag(html)).not.toContain('role="application"');
-    expect(html).not.toContain("Fit frame");
+    expect(html).not.toContain("Reset zoom");
     expect(html).not.toContain('data-testid="sky-crosshair"');
   });
 
@@ -67,7 +66,7 @@ describe("SkyView on a still-image camera", () => {
     expect(html).not.toContain("zenith fisheye");
   });
 
-  it("the map is a focusable application for OpenLayers' keyboard pan and zoom, with Fit frame (step 11.2)", () => {
+  it("the map is a focusable application for OpenLayers' keyboard pan and zoom, with Reset zoom (step 11.2)", () => {
     const html = render();
     const tag = mapTag(html);
     expect(tag).toContain('tabindex="0"');
@@ -76,7 +75,9 @@ describe("SkyView on a still-image camera", () => {
     expect(tag).toContain(
       'aria-label="Sky map over the image from CFHT Nānā ao all-sky (visible)"',
     );
-    expect(html).toContain('<button type="button">Fit frame</button>');
+    expect(html).toMatch(
+      /<button type="button" class="sky-fit btn-quiet"[^>]*>Reset zoom<\/button>/,
+    );
   });
 
   it("an aria-hidden centre crosshair only while the Calibration panel is open (step 14.4)", () => {
@@ -115,5 +116,35 @@ describe("SkyView on a still-image camera", () => {
     expect(html).toContain('<button type="button">Back to live</button>');
     actions.setFrameTimeMs(null); // no image yet: nothing to caption
     expect(render()).not.toContain("Image captured");
+  });
+});
+
+describe("SkyView over a video ([Redesign] layout only)", () => {
+  it("has a 16:9 stage for the clip and the live player, the card slot, and no lists under the stage", () => {
+    const { actions } = store.getState();
+    for (const id of ["subaru-starcam", "subaru-2026-10-11-iss"]) {
+      actions.setActiveCamera(id);
+      const html = render();
+      expect(html, id).toMatch(
+        /<div data-testid="sky-stage" class="sky-stage sky-stage--video" style="aspect-ratio:3840 \/ 2160">/,
+      );
+      expect(html, id).toContain('<div class="stage-card"></div>'); // ObjectCard: nothing selected
+      expect(html, id).not.toContain("Above the horizon");
+      expect(html, id).not.toContain(">Fullscreen<"); // moved to the control bar
+    }
+    expect(render()).toContain(
+      'aria-label="Recorded video from Subaru StarCam: ISS pass, 2026-10-11 (recorded), with the sky drawn over it"',
+    );
+  });
+
+  it("says in plain words on the stage when the clip cannot be shown", () => {
+    const { actions } = store.getState();
+    actions.setActiveCamera("subaru-2026-10-11-iss");
+    expect(render()).not.toContain("stage-message");
+    actions.setCameraStatus("subaru-2026-10-11-iss", "offline");
+    expect(render()).toContain(
+      '<div class="stage-message"><p>The recorded video can&#x27;t be shown here.</p>',
+    );
+    actions.setCameraStatus("subaru-2026-10-11-iss", "unknown");
   });
 });

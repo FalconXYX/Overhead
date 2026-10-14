@@ -1,71 +1,120 @@
 // tests/e2e/keyboard.spec.ts — the key map (M9 step 9; section 5): each key, pressed once with focus on body, has its
-// on-screen effect; Esc ends the tour; the on-screen list has one row per KEY_MAP entry.
+// on-screen effect; Esc ends the tour; the on-screen list has one row per KEY_MAP entry. [Redesign] The time keys
+// (Space, ← / →, [ / ]) work on the recorded clip only: a live camera has no time controls, so they do nothing there.
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import type {} from "../../src/app/testHooks"; // window.__overhead
+import {
+  CLIP_START_ISO,
+  clipReady,
+  expect,
+  expectSimTime,
+  focusBody,
+  objectCard,
+  test,
+} from "./fixtures";
 
-const START = "./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z";
+const clock = (page: Page) => page.evaluate(() => window.__overhead?.clock() ?? null);
 
-/** Focus back on body: keys pressed in an input or on a focused map are not the app's. */
-const focusBody = (page: Page) =>
-  page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+test.describe("on the recorded clip (paused: reduced motion)", () => {
+  test.use({ reducedMotion: "reduce" });
 
-test("each key on body: time, rate, panels, the calibration nudge, the selection and play", async ({
-  page,
-}) => {
-  await page.goto(`${START}&sel=sat:25544`);
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  const utc = page.getByTestId("time-utc");
-  const inspector = page.getByRole("region", { name: "Inspector" });
-  await expect(utc).toHaveText("2026-10-11T15:09:50Z");
-  await expect(inspector).toContainText("ISS (ZARYA)");
-  await focusBody(page);
+  test("each key on body: time, rate, panels, the alignment nudge, the selection and play", async ({
+    page,
+  }) => {
+    await page.goto("./?sel=sat:25544");
+    await clipReady(page, "paused");
+    const controls = page.getByRole("region", { name: "Video controls" });
+    await expectSimTime(page, CLIP_START_ISO);
+    await expect(objectCard(page)).toContainText("International Space Station");
+    await focusBody(page);
 
-  // ← / →, with Shift a minute
-  await page.keyboard.press("ArrowRight");
-  await expect(utc).toHaveText("2026-10-11T15:09:51Z");
-  await page.keyboard.press("ArrowLeft");
-  await expect(utc).toHaveText("2026-10-11T15:09:50Z");
-  await page.keyboard.press("Shift+ArrowRight");
-  await expect(utc).toHaveText("2026-10-11T15:10:50Z");
-  await page.keyboard.press("Shift+ArrowLeft");
-  await expect(utc).toHaveText("2026-10-11T15:09:50Z");
+    // ← / →, with Shift a minute (the 7 s clip clamps it at its ends)
+    await page.keyboard.press("ArrowRight");
+    await expectSimTime(page, "2026-10-11T08:00:01Z");
+    await page.keyboard.press("ArrowLeft");
+    await expectSimTime(page, CLIP_START_ISO);
+    await page.keyboard.press("Shift+ArrowRight");
+    await expectSimTime(page, "2026-10-11T08:00:07Z");
+    await page.keyboard.press("Shift+ArrowLeft");
+    await expectSimTime(page, CLIP_START_ISO);
 
-  // [ / ]
-  await page.keyboard.press("]");
-  await expect(timeline.getByRole("radio", { name: "10×", exact: true })).toBeChecked();
-  await page.keyboard.press("[");
-  await expect(timeline.getByRole("radio", { name: "1×", exact: true })).toBeChecked();
+    // [ / ]: normal speed or 10 times faster, keyboard only
+    expect(await clock(page)).toMatchObject({ rate: 1 });
+    await page.keyboard.press("]");
+    await expect.poll(async () => (await clock(page))?.rate).toBe(10);
+    await page.keyboard.press("]"); // clamped: there is no faster rate
+    await expect.poll(async () => (await clock(page))?.rate).toBe(10);
+    await page.keyboard.press("[");
+    await expect.poll(async () => (await clock(page))?.rate).toBe(1);
 
-  // L
-  const layers = page.getByRole("button", { name: "Layers", exact: true });
+    // L
+    const layers = page.getByRole("button", { name: "Layers", exact: true });
+    await page.keyboard.press("l");
+    await expect(layers).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("l");
+    await expect(layers).toHaveAttribute("aria-expanded", "false");
+
+    // C, then the arrows nudge the pointing instead of stepping time
+    const drawer = page.getByRole("region", { name: "Camera alignment (advanced)" });
+    await page.keyboard.press("c");
+    await expect(drawer).toBeVisible();
+    await focusBody(page);
+    await page.keyboard.press("ArrowRight");
+    await expect(drawer.getByRole("spinbutton", { name: "Azimuth (°)" })).toHaveValue("81.28");
+    await page.keyboard.press("ArrowDown");
+    await expect(drawer.getByRole("spinbutton", { name: "Altitude (°)" })).toHaveValue("19.57");
+    await expectSimTime(page, CLIP_START_ISO);
+    await page.keyboard.press("c");
+    await expect(drawer).toBeHidden();
+
+    // Esc closes the object card
+    await focusBody(page);
+    await page.keyboard.press("Escape");
+    await expect(objectCard(page)).toHaveCount(0);
+
+    // Space
+    await page.keyboard.press(" ");
+    await expect(controls.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+    await page.keyboard.press(" ");
+    await expect(controls.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  });
+});
+
+test("on a live camera Space, ← / → and [ / ] do nothing; L and C still work", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-10-11T08:00:00Z"));
+  await page.goto("./?cam=subaru-starcam");
+  await expect(page.getByTestId("video-status")).toHaveAttribute("data-status", "playing");
+  await expectSimTime(page, "2026-10-11T07:59:10Z");
+  const controls = page.getByRole("region", { name: "Video controls" });
+  // No time controls on screen.
+  for (const name of ["Play", "Pause"]) {
+    await expect(controls.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  await expect(controls.getByRole("slider")).toHaveCount(0);
+  await expect(controls.getByRole("radio")).toHaveCount(0);
+
+  await page.getByRole("heading", { name: "Overhead", level: 1 }).click(); // out of the player (G4)
+  for (const key of [" ", "ArrowRight", "Shift+ArrowLeft", "]", "["])
+    await page.keyboard.press(key);
+  await page.waitForTimeout(300); // the 4 Hz readout would have caught up
+  await expectSimTime(page, "2026-10-11T07:59:10Z");
+  await expect(page.getByTestId("time-mode")).toHaveText("Live");
+  expect(await clock(page)).toMatchObject({ mode: "live", playing: true, rate: 1 });
+  const pauses = await page.evaluate(
+    () =>
+      (window as unknown as { __ytStub?: { calls: { fn: string }[] } }).__ytStub?.calls.filter(
+        (c) => c.fn === "pauseVideo",
+      ).length ?? -1,
+  );
+  expect(pauses).toBe(0);
+
   await page.keyboard.press("l");
-  await expect(layers).toHaveAttribute("aria-expanded", "true");
-  await page.keyboard.press("l");
-  await expect(layers).toHaveAttribute("aria-expanded", "false");
-
-  // C, then the arrows nudge the pointing instead of stepping time (a zenith-locked fisheye turns its roll)
-  const calibration = page.getByRole("button", { name: "Calibration", exact: true });
+  await expect(page.getByRole("button", { name: "Layers", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await page.keyboard.press("c");
-  await expect(calibration).toHaveAttribute("aria-expanded", "true");
-  await focusBody(page);
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("spinbutton", { name: "Roll (°)" })).toHaveValue("-179.95");
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("spinbutton", { name: "Altitude (°)" })).toHaveValue("89.95");
-  await expect(utc).toHaveText("2026-10-11T15:09:50Z");
-  await page.keyboard.press("c");
-  await expect(calibration).toHaveAttribute("aria-expanded", "false");
-
-  // Esc clears the selection
-  await focusBody(page);
-  await page.keyboard.press("Escape");
-  await expect(inspector).toContainText("Nothing selected.");
-
-  // Space
-  await page.keyboard.press(" ");
-  await expect(timeline.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  await page.keyboard.press(" ");
-  await expect(timeline.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Camera alignment (advanced)" })).toBeVisible();
 });
 
 test("Esc exits the tour: the Tour region goes and the URL loses demo", async ({ page }) => {
@@ -82,19 +131,24 @@ test("Esc exits the tour: the Tour region goes and the URL loses demo", async ({
 });
 
 test("the on-screen list has one row per shortcut", async ({ page }) => {
-  await page.goto(START);
-  const table = page.getByRole("table", { name: "Keyboard shortcuts" });
-  await expect(table).toBeHidden(); // inside a closed <details>
-  await page.getByText("Keyboard shortcuts", { exact: true }).click(); // its <summary>
-  await expect(table.getByRole("row")).toHaveCount(9); // the header and KEY_MAP's 8 rows
+  await page.goto("./");
+  const panel = page.getByRole("region", { name: "Keyboard shortcuts" });
+  await expect(panel).toBeHidden(); // the [?] popover, closed
+  await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
+  await expect(panel).toBeVisible();
+  const table = panel.getByRole("table");
+  await expect(table.getByRole("row")).toHaveCount(8); // KEY_MAP's 8 rows
   await expect(table.getByRole("rowheader")).toHaveText([
     "Space",
     "← / →",
     "[ / ]",
     "L",
     "C",
-    "← → ↑ ↓ with the Calibration panel open",
+    "← → ↑ ↓ with Camera alignment open",
     "Esc",
     "Arrows, + and − on a focused map",
   ]);
+  // Esc closes the popover and gives the focus back to its button.
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
 });

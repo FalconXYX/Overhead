@@ -22,10 +22,11 @@ import {
   type YtPlayerOptions,
 } from "../../src/app/youtube";
 import { getMediaClock, setMediaClock } from "../../src/state/clockLoop";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig, VideoState, YoutubeCamera } from "../../src/state/types";
 import { M5_CAMERA_ENTRIES } from "../helpers/m5Cameras";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 /** The resolver page markup fetched from astroasahi.github.io on 2026-10-11, with its link replaced. */
 const page = (url: string): string =>
@@ -468,7 +469,7 @@ async function mountHarness(
   options: { resolvedId?: string; mayReResolve?: boolean; failApi?: boolean } = {},
 ) {
   FakePlayer.created = [];
-  const store: AppStore = createAppStore(initialState(SUBARU_T, DEFAULT_CAMERA_ID));
+  const store: AppStore = createAppStore(initialState(SUBARU_T, TEST_CAMERA_ID));
   const registry: Record<string, CameraConfig> = {};
   for (const entry of M5_CAMERA_ENTRIES)
     registry[entry.id] = structuredClone(entry) as CameraConfig;

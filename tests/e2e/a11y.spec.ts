@@ -1,12 +1,12 @@
 // tests/e2e/a11y.spec.ts — the accessibility pass (M9 step 11; section 5): a visible focus ring and a real box on every
 // Tab stop, OpenLayers' controls at 24 × 24, reduced motion, one polite live region per announcing section, and the
-// same checks with the Layers and Calibration panels open (Lighthouse cannot open panels, gotcha 13). No axe: an axe
-// dependency is Parth's call (gotcha 13), and Lighthouse covers the page as loaded.
-import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+// same checks with the popovers and the alignment drawer open (Lighthouse cannot open panels, gotcha 13). No axe: an
+// axe dependency is Parth's call (gotcha 13), and Lighthouse covers the page as loaded. [Redesign] On the recorded
+// clip, paused (reduced motion), so nothing on the page moves while the focus walks it.
+import type { Locator, Page } from "@playwright/test";
+import type {} from "../../src/app/testHooks"; // window.__overhead
+import { clipReady, expect, objectCard, openInView, openLayers, test } from "./fixtures";
 
-/** Paused replay at the e2e instant: nothing on the page moves while the focus walks it. */
-const START = "./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z";
 const MAX_STOPS = 120;
 
 interface TabStop {
@@ -19,7 +19,7 @@ interface TabStop {
  * Tab from where the focus is (the top of a fresh page, or `from`) until the focus returns to a stop already seen or
  * leaves the page, at most MAX_STOPS times; each stop's ring and box are read while it holds the focus.
  */
-async function walkTabStops(page: Page, from?: ReturnType<Page["getByRole"]>): Promise<TabStop[]> {
+async function walkTabStops(page: Page, from?: Locator): Promise<TabStop[]> {
   if (from !== undefined) await from.focus();
   const stops: TabStop[] = [];
   for (let i = 0; i < MAX_STOPS; i++) {
@@ -49,8 +49,8 @@ async function walkTabStops(page: Page, from?: ReturnType<Page["getByRole"]>): P
   return stops;
 }
 
-function expectRingsAndBoxes(stops: readonly TabStop[]): void {
-  expect(stops.length).toBeGreaterThan(10);
+function expectRingsAndBoxes(stops: readonly TabStop[], atLeast = 10): void {
+  expect(stops.length).toBeGreaterThanOrEqual(atLeast);
   expect(
     stops.filter((s) => !s.ring).map((s) => s.name),
     "stops without a focus ring",
@@ -78,31 +78,42 @@ async function expectControlSize(page: Page): Promise<void> {
   }
 }
 
-/** The page has loaded its satellites: the sky lists the ISS. */
-const ready = (page: Page) =>
-  expect(
-    page
-      .getByRole("list", { name: "Satellites above the horizon" })
-      .getByRole("button", { name: /^ISS \(ZARYA\)/ }),
-  ).toBeVisible();
+/** The page has loaded its clip and its satellites. */
+async function ready(page: Page): Promise<void> {
+  await clipReady(page, "paused");
+  await expect
+    .poll(() => page.evaluate(() => window.__overhead?.readyFrame() ?? null))
+    .not.toBeNull();
+}
+
+test.use({ reducedMotion: "reduce" });
 
 test("focus ring: every Tab stop shows a ring and has a box", async ({ page }) => {
-  await page.goto(START);
+  await page.goto("./?sel=sat:25544"); // the object card's buttons too
   await ready(page);
-  expectRingsAndBoxes(await walkTabStops(page));
+  // "Show on map" is enabled (a Tab stop) once the card's 4 Hz render has the ISS's position.
+  await expect(objectCard(page).getByRole("button", { name: "Show on map" })).toBeEnabled();
+  const stops = await walkTabStops(page);
+  expectRingsAndBoxes(stops);
+  for (const name of ["Watch live", "Layers", "Play", "Copy link", "Show on map", "More details"]) {
+    expect(
+      stops.some((s) => s.name.includes(`"${name}`)),
+      `${name} is a Tab stop`,
+    ).toBe(true);
+  }
 });
 
 test("control size: every OpenLayers control button is at least 24 × 24 CSS px", async ({
   page,
 }) => {
-  await page.goto(START);
+  await page.goto("./");
   await expectControlSize(page);
 });
 
-test("panels: the Layers and Calibration panels, each opened, meet the focus and size checks", async ({
+test("panels: Layers, In view and the alignment drawer, each opened, meet the focus and size checks", async ({
   page,
 }) => {
-  await page.goto(START);
+  await page.goto("./");
   await ready(page);
   const layersToggle = page.getByRole("button", { name: "Layers", exact: true });
   await page.keyboard.press("l");
@@ -112,33 +123,42 @@ test("panels: the Layers and Calibration panels, each opened, meet the focus and
   expect(layers.some((s) => s.name.includes("checkbox"))).toBe(true);
   await expectControlSize(page);
 
-  const calibrationToggle = page.getByRole("button", { name: "Calibration", exact: true });
-  await calibrationToggle.click(); // replaces Layers, as C does
-  await expect(calibrationToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("region", { name: "Calibration" })).toBeVisible();
-  const calibration = await walkTabStops(page, calibrationToggle);
-  expectRingsAndBoxes(calibration);
-  expect(calibration.some((s) => s.name.includes("number"))).toBe(true); // the pointing fields
+  // From the Layers popover's footer, as a visitor finds it.
+  const panel = await openLayers(page);
+  await panel.getByRole("button", { name: "Camera alignment (advanced)" }).click();
+  const drawer = page.getByRole("region", { name: "Camera alignment (advanced)" });
+  await expect(drawer).toBeVisible();
+  const close = drawer.getByRole("button", { name: "Close camera alignment" });
+  await expect(close).toBeFocused(); // focus moves into the drawer
+  const alignment = await walkTabStops(page, close);
+  expectRingsAndBoxes(alignment);
+  expect(alignment.some((s) => s.name.includes("number"))).toBe(true); // the pointing fields
   await expectControlSize(page);
+  await close.click();
+  await expect(drawer).toBeHidden();
+
+  const inViewToggle = page.getByRole("button", { name: /^In view/ });
+  await openInView(page);
+  const inView = await walkTabStops(page, inViewToggle);
+  expectRingsAndBoxes(inView, 3);
+  expect(inView.some((s) => s.name.includes("Uranus (planet)"))).toBe(true);
 });
 
-test.describe("reduced motion", () => {
-  test.use({ reducedMotion: "reduce" });
-
-  test("the Trails toggle reads '(off: reduced motion)' and CSS transitions are off", async ({
-    page,
-  }) => {
-    await page.goto(START);
-    await page.keyboard.press("l");
-    const layers = page.getByRole("region", { name: "Layers" });
-    await expect(
-      layers.getByRole("checkbox", { name: "Trails (off: reduced motion)" }),
-    ).toBeVisible();
-    // ol/ol.css gives the rotate control a 0.25 s opacity transition; reduced motion turns it off.
-    const rotate = page.locator(".ol-rotate").first();
-    await expect(rotate).toBeAttached();
-    expect(await rotate.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
-  });
+test("reduced motion: the Trails switch says it is off, and CSS transitions are off", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await clipReady(page, "paused");
+  await expect(page.locator('[data-map="ground"] .ol-viewport')).toHaveCount(1); // the ground map, with its controls
+  await page.keyboard.press("l");
+  const layers = page.getByRole("region", { name: "Layers" });
+  await expect(layers.getByRole("checkbox", { name: "Trails" })).toHaveAccessibleDescription(
+    "Off while reduced motion is on",
+  );
+  // ol/ol.css gives the rotate control a 0.25 s opacity transition; reduced motion turns it off.
+  const rotate = page.locator(".ol-rotate").first();
+  await expect(rotate).toBeAttached();
+  expect(await rotate.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
 });
 
 test("live regions: the incoming chip and the Tour region each hold one polite element and are not live themselves", async ({

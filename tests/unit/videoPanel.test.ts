@@ -1,6 +1,6 @@
-// tests/unit/videoPanel.test.ts — VideoPanel's YouTube status line (M5 step 7) and the stream-delay section's
-// arithmetic and readouts (step 9), plus VideoPanel rendered with renderToStaticMarkup against the app store (no DOM,
-// so its effects do not run; the e2e spec drives them).
+// tests/unit/videoPanel.test.ts — VideoPanel's YouTube status line (M5 step 7; [Redesign] plain words, no error codes,
+// no replay line) and the stream-delay section's arithmetic and readouts (step 9), plus VideoPanel rendered with
+// renderToStaticMarkup against the app store (no DOM, so its effects do not run; the e2e spec drives them).
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,6 +20,8 @@ import {
 } from "../../src/ui/streamDelayText";
 import { VideoPanel, type VideoResolution } from "../../src/ui/VideoPanel";
 import {
+  behindRealTimeSec,
+  liveDelayText,
   rebufferText,
   type YoutubeStatusInput,
   youtubeStatusLines,
@@ -35,17 +37,15 @@ const base: YoutubeStatusInput = {
   fallbackReason: null,
   restarted: false,
   status: "idle",
-  errorCode: null,
   cameraOffline: false,
   behindSec: null,
   daytime: false,
-  replay: false,
 };
 
 describe("youtubeStatusLines", () => {
   it("says only that it is finding the stream while App resolves the id", () => {
     expect(youtubeStatusLines({ ...base, resolving: true, status: "playing" })).toEqual([
-      "Finding the current stream…",
+      "Finding the live stream…",
     ]);
   });
 
@@ -53,28 +53,27 @@ describe("youtubeStatusLines", () => {
     const line = (patch: Partial<YoutubeStatusInput>) =>
       youtubeStatusLines({ ...base, ...patch }).join(" | ");
     expect(line({ status: "idle" })).toBe(
-      "Loading the player. It starts when more than half of it is visible.",
+      "Loading the live video. It starts once it is on screen.",
     );
     expect(line({ status: "loading" })).toBe(line({ status: "idle" }));
     expect(line({ status: "paused" })).toBe(
-      "Paused. Press play on the video; the sky waits for it.",
+      "Paused. Press play on the video; the labels wait for it.",
     );
     expect(line({ status: "playing", behindSec: 50 })).toBe(
-      "Live. The sky follows the video, about 50 s behind real time.",
+      "Live, about 50 s behind real time. The labels follow the video.",
     );
-    expect(line({ status: "buffering" })).toBe("Buffering. The sky waits for the video.");
-    expect(line({ status: "ended" })).toBe("The stream ended. Looking for its new id…");
+    expect(line({ status: "buffering" })).toBe("Buffering…");
+    expect(line({ status: "ended" })).toBe("The live stream ended. Looking for a new one…");
     expect(line({ status: "ended", cameraOffline: true })).toBe(
-      "The stream ended, and no new video id was found.",
+      "The live stream has ended, and no new one was found.",
     );
-    expect(line({ status: "embed-blocked", errorCode: 150 })).toBe(
-      "This stream cannot be played here (YouTube error 150).",
+    expect(line({ status: "embed-blocked" })).toBe(
+      "This live stream cannot be played on this site.",
     );
-    expect(line({ status: "error", errorCode: 5 })).toBe("The player reported error 5.");
-    expect(line({ status: "error" })).toBe("The YouTube player could not start.");
+    expect(line({ status: "error" })).toBe("The live video could not start.");
   });
 
-  it("adds the fallback, restart, daytime and replay lines around it", () => {
+  it("adds the fallback, restart and daytime lines around it, in plain words", () => {
     expect(
       youtubeStatusLines({
         ...base,
@@ -83,18 +82,20 @@ describe("youtubeStatusLines", () => {
         fallbackReason: "no video id in resolver page",
         restarted: true,
         daytime: true,
-        replay: true,
       }),
     ).toEqual([
-      "Using the last known video id (no video id in resolver page).",
-      "The stream restarted with a new id. Check the delay.",
-      "Live. The sky follows the video, about 60 s behind real time.",
-      "Daytime at the camera.",
-      "Replay: the sky does not follow the video. Press Live to follow it.",
+      "Showing the last known stream.",
+      "The stream restarted.",
+      "Live, about 60 s behind real time. The labels follow the video.",
+      "It is daytime at the camera, so the sky is bright.",
     ]);
-    expect(rebufferText(2)).toBe(
-      "The video rebuffered for 2 s. Check the delay on the next satellite.",
-    );
+    expect(rebufferText(2)).toBe("The video stalled for 2 s, so the labels may be slightly off.");
+    expect(liveDelayText(50)).toBe("about 50 s behind real time");
+  });
+
+  it("behindRealTimeSec: the delay in whole seconds without a player clock", () => {
+    expect(behindRealTimeSec(50_000)).toBe(50);
+    expect(behindRealTimeSec(39_500)).toBe(40);
   });
 });
 
@@ -200,31 +201,46 @@ describe("VideoPanel", () => {
     const html = render();
     expect(html).toContain('aria-label="Video: Subaru-Asahi StarCam (east, live)"');
     expect(html).toContain('role="status" data-testid="video-status" data-status="idle"');
-    expect(html).toContain("Finding the current stream…");
+    expect(html).toContain("Finding the live stream…");
     store.getState().actions.setVideoStatus("loading");
-    expect(render(resolved)).toContain("Loading the player.");
+    expect(render(resolved)).toContain("Loading the live video.");
   });
 
-  it("offers Watch on YouTube, the camera's recorded clips and a local clip when the embed is blocked", () => {
+  it("offers Watch on YouTube and Watch the recorded ISS pass when the embed is blocked, never a local clip", () => {
     store.getState().actions.setVideoStatus("embed-blocked", 153);
     const html = render(resolved);
-    expect(html).toContain("This stream cannot be played here (YouTube error 153).");
+    expect(html).toContain("This live stream cannot be played on this site.");
+    expect(html).toContain('data-error-code="153"'); // for tests and debugging, never on screen
+    expect(html).not.toContain("error 153");
     expect(html).toContain(
       'href="https://www.youtube.com/watch?v=Fixture0001" target="_blank" rel="noopener noreferrer"',
     );
-    expect(html).toContain(
-      "Replay the recorded clip: Subaru StarCam: ISS pass, 2026-10-11 (recorded)",
-    );
-    expect(html).toContain("Replay a local clip");
+    expect(html).toMatch(/<button[^>]*>Watch the recorded ISS pass<\/button>/);
+    expect(html).not.toContain("Replay a local clip");
     expect(html).not.toContain("Retry");
+    // On CFHT too: the recorded pass is offered from any live camera.
+    store.getState().actions.setActiveCamera("cfht-starcam");
+    store.getState().actions.setVideoStatus("embed-blocked", 150);
+    expect(render({ ...resolved, cameraId: "cfht-starcam" })).toContain(
+      "Watch the recorded ISS pass",
+    );
   });
 
-  it("offers Retry after an error, and not for another camera's resolution", () => {
+  it("offers Retry and the recorded pass after an error, and not for another camera's resolution", () => {
     store.getState().actions.setVideoStatus("error", 5);
-    expect(render(resolved)).toContain("The player reported error 5.");
+    expect(render(resolved)).toContain("The live video could not start.");
     expect(render(resolved)).toContain("Retry");
-    expect(render({ ...resolved, cameraId: "cfht-starcam" })).toContain(
-      "Finding the current stream…",
-    );
+    expect(render(resolved)).toContain("Watch the recorded ISS pass");
+    expect(render(resolved)).not.toContain("Watch on YouTube");
+    expect(render({ ...resolved, cameraId: "cfht-starcam" })).toContain("Finding the live stream…");
+    store.getState().actions.setVideoStatus("playing");
+    expect(render(resolved)).not.toContain("Watch the recorded ISS pass");
+  });
+
+  it("a clip camera shows the clip's status (ClipControls) in the same region", () => {
+    store.getState().actions.setActiveCamera("subaru-2026-10-11-iss");
+    const html = render();
+    expect(html).toContain('aria-label="Video: Subaru StarCam: ISS pass, 2026-10-11 (recorded)"');
+    expect(html).toContain("Loading the recorded video…");
   });
 });

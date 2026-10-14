@@ -80,7 +80,7 @@ export function buildGridFeatures(model: CameraModel): Feature[] {
 }
 
 const LINE_STYLE = new Style({
-  stroke: new Stroke({ color: "rgba(125, 150, 186, 0.3)", width: 1 }),
+  stroke: new Stroke({ color: "rgba(201, 209, 243, 0.4)", width: 1 }),
 });
 const LETTER_STYLES: ReadonlyMap<string, Style> = new Map(
   LETTERS.map(([label]) => [
@@ -89,8 +89,8 @@ const LETTER_STYLES: ReadonlyMap<string, Style> = new Map(
       text: new Text({
         text: label,
         font: "600 13px system-ui, -apple-system, 'Segoe UI', sans-serif",
-        fill: new Fill({ color: "#c3cedd" }),
-        stroke: new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 3 }),
+        fill: new Fill({ color: "#c9d1f3" }),
+        stroke: new Stroke({ color: "rgba(13, 20, 51, 0.9)", width: 3 }),
       }),
     }),
   ]),

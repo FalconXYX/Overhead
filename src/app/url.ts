@@ -1,5 +1,6 @@
 // src/app/url.ts — ?cam= and ?t= (M1 step 6; README URL and persistence), ?sel= (M3 step 12), ?demo=1 and shareUrl
-// (M9 step 8).
+// (M9 step 8). [Redesign] ?t= is a time in the recorded clip: a live camera never writes it, and main.tsx ignores it
+// there.
 import { shallow } from "zustand/vanilla/shallow";
 import { isoUtcSeconds } from "../domain/time";
 import { parseObjectId } from "../state/objectId";
@@ -42,17 +43,23 @@ export function parseUrlState(search: string): UrlState {
   };
 }
 
-/** The view without the tour: "?cam=<id>", "&t=" in replay (the store's time, even while playing) and "&sel=". */
+/**
+ * The view without the tour: "?cam=<id>", "&t=" in replay (the store's time, even while playing) except on a live
+ * camera ([Redesign] live has no time controls), and "&sel=".
+ */
 function viewSearch(state: AppState): string {
-  const cam = `?cam=${encodeURIComponent(state.camera.activeId)}`;
-  const t = state.clock.mode === "replay" ? `&t=${isoUtcSeconds(state.clock.simTimeMs)}` : "";
+  const { activeId } = state.camera;
+  const cam = `?cam=${encodeURIComponent(activeId)}`;
+  const live = state.camera.registry[activeId]?.kind === "youtube";
+  const t =
+    state.clock.mode === "replay" && !live ? `&t=${isoUtcSeconds(state.clock.simTimeMs)}` : "";
   const { selectedId } = state.selection;
   return `${cam}${t}${selectedId === null ? "" : `&sel=${selectedId}`}`;
 }
 
 /**
- * "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay, "&sel=<id>" while something is selected and [M9] "&demo=1" while
- * the tour runs. Colons are written raw (URLSearchParams would encode them); every ObjectId is otherwise letters and
+ * "?cam=<id>", plus "&t=<isoUtcSeconds>" in replay (never on a live camera), "&sel=<id>" while something is selected
+ * and [M9] "&demo=1" while the tour runs. Colons are written raw (URLSearchParams would encode them); every ObjectId is otherwise letters and
  * digits.
  */
 export function writeUrlState(state: AppState): string {

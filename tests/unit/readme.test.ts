@@ -63,7 +63,7 @@ describe("README credits", () => {
 
   it("contains every enabled cameras.json credit and termsNote", () => {
     const cameras = Object.values(enabledCameras(committedCameras()));
-    expect(cameras.length).toBeGreaterThanOrEqual(7);
+    expect(cameras.length).toBeGreaterThanOrEqual(3); // [Redesign] the recorded ISS pass and the two live StarCams
     for (const camera of cameras) {
       expect(README, `${camera.id} credit`).toContain(camera.credit.text);
       if (camera.termsNote !== "") {

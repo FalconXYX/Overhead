@@ -1,6 +1,8 @@
-// src/ui/incomingText.ts — the text of the incoming chip, the Inspector's incoming line and the footprint controls
-// (M8 step 9), shared by IncomingChip, Inspector and LayerToggles. A component file that also exports functions is
-// not a Fast Refresh boundary (as objectText.ts, M3).
+// src/ui/incomingText.ts — the text of the incoming chip, the object card's incoming line and the footprint controls
+// (M8 step 9), shared by IncomingChip, ObjectCard and LayerToggles. A component file that also exports functions is
+// not a Fast Refresh boundary (as objectText.ts, M3). [Redesign] Friendly names ("ISS appears in 35 s"); the NORAD id
+// stays out of the text.
+import { friendlySatellite } from "./friendly";
 
 /** The parts of an `incoming` reply the text reads (ephemeris.incoming). */
 export interface IncomingReplyView {
@@ -13,17 +15,20 @@ export interface IncomingCatalogView {
   readonly names: readonly string[];
 }
 
-/** One chip entry: who, and "within N s". */
+/** One chip entry: who, and "in N s". */
 export interface IncomingRow {
   readonly index: number;
   readonly noradId: number;
+  /** friendly.ts's name: "International Space Station". */
   readonly name: string;
+  /** friendly.ts's short name: "ISS". */
+  readonly shortName: string;
   readonly seconds: number;
 }
 
 /** Entries shown as buttons; the rest are counted. */
 export const INCOMING_SHOWN = 3;
-export const INCOMING_PAUSED_TEXT = "Incoming alerts pause at 60× and 600×.";
+export const INCOMING_PAUSED_TEXT = "Alerts pause while the clock runs fast.";
 
 /**
  * N = ⌈max(0, etaSec − (simTimeMs − replyTimeMs)/1000)⌉: equal to etaSec while paused, counting down between the 1 Hz
@@ -33,7 +38,7 @@ export function incomingSeconds(etaSec: number, simTimeMs: number, replyTimeMs: 
   return Math.ceil(Math.max(0, etaSec - (simTimeMs - replyTimeMs) / 1000));
 }
 
-/** Every entry of the reply, in its order (etaSec, then index), with the catalogue's name and NORAD id. */
+/** Every entry of the reply, in its order (etaSec, then index), with friendly names and the NORAD id. */
 export function incomingRows(
   reply: IncomingReplyView | null,
   catalog: IncomingCatalogView,
@@ -41,25 +46,25 @@ export function incomingRows(
 ): IncomingRow[] {
   if (reply === null) return [];
   return reply.entries.map((e) => {
-    const noradId = catalog.noradIds[e.index] ?? 0;
-    const name = catalog.names[e.index] || `NORAD ${noradId}`;
+    const friendly = friendlySatellite(catalog.names[e.index] ?? "");
     return {
       index: e.index,
-      noradId,
-      name,
+      noradId: catalog.noradIds[e.index] ?? 0,
+      name: friendly.name,
+      shortName: friendly.shortName,
       seconds: incomingSeconds(e.etaSec, simTimeMs, reply.timeMs),
     };
   });
 }
 
-/** Visible text of an entry: "ISS (ZARYA) · 35 s". */
+/** Visible text of an entry: "ISS appears in 35 s". */
 export function incomingButtonText(row: IncomingRow): string {
-  return `${row.name} · ${row.seconds} s`;
+  return `${row.shortName} appears in ${row.seconds} s`;
 }
 
-/** Accessible name of an entry: "ISS (ZARYA), NORAD 25544, enters the view within 35 seconds". */
+/** Accessible name of an entry: the visible words, with seconds spelt out: "ISS appears in 35 seconds". */
 export function incomingButtonName(row: IncomingRow): string {
-  return `${row.name}, NORAD ${row.noradId}, enters the view within ${row.seconds} seconds`;
+  return `${row.shortName} appears in ${row.seconds} seconds`;
 }
 
 /** After the first INCOMING_SHOWN entries: "and K more". */
@@ -69,10 +74,10 @@ export function incomingMoreText(more: number): string {
 
 /** The live region's text for a new first entry (gotcha 13: never the countdown). */
 export function incomingAnnouncement(row: IncomingRow): string {
-  return `${row.name} will enter the view within ${row.seconds} seconds.`;
+  return `${row.name} will appear in the camera view in about ${row.seconds} seconds.`;
 }
 
-/** The Inspector's line for a selected satellite in the latest reply, or null when it is not incoming. */
+/** The object card's line for a selected satellite in the latest reply, or null when it is not incoming. */
 export function inspectorIncomingText(
   reply: IncomingReplyView | null,
   index: number | null,
@@ -82,7 +87,7 @@ export function inspectorIncomingText(
   const entry = reply.entries.find((e) => e.index === index);
   return entry === undefined
     ? null
-    : `Enters the view within ${incomingSeconds(entry.etaSec, simTimeMs, reply.timeMs)} s`;
+    : `Comes into the camera view in ${incomingSeconds(entry.etaSec, simTimeMs, reply.timeMs)} s`;
 }
 
 // ---- the footprint controls (LayerToggles)

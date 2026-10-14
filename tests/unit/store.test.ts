@@ -75,7 +75,7 @@ describe("store", () => {
       simTimeMs: T0,
       rangeCenterMs: T0,
     });
-    expect(state.camera.activeId).toBe("synthetic-maunakea");
+    expect(state.camera.activeId).toBe("subaru-2026-10-11-iss"); // [Redesign] the site opens on the recorded ISS pass
     expect(state.layers.starMagLimit).toBe(4.5);
     expect(state.layers.footprintHeightKm).toBeNull();
     const { stations, visual, starlink } = state.data.gp;

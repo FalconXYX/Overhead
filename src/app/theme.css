@@ -1,74 +1,94 @@
-/* src/app/theme.css — the visual design pass (M9 step 12): the dark night-sky theme. Every colour, size and font is a
-   custom property here; layout.css places the panes. main.tsx imports this after ol/ol.css and before layout.css and
-   a11y.css. Text colours keep WCAG AA (4.5:1) on every panel colour; the one accent, amber, marks the ISS, the
-   selection, interaction and focus. Video and imagery stay the brightest things on screen: the UI is near-black with
-   muted blue-grey panels. */
+/* src/app/theme.css — [Redesign] the twilight-blue theme (redesign spec section 4): the sky just after sunset, never
+   black. Every colour, size and font is a custom property here; layout.css places the parts. main.tsx imports this
+   after ol/ol.css and before layout.css and a11y.css. Text keeps WCAG AA (4.5:1) on every panel colour: --c-text is
+   10.8:1 and --c-text-2 7.6:1 on --c-panel, and both stay above 5.6:1 on --c-control. Objects are colour-coded the same
+   way on the video, the map, the legend and the card (--k-*), and keep their shape differences. */
 
 :root {
   color-scheme: dark;
 
-  /* Surfaces, darkest first. */
-  --c-bg: #07090d; /* the page, the header and the credits line */
-  --c-sky: #04060b; /* behind every sky stage and its letterbox */
-  --c-surface: #0e131b; /* panels: sidebar, timeline, lists */
-  --c-surface-2: #151c27; /* controls and raised cards */
-  --c-surface-3: #1c2533; /* hover */
-  --c-line: #1f2836; /* hairlines between panels */
-  --c-line-strong: #344155; /* control borders */
-  --c-line-hover: #4b5b73;
+  /* The page: a deep blue-to-indigo dusk. */
+  --c-bg-1: #121a3f;
+  --c-bg-2: #1f2d63;
+  --c-bg-3: #2a3b7a;
+  --c-page: linear-gradient(165deg, var(--c-bg-1) 0%, var(--c-bg-2) 52%, var(--c-bg-3) 100%);
+  --c-stage: #0d1433; /* behind the video and its letterbox */
 
-  /* Text: 15.6, 8.4 and 5.9 to 1 on --c-surface. */
-  --c-text: #e6ebf2;
-  --c-text-2: #a2afc1;
-  --c-text-3: #8592a6;
+  /* Panels, popovers and controls, lighter blue. */
+  --c-panel: #26356f;
+  --c-panel-2: #2e3f80; /* raised rows inside a panel */
+  --c-control: #33447f;
+  --c-control-hover: #3e5194;
+  --c-control-active: #475b9f;
+  --c-line: rgb(201 209 243 / 0.16);
+  --c-line-strong: rgb(201 209 243 / 0.3);
+  --c-glass: rgb(255 255 255 / 0.1);
 
-  /* The accent: 9.2 to 1 on --c-surface; ink on amber 9.2 to 1. */
-  --c-accent: #f5a623;
-  --c-accent-strong: #ffb547;
-  --c-accent-ink: #1a1204;
-  --c-accent-soft: rgb(245 166 35 / 0.14);
-  --c-accent-line: rgb(245 166 35 / 0.55);
-  --c-focus: #ffbf47;
+  /* Text. */
+  --c-text: #f5f7ff;
+  --c-text-2: #c9d1f3;
+  --c-ink: #1d1433; /* on the warm buttons */
+  --c-ink-blue: #1b2558; /* on a selected (white) segment */
 
-  /* Type: the platform's UI face, a 12–13 px body for a dense tool, tabular figures for readouts. */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Colour-coded objects (spec section 4). */
+  --k-iss: #ff8a3d;
+  --k-satellite: #4fd1ff;
+  --k-starlink: #b58cff;
+  --k-planet: #ffd166;
+  --k-star: #ffffff;
+  --k-selection: #ff8a3d;
+
+  /* Interaction. */
+  --c-primary: #ff8a3d;
+  --c-primary-hover: #ff9c58;
+  --c-focus: #ffd166;
+  --c-live: #5ee08f;
+  --c-track: rgb(201 209 243 / 0.28);
+  --c-fill: #ffd166;
+
+  /* Type. */
+  --font-sans:
+    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 15px;
-  --fs-xl: 17px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
   --lh: 1.45;
 
-  /* Shape and size. */
-  --radius: 6px;
-  --radius-sm: 4px;
-  --control-h: 26px; /* every button and field is at least 24 × 24 CSS px */
-  --gap: 12px;
-  --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.55), 0 0 0 1px var(--c-line-strong);
+  /* Shape. */
+  --radius-lg: 14px;
+  --radius: 12px;
+  --radius-sm: 9px;
+  --control-h: 34px;
+  --gap: 16px;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 10px 30px rgb(6 10 32 / 0.45);
+  --shadow-pop: 0 1px 0 rgb(255 255 255 / 0.08) inset, 0 18px 48px rgb(6 10 32 / 0.6);
 
   /* OpenLayers' own control colours (ol/ol.css reads these). */
-  --ol-background-color: var(--c-surface-2);
-  --ol-accent-background-color: var(--c-surface-3);
-  --ol-subtle-background-color: rgb(14 19 27 / 0.55);
-  --ol-partial-background-color: rgb(14 19 27 / 0.85);
+  --ol-background-color: var(--c-control);
+  --ol-accent-background-color: var(--c-control-hover);
+  --ol-subtle-background-color: rgb(38 53 111 / 0.6);
+  --ol-partial-background-color: rgb(38 53 111 / 0.88);
   --ol-foreground-color: var(--c-text);
   --ol-subtle-foreground-color: var(--c-text-2);
-  --ol-brand-color: var(--c-accent);
+  --ol-brand-color: var(--c-focus);
 }
 
 /* ---- Base ---- */
 
 html {
-  background: var(--c-bg);
+  background: var(--c-bg-1);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--c-bg);
+  min-height: 100dvh;
+  background: var(--c-page);
   color: var(--c-text);
   font: var(--fs-md) / var(--lh) var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -98,16 +118,16 @@ pre {
 a {
   color: var(--c-text);
   text-decoration: underline;
-  text-decoration-color: var(--c-line-hover);
+  text-decoration-color: rgb(201 209 243 / 0.5);
   text-underline-offset: 2px;
 }
 
 a:hover {
-  color: var(--c-accent-strong);
+  color: var(--k-planet);
   text-decoration-color: currentColor;
 }
 
-/* README Accessibility rule 1: never remove the ring, replace it with one that reads on every panel. */
+/* Never remove the ring: a 2 px gold outline that reads on every panel and on the video. */
 :focus-visible {
   outline: 2px solid var(--c-focus);
   outline-offset: 2px;
@@ -125,60 +145,78 @@ code {
   font-size: var(--fs-xs);
 }
 
-/* ---- Controls (never inside an OpenLayers viewport: its hit targets and buttons keep their own look) ---- */
+/* Visually hidden, still read and still labelling. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Buttons (never inside an OpenLayers viewport: its hit targets and buttons keep their own look) ---- */
 
 :where(button):not(.ol-viewport *) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
   min-height: var(--control-h);
-  padding: 3px 10px;
+  padding: 6px 13px;
   border: 1px solid var(--c-line-strong);
   border-radius: var(--radius-sm);
-  background: var(--c-surface-2);
+  background: var(--c-control);
   color: var(--c-text);
   font: inherit;
   font-size: var(--fs-sm);
+  font-weight: 550;
   line-height: 1.2;
   text-align: center;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 :where(button):not(.ol-viewport *):hover {
-  border-color: var(--c-line-hover);
-  background: var(--c-surface-3);
+  border-color: rgb(201 209 243 / 0.5);
+  background: var(--c-control-hover);
 }
 
 :where(button):not(.ol-viewport *):active {
-  background: var(--c-line);
+  background: var(--c-control-active);
 }
 
 :where(button):not(.ol-viewport *):disabled,
 :where(button[aria-disabled="true"]):not(.ol-viewport *) {
   border-color: var(--c-line);
-  background: var(--c-surface);
-  color: var(--c-text-3);
+  background: var(--c-panel);
+  color: var(--c-text-2);
   cursor: not-allowed;
+  opacity: 0.75;
 }
 
-/* A pressed toggle: the amber fill and a leading dot, so the state is a shape too, not only a colour. */
+/* A pressed toggle: a white face with blue ink and a filled dot, so the state is a shape as well as a colour. */
 :where(button[aria-pressed="true"]):not(.ol-viewport *) {
-  border-color: var(--c-accent-line);
-  background: var(--c-accent-soft);
-  color: var(--c-accent-strong);
+  border-color: var(--c-text);
+  background: var(--c-text);
+  color: var(--c-ink-blue);
 }
 
 :where(button[aria-pressed="true"]):not(.ol-viewport *):hover {
-  border-color: var(--c-accent);
-  background: rgb(245 166 35 / 0.22);
+  background: #e4e8fb;
 }
 
 :where(button[aria-pressed]):not(.ol-viewport *)::before {
   content: "";
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border: 1.5px solid currentColor;
   border-radius: 50%;
 }
@@ -187,24 +225,56 @@ code {
   background: currentColor;
 }
 
+/* An open popover's button. */
+:where(button[aria-expanded="true"]):not(.ol-viewport *) {
+  border-color: rgb(255 209 102 / 0.7);
+  background: var(--c-control-active);
+}
+
+/* The one warm call to action ("Watch live", "Start the tour"). */
 .btn-primary:not(.ol-viewport *) {
-  border-color: var(--c-accent);
-  background: var(--c-accent);
-  color: var(--c-accent-ink);
-  font-weight: 600;
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+  color: var(--c-ink);
+  font-weight: 650;
 }
 
 .btn-primary:not(.ol-viewport *):hover {
-  border-color: var(--c-accent-strong);
-  background: var(--c-accent-strong);
+  border-color: var(--c-primary-hover);
+  background: var(--c-primary-hover);
 }
 
 .btn-primary:not(.ol-viewport *):disabled {
   border-color: var(--c-line-strong);
-  background: var(--c-surface-2);
-  color: var(--c-text-3);
-  font-weight: 400;
+  background: var(--c-control);
+  color: var(--c-text-2);
+  font-weight: 500;
 }
+
+/* A quiet button: text only until hovered. */
+.btn-quiet:not(.ol-viewport *) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn-quiet:not(.ol-viewport *):hover {
+  border-color: var(--c-line-strong);
+  background: var(--c-glass);
+}
+
+/* An icon button: square, at least 34 × 34 px. */
+.btn-icon:not(.ol-viewport *) {
+  min-width: var(--control-h);
+  padding: 6px;
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* ---- Fields ---- */
 
 input,
 select,
@@ -215,73 +285,111 @@ textarea {
 }
 
 input[type="checkbox"],
-input[type="radio"],
-input[type="range"] {
-  accent-color: var(--c-accent);
-}
-
-input[type="checkbox"],
 input[type="radio"] {
   flex: none;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   margin: 0;
+  accent-color: var(--k-planet);
   cursor: pointer;
 }
 
-/* Sliders: a neutral track and an amber thumb (a filled amber track would outshine the imagery). */
+/* A switch: a checkbox drawn as a pill with a knob (a native checkbox underneath, so keys and names are unchanged). */
+.switch input[type="checkbox"] {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 999px;
+  background: #1a2556;
+  transition: background-color 140ms ease;
+  appearance: none;
+}
+
+.switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--c-text-2);
+  transition: transform 140ms ease;
+}
+
+.switch input[type="checkbox"]:checked {
+  border-color: var(--k-planet);
+  background: var(--k-planet);
+}
+
+.switch input[type="checkbox"]:checked::after {
+  background: var(--c-ink-blue);
+  transform: translateX(16px);
+}
+
+.switch input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Sliders: a track filled up to the thumb (--pct, set inline) and a round white thumb. */
 input[type="range"] {
   min-height: 24px;
   margin: 0;
   background: transparent;
   cursor: pointer;
   appearance: none;
+  accent-color: var(--c-fill);
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--c-line-strong);
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--c-fill) var(--pct, 0%),
+    var(--c-track) var(--pct, 0%)
+  );
 }
 
 input[type="range"]::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--c-line-strong);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-track);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-fill);
 }
 
 input[type="range"]::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin-top: -5px;
-  border: 2px solid var(--c-bg);
+  border: 0;
   border-radius: 50%;
-  background: var(--c-accent);
-  box-shadow: 0 0 0 1px var(--c-accent);
+  background: var(--c-text);
+  box-shadow:
+    0 0 0 3px rgb(255 209 102 / 0.35),
+    0 2px 6px rgb(6 10 32 / 0.5);
   appearance: none;
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--c-bg);
+  width: 16px;
+  height: 16px;
+  border: 0;
   border-radius: 50%;
-  background: var(--c-accent);
-  box-shadow: 0 0 0 1px var(--c-accent);
+  background: var(--c-text);
+  box-shadow: 0 0 0 3px rgb(255 209 102 / 0.35);
 }
 
-input[type="range"]:hover::-webkit-slider-thumb {
-  background: var(--c-accent-strong);
-}
-
-input[type="range"]:disabled::-webkit-slider-thumb {
-  background: var(--c-text-3);
-  box-shadow: 0 0 0 1px var(--c-text-3);
-}
-
-input[type="range"]:disabled::-moz-range-thumb {
-  background: var(--c-text-3);
-  box-shadow: 0 0 0 1px var(--c-text-3);
+input[type="range"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 input[type="text"],
@@ -291,15 +399,14 @@ input:not([type]),
 select,
 textarea {
   min-height: var(--control-h);
-  padding: 2px 6px;
+  padding: 4px 9px;
   border: 1px solid var(--c-line-strong);
   border-radius: var(--radius-sm);
-  background: var(--c-bg);
+  background: #1a2556;
   font-variant-numeric: tabular-nums;
 }
 
 select {
-  padding-right: 4px;
   cursor: pointer;
 }
 
@@ -311,10 +418,10 @@ input[type="file"] {
 input[type="file"]::file-selector-button {
   min-height: var(--control-h);
   margin-right: 8px;
-  padding: 3px 10px;
+  padding: 5px 12px;
   border: 1px solid var(--c-line-strong);
   border-radius: var(--radius-sm);
-  background: var(--c-surface-2);
+  background: var(--c-control);
   color: var(--c-text);
   font: inherit;
   cursor: pointer;
@@ -322,7 +429,7 @@ input[type="file"]::file-selector-button {
 
 input:disabled,
 select:disabled {
-  color: var(--c-text-3);
+  color: var(--c-text-2);
   cursor: not-allowed;
 }
 
@@ -356,7 +463,7 @@ caption {
 
 th,
 td {
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--c-line);
   text-align: left;
   vertical-align: top;
@@ -372,31 +479,68 @@ summary {
   cursor: pointer;
 }
 
-/* Visually hidden, still read and still labelling (the timeline's heading, the camera group's legend). */
-.visually-hidden,
-.pane-timeline > .pane-title,
-.pane-camera legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
+/* ---- Colour-coded objects: a class per kind sets --kind (spec section 4). ---- */
+
+.kind-iss {
+  --kind: var(--k-iss);
+}
+
+.kind-satellite {
+  --kind: var(--k-satellite);
+}
+
+.kind-starlink {
+  --kind: var(--k-starlink);
+}
+
+.kind-planet,
+.kind-moon,
+.kind-sun {
+  --kind: var(--k-planet);
+}
+
+.kind-star {
+  --kind: var(--k-star);
+}
+
+/* Short text (a name, a swatch label) takes the colour; rows and cards carry a .kind-dot instead, so body text stays
+   white. */
+:is(span, strong, b, em, abbr, h2, h3, h4, dt):is(
+  .kind-iss,
+  .kind-satellite,
+  .kind-starlink,
+  .kind-planet,
+  .kind-moon,
+  .kind-sun,
+  .kind-star
+) {
+  color: var(--kind);
+}
+
+/* A filled dot in the object's colour, with a dark rim (as on the video). */
+.kind-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgb(13 20 51 / 0.85);
+  border-radius: 50%;
+  background: var(--kind, var(--c-text-2));
+  box-shadow: 0 0 0 1px var(--kind, var(--c-text-2));
+  vertical-align: -1px;
 }
 
 /* ---- OpenLayers controls and the hover card ---- */
 
 .ol-viewport .ol-control {
-  padding: 2px;
-  border-radius: var(--radius);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: rgb(18 26 63 / 0.35);
 }
 
 .ol-viewport .ol-control button {
   border: 1px solid var(--c-line-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 7px;
   background: var(--ol-partial-background-color);
   color: var(--c-text);
   font-family: var(--font-sans);
@@ -404,8 +548,8 @@ summary {
 }
 
 .ol-viewport .ol-control button:hover {
-  border-color: var(--c-line-hover);
-  background: var(--c-surface-3);
+  border-color: rgb(201 209 243 / 0.55);
+  background: var(--c-control-hover);
   outline: none;
 }
 
@@ -414,15 +558,19 @@ summary {
   outline-offset: 1px;
 }
 
-/* HoverCard (role="tooltip"), portalled into the sky map's hover overlay. */
+/* HoverCard (role="tooltip", class "hover-card" and a kind class), portalled into the sky map's hover overlay: a
+   coloured left edge in the object's colour. */
 .ol-overlay-container [role="tooltip"] {
   display: grid;
-  gap: 1px;
-  min-width: 120px;
-  padding: 7px 10px 8px;
-  border-radius: var(--radius);
-  background: rgb(14 19 27 / 0.94);
-  box-shadow: var(--shadow-pop);
+  gap: 2px;
+  min-width: 130px;
+  padding: 8px 11px 9px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-sm);
+  background: rgb(38 53 111 / 0.96);
+  box-shadow:
+    inset 3px 0 0 var(--kind, var(--c-text-2)),
+    var(--shadow-pop);
   color: var(--c-text-2);
   font: var(--fs-sm) / 1.35 var(--font-sans);
   font-variant-numeric: tabular-nums;
@@ -433,5 +581,5 @@ summary {
   margin-bottom: 2px;
   color: var(--c-text);
   font-size: var(--fs-md);
-  font-weight: 600;
+  font-weight: 650;
 }

@@ -36,14 +36,14 @@ export function createFootprintLayer(): FootprintLayer {
     text: "",
     overflow: true, // a ring narrower than its label still names itself
     font: "12px system-ui, -apple-system, 'Segoe UI', sans-serif",
-    fill: new Fill({ color: "#e6ebf2" }),
-    stroke: new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 3 }),
+    fill: new Fill({ color: "#f5f7ff" }),
+    stroke: new Stroke({ color: "rgba(13, 20, 51, 0.9)", width: 3 }),
   });
   const styles = [
-    new Style({ stroke: new Stroke({ color: "rgba(4, 6, 11, 0.55)", width: 4 }) }),
+    new Style({ stroke: new Stroke({ color: "rgba(13, 20, 51, 0.55)", width: 4 }) }),
     new Style({
-      fill: new Fill({ color: "rgba(200, 216, 236, 0.1)" }),
-      stroke: new Stroke({ color: "rgba(226, 233, 243, 0.92)", width: 2, lineDash: [8, 4] }),
+      fill: new Fill({ color: "rgba(255, 255, 255, 0.1)" }),
+      stroke: new Stroke({ color: "rgba(245, 247, 255, 0.92)", width: 2, lineDash: [8, 4] }),
     }),
     new Style({ text }),
   ];

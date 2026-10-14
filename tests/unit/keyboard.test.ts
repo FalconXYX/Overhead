@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { handleKeyDown, KEY_MAP, type KeyLike, MAP_SELECTOR } from "../../src/app/keyboard";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { selectCalibration } from "../../src/state/selectors";
 import { type AppStore, createAppStore } from "../../src/state/store";
-import { committedCameras, storeAt } from "../helpers/store";
+import { committedCameras, storeAt, TEST_CAMERA_ID } from "../helpers/store";
 
 const T = Date.parse("2026-10-10T03:30:00Z");
 
@@ -75,29 +75,50 @@ describe("handleKeyDown", () => {
     expect(store.getState().clock.simTimeMs).toBe(T + 1_000);
   });
 
-  it("[ at 1× and ] at 600× change nothing, so Live stays live", () => {
+  it("[ at 1× and ] at 10× change nothing", () => {
     const store = storeAt("2026-10-10T03:30:00Z");
-    store.getState().actions.setMode("live");
-    const live = store.getState();
+    const at1 = store.getState();
     expect(handleKeyDown(store, key("["))).toBe(true);
-    expect(store.getState()).toBe(live);
-    store.getState().actions.setRate(600);
-    const at600 = store.getState();
+    expect(store.getState()).toBe(at1);
+    store.getState().actions.setRate(10);
+    const at10 = store.getState();
     expect(handleKeyDown(store, key("]"))).toBe(true);
-    expect(store.getState()).toBe(at600);
+    expect(store.getState()).toBe(at10);
   });
 
-  it("[ and ] walk the rates 1, 10, 60, 600, clamped at the ends", () => {
+  it("[ and ] pick 1× or 10× ([Redesign] 60× and 600× are gone), clamped at the ends", () => {
     const store = storeAt("2026-10-10T03:30:00Z");
     expect(store.getState().clock.rate).toBe(1);
     expect(handleKeyDown(store, key("]"))).toBe(true);
     expect(store.getState().clock.rate).toBe(10);
     for (let i = 0; i < 5; i += 1) handleKeyDown(store, key("]"));
-    expect(store.getState().clock.rate).toBe(600);
+    expect(store.getState().clock.rate).toBe(10);
     expect(handleKeyDown(store, key("["))).toBe(true);
-    expect(store.getState().clock.rate).toBe(60);
-    for (let i = 0; i < 5; i += 1) handleKeyDown(store, key("["));
     expect(store.getState().clock.rate).toBe(1);
+    // A rate set elsewhere (the perf harness) steps back into the offered ones.
+    store.getState().actions.setRate(600);
+    expect(handleKeyDown(store, key("]"))).toBe(true);
+    expect(store.getState().clock.rate).toBe(10);
+  });
+
+  it("[Redesign] on a live camera Space, the arrows and [ ] are not handled, so Live stays live", () => {
+    const store = storeAt("2026-10-11T15:09:50Z");
+    const { actions } = store.getState();
+    actions.setActiveCamera("subaru-starcam");
+    actions.setMode("live");
+    const live = store.getState();
+    for (const k of [" ", "ArrowLeft", "ArrowRight", "[", "]"]) {
+      expect(handleKeyDown(store, key(k)), k).toBe(false);
+      expect(handleKeyDown(store, key(k, { shiftKey: true })), `Shift+${k}`).toBe(false);
+    }
+    expect(store.getState()).toBe(live);
+    // L, C and Esc still work there.
+    expect(handleKeyDown(store, key("l"))).toBe(true);
+    expect(handleKeyDown(store, key("Escape"))).toBe(true);
+    // And the arrows still nudge the pointing while the alignment panel is open.
+    actions.openPanel("calibration");
+    expect(handleKeyDown(store, key("ArrowLeft"))).toBe(true);
+    expect(store.getState().clock).toBe(live.clock);
   });
 
   it("Space toggles play, except on a focused button", () => {
@@ -188,7 +209,7 @@ describe("Esc (M3)", () => {
 
 /** A store on `cameraId` (every committed camera in the registry), the Calibration panel open unless `open` is false. */
 function calibrationStore(cameraId: string, open = true): AppStore {
-  const store = createAppStore(initialState(Date.parse("2026-10-11T08:00:00Z"), DEFAULT_CAMERA_ID));
+  const store = createAppStore(initialState(Date.parse("2026-10-11T08:00:00Z"), TEST_CAMERA_ID));
   const { actions } = store.getState();
   actions.setRegistry(committedCameras());
   actions.setActiveCamera(cameraId);
@@ -327,7 +348,7 @@ describe("arrows while the Calibration panel is open (M4)", () => {
   });
 
   it("do nothing before the camera list has loaded", () => {
-    const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T, TEST_CAMERA_ID));
     store.getState().actions.togglePanel("calibration");
     const before = store.getState();
     for (const k of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
@@ -424,11 +445,18 @@ describe("KEY_MAP (M9)", () => {
       "[ / ]",
       "L",
       "C",
-      "← → ↑ ↓ with the Calibration panel open",
+      "← → ↑ ↓ with Camera alignment open",
       "Esc",
       "Arrows, + and − on a focused map",
     ]);
     for (const row of KEY_MAP) expect(row.effect.length, row.keys).toBeGreaterThan(0);
+  });
+
+  it("[Redesign] plain words: no 60× or 600×, no Calibration panel; the time keys name the recorded video", () => {
+    const all = KEY_MAP.map((row) => `${row.keys} ${row.effect} ${row.notes}`).join("\n");
+    expect(all).not.toMatch(/60×|600×|Calibration panel|azimuth|zenith/);
+    for (const row of KEY_MAP.slice(0, 3))
+      expect(`${row.effect} ${row.notes}`, row.keys).toMatch(/[Rr]ecorded video/);
   });
 
   it("every key the handler takes on body is listed", () => {

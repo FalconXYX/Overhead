@@ -1,10 +1,24 @@
 // tests/e2e/video.spec.ts — M5 section 5, the YouTube tests (1–15): the sky drawn over the stub player
-// (tests/fixtures/youtube/iframe_api.js), pass-through and hit targets, stage fullscreen and its guard, the live clock
-// from the player's media time, the stream delay, the embed-blocked fallback and the resolver. The clip tests (16–21)
-// are appended after these. The fixtures' routes serve the stub, the resolver page (Fixture0001) and the recordings.
+// (tests/fixtures/youtube/iframe_api.js), pass-through and hit targets, fullscreen and its guard, the live clock from the
+// player's media clock, the stream delay, the embed-blocked fallback and the resolver. The fixtures' routes serve the
+// stub, the resolver page (Fixture0001) and the recordings. [Redesign] The live StarCams have no time controls (no
+// Pause, rate or scrubber); Fullscreen sits in the control bar and takes the whole stage column; the delay controls
+// live in "Camera alignment (advanced)"; status lines are plain words (error codes only in data-error-code). The
+// recorded clip's tests are in clip.spec.ts.
 import type { Page } from "@playwright/test";
 import type { ObjectId } from "../../src/state/types";
-import { expect, test } from "./fixtures";
+import {
+  CLIP_ID,
+  CLIP_START_ISO,
+  cameraRadio,
+  creditsList,
+  expect,
+  expectSimTime,
+  objectCard,
+  openAlignment,
+  openLayers,
+  test,
+} from "./fixtures";
 
 /** The stub's hooks (tests/fixtures/youtube/iframe_api.js). */
 interface YtStubPlayer {
@@ -41,7 +55,7 @@ const T = Date.parse("2026-10-11T08:00:00Z");
 /** The stub's media time at PLAYING. */
 const MEDIA_0 = 4_399_105.5;
 const SUBARU = "./?cam=subaru-starcam";
-const SUBARU_CLIP_NAME = "Subaru StarCam: ISS pass, 2026-10-11 (recorded)";
+const SUBARU_NAME = "Subaru-Asahi StarCam (east, live)";
 
 interface Box {
   readonly x: number;
@@ -69,7 +83,7 @@ const liveVideoIds = (page: Page) =>
 const clientPoint = (page: Page, id: ObjectId) =>
   page.evaluate((i) => window.__overhead?.clientPoint("sky", i) ?? null, id);
 const playerIframes = (page: Page) => page.getByTestId("video-player").locator("iframe");
-const pickerRadio = (page: Page, name: string) => page.getByRole("radio", { name, exact: true });
+const videoPanel = (page: Page) => page.getByRole("region", { name: `Video: ${SUBARU_NAME}` });
 
 async function boxOf(page: Page, selector: string): Promise<Box> {
   const box = await page.locator(selector).first().boundingBox();
@@ -164,12 +178,18 @@ test.describe("YouTube StarCam", () => {
     );
     expect(plays[0]?.visibleFraction ?? 0).toBeGreaterThan(0.5);
     expect(plays[0]?.muted).toBe(true);
-    const credits = page.getByRole("region", { name: "Credits" });
+    await expect(videoStatus(page)).toHaveText(
+      "Live, about 50 s behind real time. The labels follow the video.",
+    );
+    const credits = creditsList(page);
     await expect(credits).toContainText("NAOJ & Asahi Shimbun");
     await expect(credits).toContainText("Non-commercial use only");
-    await expect(
-      pickerRadio(page, "Subaru-Asahi StarCam (east, live)"),
-    ).toHaveAccessibleDescription(/Live$/);
+    await expect(cameraRadio(page, "Subaru live")).toHaveAccessibleDescription(/Live$/);
+    // The live badge and the delay, and no time controls.
+    const controls = page.getByRole("region", { name: "Video controls" });
+    await expect(page.getByTestId("time-mode")).toHaveText("Live");
+    await expect(controls).toContainText("about 50 s behind real time");
+    await expect(controls.getByRole("slider")).toHaveCount(0);
   });
 
   test("2. the transparent sky map sits on the player, and only hit targets take the pointer", async ({
@@ -189,15 +209,22 @@ test.describe("YouTube StarCam", () => {
     expect(pointerEvents).toBe("none");
     const uranus = await uranusPoint(page);
     expect(await elementAt(page, uranus.x, uranus.y)).toEqual({ tag: "BUTTON", label: "Uranus" });
-    // The "On the video" group, unchecked by default.
-    await page.getByRole("button", { name: "Layers", exact: true }).click();
-    const group = page.getByRole("group", { name: "On the video" });
-    await expect(group).toBeVisible();
-    await expect(group.getByRole("checkbox")).toHaveCount(3);
-    for (const box of await group.getByRole("checkbox").all()) await expect(box).not.toBeChecked();
-    await page.goto("./?cam=synthetic-maunakea");
-    await page.getByRole("button", { name: "Layers", exact: true }).click();
-    await expect(page.getByRole("group", { name: "On the video" })).toHaveCount(0);
+    // [Redesign] Hit targets carry plain names: no catalogue jargon such as "R/B".
+    const labels = await page
+      .locator("[data-hit-target]")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? ""));
+    expect(labels.length).toBeGreaterThan(1);
+    expect(labels.filter((l) => /R\/B|DEB|NORAD|\bHR \d/.test(l))).toEqual([]);
+    // Over the video, Starlink and the grid are off by default.
+    const layers = await openLayers(page);
+    const onVideo = layers.getByRole("group", { name: "On the video" });
+    await expect(onVideo.getByRole("checkbox")).toHaveCount(7);
+    for (const name of ["Starlink", "Grid lines"]) {
+      await expect(onVideo.getByRole("checkbox", { name, exact: true })).not.toBeChecked();
+    }
+    for (const name of ["Satellites", "Stars", "Planets and Moon"]) {
+      await expect(onVideo.getByRole("checkbox", { name, exact: true })).toBeChecked();
+    }
   });
 
   test("3. a click on an empty point of the overlay reaches the player", async ({ page }) => {
@@ -209,10 +236,9 @@ test.describe("YouTube StarCam", () => {
     const before = await stubClicks(page);
     await page.mouse.click(p.x, p.y);
     await expect.poll(() => stubClicks(page)).toBe(before + 1);
-    // The click reached the player, not the map: nothing was selected (the URL write is debounced, the Inspector is not).
-    await expect(page.getByRole("region", { name: "Inspector" })).toContainText(
-      "Nothing selected.",
-    );
+    // The click reached the player, not the map: nothing was selected, so there is no card.
+    await page.waitForTimeout(300);
+    await expect(objectCard(page)).toHaveCount(0);
   });
 
   test("4. hit targets hover and select; the hover card lets clicks through", async ({ page }) => {
@@ -221,7 +247,8 @@ test.describe("YouTube StarCam", () => {
     const uranus = await uranusPoint(page);
     await page.mouse.move(uranus.x, uranus.y);
     const card = page.getByRole("tooltip");
-    await expect(card).toContainText("Uranus");
+    await expect(card).toContainText("Uranus (planet)");
+    await expect(card).toContainText("Low in the east");
     const cardBox = await boxOf(page, '[role="tooltip"]');
     const targets = await hitTargetBoxes(page);
     const inside = [
@@ -235,55 +262,71 @@ test.describe("YouTube StarCam", () => {
     const before = await stubClicks(page);
     await page.mouse.click(uranus.x, uranus.y);
     await expect(page).toHaveURL(/[?&]sel=planet:Uranus(&|$)/);
-    await expect(page.getByRole("region", { name: "Inspector" })).toContainText("Uranus");
+    await expect(objectCard(page)).toContainText("Uranus (planet)");
     expect(await stubClicks(page)).toBe(before);
   });
 
-  test("5. stage fullscreen keeps the overlay on the player's content box", async ({ page }) => {
+  test("5. Fullscreen takes the stage column, and the overlay stays on the player's content box", async ({
+    page,
+  }) => {
     await openAt(page, SUBARU);
     await waitForStatus(page, "playing");
-    const before = await uranusPoint(page);
-    const beforePx = clientToImagePx(
-      before.x,
-      before.y,
-      await boxOf(page, "[data-testid=sky-map]"),
-      3840,
-      2160,
-    );
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
-    await expect
-      .poll(() => page.evaluate(() => document.fullscreenElement?.getAttribute("data-testid")))
-      .toBe("sky-stage");
-    await expect
-      .poll(async () =>
-        (await stubCalls(page)).some((c) => c.fn === "setSize" && c.w === 1440 && c.h === 900),
-      )
-      .toBe(true);
-    for (const selector of ["[data-testid=video-player] iframe", "[data-testid=sky-map]"]) {
-      await expect
-        .poll(async () => {
-          const b = await boxOf(page, selector);
-          return [Math.round(b.w), Math.round(b.h)];
-        })
-        .toEqual([1440, 900]);
-    }
-    // The frame is contained: a 1440 × 810 box 45 px from the top, as the player letterboxes the video.
+    await uranusPoint(page);
+    // Uranus in image px, read from its drawn point and the map's box, once the layout has settled (the status lines
+    // change as the player starts, and the stage with them): two readings 250 ms apart agree.
+    const uranusPx = async (): Promise<readonly [number, number] | null> => {
+      const p = await clientPoint(page, "planet:Uranus");
+      if (p === null) return null;
+      return clientToImagePx(p.x, p.y, await boxOf(page, "[data-testid=sky-map]"), 3840, 2160);
+    };
+    let beforePx: readonly [number, number] = [Number.NaN, Number.NaN];
     await expect
       .poll(async () => {
-        const p = await clientPoint(page, "planet:Uranus");
-        if (p === null) return Number.POSITIVE_INFINITY;
-        const [u, v] = clientToImagePx(
-          p.x,
-          p.y,
-          await boxOf(page, "[data-testid=sky-map]"),
-          3840,
-          2160,
+        const a = await uranusPx();
+        await page.waitForTimeout(250);
+        const b = await uranusPx();
+        if (a === null || b === null) return Number.POSITIVE_INFINITY;
+        beforePx = b;
+        return Math.hypot(a[0] - b[0], a[1] - b[1]);
+      })
+      .toBeLessThanOrEqual(0.5);
+    const mapBefore = await boxOf(page, "[data-testid=sky-map]");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const controls = page.getByRole("region", { name: "Video controls" });
+    await controls.getByRole("button", { name: "Fullscreen", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => document.fullscreenElement?.id ?? null))
+      .toBe("stage-column");
+    await expect(controls.getByRole("button", { name: "Exit fullscreen" })).toBeVisible();
+    // The player and the map take the bigger stage together; the player is told its new size (G5).
+    await expect
+      .poll(async () => {
+        const map = await boxOf(page, "[data-testid=sky-map]");
+        const iframe = await boxOf(page, "[data-testid=video-player] iframe");
+        const same = (["x", "y", "w", "h"] as const).every(
+          (k) => Math.abs(map[k] - iframe[k]) <= 1,
         );
-        return Math.hypot(u - beforePx[0], v - beforePx[1]);
+        return same && map.w > mapBefore.w + 50;
+      })
+      .toBe(true);
+    const iframe = await boxOf(page, "[data-testid=video-player] iframe");
+    await expect
+      .poll(async () =>
+        (await stubCalls(page)).some(
+          (c) => c.fn === "setSize" && c.w === Math.round(iframe.w) && c.h === Math.round(iframe.h),
+        ),
+      )
+      .toBe(true);
+    // The frame is contained the same way: Uranus keeps its image pixel.
+    await expect
+      .poll(async () => {
+        const p = await uranusPx();
+        return p === null
+          ? Number.POSITIVE_INFINITY
+          : Math.hypot(p[0] - beforePx[0], p[1] - beforePx[1]);
       })
       .toBeLessThanOrEqual(1);
-    await page.evaluate(() => document.exitFullscreen());
+    await controls.getByRole("button", { name: "Exit fullscreen" }).click();
     await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
   });
 
@@ -297,44 +340,46 @@ test.describe("YouTube StarCam", () => {
     await expect.poll(() => stubClicks(page)).toBe(before + 1);
     await page.keyboard.press("f");
     await expect(
-      page.getByText("Use this Fullscreen button to keep the sky on the video."),
-    ).toBeVisible({
-      timeout: 1000,
-    });
+      page.getByText("Use the Fullscreen button under the video to keep the sky drawn on it."),
+    ).toBeVisible();
     // exitFullscreen() is asynchronous: the iframe leaves fullscreen just after the note renders.
-    await expect
-      .poll(() => page.evaluate(() => document.fullscreenElement === null), { timeout: 1000 })
-      .toBe(true);
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
   });
 
   test("7. live time follows the player's media clock and the stream delay", async ({ page }) => {
     await openAt(page, SUBARU);
     await waitForStatus(page, "playing");
-    await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T07:59:10Z");
+    await expectSimTime(page, "2026-10-11T07:59:10Z");
+    await expect(page.getByTestId("time-local")).toHaveText("21:59 in Hawaii");
     await expect(page.getByTestId("time-mode")).toHaveText("Live");
     await page.clock.setFixedTime(new Date(T + 30_000));
     await page.evaluate((sec) => window.__ytStub?.setMedia(sec), MEDIA_0 + 20);
-    await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T07:59:30Z");
+    await expectSimTime(page, "2026-10-11T07:59:30Z");
     await focusPage(page);
-    await page.keyboard.press("c");
-    const panel = page.getByRole("region", { name: "Calibration" });
-    await expect(panel).toContainText("Behind real time now: 60.0 s");
-    await panel.getByLabel("Stream delay (exact), seconds", { exact: true }).fill("30");
-    await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T07:59:50Z");
+    const drawer = await openAlignment(page);
+    await expect(drawer).toContainText("Behind real time now: 60.0 s");
+    await drawer.getByLabel("Stream delay (exact), seconds", { exact: true }).fill("30");
+    await expectSimTime(page, "2026-10-11T07:59:50Z");
   });
 
-  test("8. the Timeline's pause leaves the player alone, and Live follows it again", async ({
+  test("8. live has no time controls: Space leaves the player and the clock alone", async ({
     page,
   }) => {
     await openAt(page, SUBARU);
     await waitForStatus(page, "playing");
     await focusPage(page);
     await page.keyboard.press(" ");
-    await expect(page.getByTestId("time-mode")).toHaveText("Replay");
-    await expect(videoStatus(page)).toContainText("Replay: the sky does not follow the video.");
-    expect((await stubCalls(page)).filter((c) => c.fn === "pauseVideo")).toHaveLength(0);
-    await page.getByRole("button", { name: "Live", exact: true }).click();
+    await page.waitForTimeout(300);
     await expect(page.getByTestId("time-mode")).toHaveText("Live");
+    await expect(videoStatus(page)).toHaveAttribute("data-status", "playing");
+    expect((await stubCalls(page)).filter((c) => c.fn === "pauseVideo")).toHaveLength(0);
+    // "Watch the recorded ISS pass" goes back to the clip.
+    await page
+      .getByRole("region", { name: "Video controls" })
+      .getByRole("button", { name: "Watch the recorded ISS pass" })
+      .click();
+    await expect(cameraRadio(page, "ISS pass (recorded)")).toBeChecked();
+    await expect(page).toHaveURL(new RegExp(`[?&]cam=${CLIP_ID}(&|$)`));
   });
 
   test("9. a rebuffer of 2 s asks to check the delay", async ({ page }) => {
@@ -345,41 +390,40 @@ test.describe("YouTube StarCam", () => {
     await page.clock.setFixedTime(new Date(T + 2_000));
     await page.evaluate(() => window.__ytStub?.emitState(1));
     await expect(videoStatus(page)).toContainText(
-      "The video rebuffered for 2 s. Check the delay on the next satellite.",
+      "The video stalled for 2 s, so the labels may be slightly off.",
     );
+    await videoPanel(page).getByRole("button", { name: "Dismiss" }).click();
+    await expect(videoStatus(page)).not.toContainText("stalled");
   });
 
   for (const code of [101, 150, 153] as const) {
-    test(`10. YouTube error ${code} falls back to replay`, async ({ page }) => {
+    test(`10. YouTube error ${code}: plain words, Watch on YouTube, and the recorded pass`, async ({
+      page,
+    }) => {
       const resolverRequests: string[] = [];
       page.on("request", (r) => {
         if (r.url().includes("astroasahi.github.io/maunakea_east/")) resolverRequests.push(r.url());
       });
+      await page.emulateMedia({ reducedMotion: "reduce" }); // the clip at the end opens paused
       await openAt(page, SUBARU);
       await waitForStatus(page, "playing");
       await page.evaluate((c) => window.__ytStub?.emitError(c), code);
       await waitForStatus(page, "embed-blocked");
       expect(resolverRequests).toHaveLength(code === 153 ? 1 : 2);
-      await expect(videoStatus(page)).toContainText(
-        `cannot be played here (YouTube error ${code})`,
-      );
-      await expect(page.getByRole("link", { name: "Watch on YouTube" })).toHaveAttribute(
-        "href",
-        "https://www.youtube.com/watch?v=Fixture0001",
-      );
+      await expect(videoStatus(page)).toHaveAttribute("data-error-code", String(code));
+      await expect(videoStatus(page)).toHaveText("This live stream cannot be played on this site.");
+      await expect(
+        videoPanel(page).getByRole("link", { name: "Watch on YouTube" }),
+      ).toHaveAttribute("href", "https://www.youtube.com/watch?v=Fixture0001");
       await expect(playerIframes(page)).toHaveCount(0);
       await expect(page.getByTestId("sky-stage").getByTestId("sky-map")).toHaveCount(1);
-      await expect(
-        pickerRadio(page, "Subaru-Asahi StarCam (east, live)"),
-      ).toHaveAccessibleDescription(/Offline$/);
-      await expect(page.getByTestId("time-mode")).toHaveText("Replay");
+      await expect(cameraRadio(page, "Subaru live")).toHaveAccessibleDescription(/Offline$/);
+      await expect(page.getByTestId("time-mode")).toHaveText("Not live");
       if (code !== 153) return;
-      await page
-        .getByRole("button", { name: `Replay the recorded clip: ${SUBARU_CLIP_NAME}` })
-        .click();
-      await expect(page).toHaveURL(/[?&]cam=subaru-2026-10-11-iss(&|$)/);
+      await videoPanel(page).getByRole("button", { name: "Watch the recorded ISS pass" }).click();
+      await expect(page).toHaveURL(new RegExp(`[?&]cam=${CLIP_ID}(&|$)`));
       await waitForStatus(page, "paused");
-      await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T08:00:00Z");
+      await expectSimTime(page, CLIP_START_ISO);
     });
   }
 
@@ -400,9 +444,7 @@ test.describe("YouTube StarCam", () => {
     await openAt(page, SUBARU);
     await waitForStatus(page, "playing");
     await page.evaluate(() => window.__ytStub?.emitError(150));
-    await expect(videoStatus(page)).toContainText(
-      "The stream restarted with a new id. Check the delay.",
-    );
+    await expect(videoStatus(page)).toContainText("The stream restarted.");
     await expect.poll(() => liveVideoIds(page)).toEqual(["Fixture0002"]);
     await expect(playerIframes(page)).toHaveCount(1);
   });
@@ -417,32 +459,36 @@ test.describe("YouTube StarCam", () => {
       }),
     );
     await openAt(page, SUBARU);
-    await expect(videoStatus(page)).toContainText("Using the last known video id");
+    await expect(videoStatus(page)).toContainText("Showing the last known stream.");
     await expect.poll(() => liveVideoIds(page)).toEqual(["Kj5DjRYkzD8"]);
   });
 
-  test("13. one player across camera switches", async ({ page }) => {
+  test("13. one player across camera switches, held until the stage is more than half visible", async ({
+    page,
+  }) => {
     const westRequests: string[] = [];
     page.on("request", (r) => {
       if (r.url().includes("astroasahi.github.io/maunakea_west/")) westRequests.push(r.url());
     });
     await openAt(page, SUBARU);
-    // [M9] Below 900 px the panes stack (layout.css) and the picker sits below the sky view; at 1280 px the split view
-    // keeps the stage in view beside the sidebar, and the autoplay gate (step 5.5) would have nothing to hold.
+    // Below 900 px the page stacks (video, control bar, map), so scrolling down takes the stage out of view.
     await page.setViewportSize({ width: 820, height: 720 });
     await waitForStatus(page, "playing");
     await expect(playerIframes(page)).toHaveCount(1);
     expect(await liveVideoIds(page)).toHaveLength(1);
-    for (const name of ["CFHT-Asahi StarCam (west, live)", "Subaru-Asahi StarCam (east, live)"]) {
+    for (const name of ["CFHT live", "Subaru live"]) {
       const created = await page.evaluate(() => window.__ytStub?.players.length ?? 0);
       const plays = await playCalls(page);
-      await pickerRadio(page, name).check();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(page.getByTestId("sky-stage")).not.toBeInViewport({ ratio: 0.5 });
+      // A click() on the radio itself: a pointer click would scroll the header (and the stage) back into view.
+      await cameraRadio(page, name).evaluate((el) => (el as HTMLInputElement).click());
+      await expect(cameraRadio(page, name)).toBeChecked();
       await expect
         .poll(() => page.evaluate(() => window.__ytStub?.players.length ?? 0))
         .toBe(created + 1);
-      // The picker sits below the sky view: choosing a camera scrolled the stage out of view, so the autoplay gate
-      // holds the new player (step 5.5) until the stage is more than half visible again.
-      await expect(page.getByTestId("video-player")).not.toBeInViewport({ ratio: 0.5 });
+      // The autoplay gate holds the new player (step 5.5) while the stage is out of view.
+      await page.waitForTimeout(300);
       expect(await playCalls(page)).toBe(plays);
       await page.getByTestId("sky-stage").scrollIntoViewIfNeeded();
       await waitForStatus(page, "playing");
@@ -463,22 +509,34 @@ test.describe("YouTube StarCam", () => {
       (T - 21_000) / 1000,
     );
     await focusPage(page);
-    await page.keyboard.press("c");
-    const panel = page.getByRole("region", { name: "Calibration" });
-    await expect(panel).toContainText("The player suggests 21.0 s (undocumented API)");
-    await panel.getByRole("button", { name: "Apply suggestion" }).click();
-    await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T07:59:39Z");
+    const drawer = await openAlignment(page);
+    await expect(drawer).toContainText("The player suggests 21.0 s (undocumented API)");
+    await drawer.getByRole("button", { name: "Apply suggestion" }).click();
+    await expectSimTime(page, "2026-10-11T07:59:39Z");
   });
 
   test("15. the video's burned-in clock sets the delay", async ({ page }) => {
     await openAt(page, SUBARU);
     await waitForStatus(page, "playing");
     await focusPage(page);
-    await page.keyboard.press("c");
-    const panel = page.getByRole("region", { name: "Calibration" });
-    await panel.getByLabel("Video clock (Pacific/Honolulu)").fill("2026-10-10T21:59:20");
-    await panel.getByRole("button", { name: "Apply video clock" }).click();
-    await expect(panel).toContainText("Delay at start of playback: 39.5 s");
-    await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T07:59:20Z");
+    const drawer = await openAlignment(page);
+    await drawer.getByLabel("Video clock (Pacific/Honolulu)").fill("2026-10-10T21:59:20");
+    await drawer.getByRole("button", { name: "Apply video clock" }).click();
+    await expect(drawer).toContainText("Delay at start of playback: 39.5 s");
+    await expectSimTime(page, "2026-10-11T07:59:20Z");
+  });
+
+  test("16. the CFHT StarCam: its own resolver, credit and site", async ({ page }) => {
+    await openAt(page, "./?cam=cfht-starcam");
+    await waitForStatus(page, "playing");
+    await expect(cameraRadio(page, "CFHT live")).toBeChecked();
+    await expect(creditsList(page)).toContainText(
+      "CFHT & Asahi Shimbun in collaboration with Subaru Telescope, NAOJ",
+    );
+    await expect(
+      page.getByRole("application", {
+        name: "Ground map around the camera site: CFHT-Asahi StarCam (west, live)",
+      }),
+    ).toBeVisible();
   });
 });

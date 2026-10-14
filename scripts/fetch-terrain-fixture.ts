@@ -2,7 +2,9 @@
 // Run by hand, once: npx tsx scripts/fetch-terrain-fixture.ts [outDir]   (default tests/fixtures/terrain)
 // CI never runs it. Writes:
 //   walenstadt/<z>/<x>/<y>.png  every tile of tilesForSite(47.1236, 9.3242, 100_000)          45 tiles, 5.58 MB
-//   maunakea/<z>/<x>/<y>.png    the Subaru StarCam's open-ocean azimuth 0° (marchLimitM(4148)) 10 tiles, 1.15 MB
+//   maunakea/<z>/<x>/<y>.png    [Redesign] every tile of the Subaru StarCam's horizon (all azimuths,
+//                               marchLimitM(4148)), then the CFHT StarCam's two others                46 tiles, 5.5 MB
+//                               (M6 fetched only the open-ocean azimuth 0°: 10 tiles, all kept unchanged)
 //   <site>/sources.json         "z/x/y" → the tile's x-amz-meta-x-imagery-sources header
 //   flat.png                    256 × 256 RGB (128, 0, 0): 0 m everywhere, 564 bytes
 // Plain GET per tile (no custom headers: S3's CORS rules), stopping at the first non-200.
@@ -20,11 +22,25 @@ export interface TerrainFixturePlan {
   readonly keys: readonly TileKey[];
 }
 
-/** The two fixture plans of M6 step 5. */
+/**
+ * [Redesign] The e2e cameras are the Subaru and CFHT StarCams: their whole horizons, so the terrain route serves real
+ * Maunakea relief (the summit cones at az 75–145° from Subaru) instead of flat.png. Subaru's tiles first, then CFHT's
+ * others, each in tilesForSite order.
+ */
+function maunakeaTiles(): TileKey[] {
+  const keys = tilesForSite(19.82552, -155.47587, marchLimitM(4148));
+  const seen = new Set(keys.map((k) => `${k.z}/${k.x}/${k.y}`));
+  for (const k of tilesForSite(19.8253, -155.4689, marchLimitM(4204))) {
+    if (!seen.has(`${k.z}/${k.x}/${k.y}`)) keys.push(k);
+  }
+  return keys;
+}
+
+/** The two fixture plans of M6 step 5 ([Redesign] Maunakea's widened to the two StarCams' horizons). */
 export function terrainFixturePlans(): TerrainFixturePlan[] {
   return [
     { site: "walenstadt", keys: tilesForSite(47.1236, 9.3242, 100_000) },
-    { site: "maunakea", keys: tilesForSite(19.82552, -155.47587, marchLimitM(4148), [0]) },
+    { site: "maunakea", keys: maunakeaTiles() },
   ];
 }
 

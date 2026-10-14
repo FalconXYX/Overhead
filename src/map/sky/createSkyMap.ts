@@ -49,6 +49,7 @@ import {
 } from "../../state/skyCache";
 import type { AppStore } from "../../state/store";
 import type { AppState, CalibrationUiState, CameraKind, ObjectId } from "../../state/types";
+import { friendlyName } from "../../ui/friendly";
 import { SKY_PATH_STEP_MS } from "../../workers/protocol";
 import { PICK_RADIUS_PX, pickNearest } from "../pick";
 import { MAX_TRACKED, RequestGate } from "../sync/bindTracks";
@@ -76,8 +77,22 @@ import {
 } from "./layers/selection";
 import { createStarsLayer, setStarCount, setStarRadii } from "./layers/stars";
 
+/**
+ * [Redesign] A satellite's hit-target name: its friendly name ("Spent rocket stage (CZ-2C)"), never "CZ-2C R/B"
+ * (redesign spec section 3); cached per catalogue name, so the frame loop allocates nothing once seen.
+ */
+const hitNames = new Map<string, string>();
+function satelliteHitName(catalogName: string): string {
+  let name = hitNames.get(catalogName);
+  if (name === undefined) {
+    name = friendlyName(catalogName);
+    hitNames.set(catalogName, name);
+  }
+  return name;
+}
+
 /** [M9] Visual design (step 12): a cool white that reads on the night-sky stage and on night video. */
-const STAR_FILL = "#dce4ef";
+const STAR_FILL = "#ffffff"; // [Redesign] stars white (kindColors.ts)
 /** The frame until the first setCameraModel when the registry is still loading. */
 const DEFAULT_FRAME_PX = 1024;
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -610,7 +625,7 @@ export function createSkyMap(target: HTMLElement, store: AppStore, cache: SkyCac
         satIds[i] = id;
       }
       if (id === selected) continue;
-      const name = catalog.names[i] ?? id;
+      const name = satelliteHitName(catalog.names[i] ?? "");
       visit(id, name, sats.xy[2 * i] ?? Number.NaN, sats.xy[2 * i + 1] ?? Number.NaN);
     }
     if (bodies.layer.getVisible()) {

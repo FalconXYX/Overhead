@@ -62,6 +62,20 @@ describe("bindSite", () => {
     expect(view.getCenter()).toEqual(walenstadt);
   });
 
+  it("[Redesign] labels the site with the camera's plain siteName: the Subaru cameras, the clip, and CFHT", () => {
+    const { store, feature } = setup();
+    store.getState().actions.setRegistry(committedCameras());
+    for (const [id, label] of [
+      ["subaru-starcam", "Subaru Telescope camera"],
+      ["subaru-2026-10-11-iss", "Subaru Telescope camera"],
+      ["cfht-starcam", "CFHT camera"],
+      ["synthetic-maunakea", "Computed sky, Maunakea"], // no siteName: the camera's name
+    ] as const) {
+      store.getState().actions.setActiveCamera(id);
+      expect(feature.get("name"), id).toBe(label);
+    }
+  });
+
   it("clears the marker when the active camera is not in the registry", () => {
     const { store, feature } = setup();
     store.getState().actions.setActiveCamera("nope");

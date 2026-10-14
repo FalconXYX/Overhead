@@ -234,8 +234,8 @@ export function SatelliteCheck({
       </fieldset>
       <p id={`${id}-rule`}>
         {enabled
-          ? "Click the satellite's dot in the picture. Advance with the Timeline's “Forward 1 second” button: the arrow keys nudge the pointing while this panel is open."
-          : "Pause on a frame and select a satellite (click its marker, choose it under “Satellites above the horizon”, or open the page with &sel=sat:25544) to check it against the picture."}
+          ? "Click the satellite's dot in the picture. Move on a second at a time with the arrow keys on the “Position in the recording” slider under the video: elsewhere the arrow keys nudge the pointing while this panel is open."
+          : "Pause on a frame and select a satellite (click its marker, choose it under “In view”, or open the page with &sel=sat:25544) to check it against the picture."}
       </p>
       {rows.length === 0 ? null : (
         <table aria-labelledby={`${id}-heading`}>

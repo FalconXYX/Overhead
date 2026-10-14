@@ -2,7 +2,11 @@
 // section 9). Run by hand on a native arm64 laptop, never in CI: `npm run build && npm run perf -- starlink`.
 // Gates: CPU 1×: ≥ 59 fps, overhead:frame p95 ≤ 6 ms, overhead:propagate p95 ≤ 10 ms; CPU 4×: ≥ 55 fps, p95 ≤ 16 ms.
 // Writes test-results/perf/starlink-<n>x.json and trace-<n>x.json (gzip -9 the traces for the pull request).
+// [Redesign] On the live Subaru StarCam (the stub player under the sky, Starlink on the video and the map) at 60× from
+// the perf test hook: the computed fisheye is gone and no control offers 60× any more. A new baseline: the M9 figures
+// were taken on the fisheye, which drew every Starlink above the horizon.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type {} from "../../src/app/testHooks"; // window.__overhead
 import { expect, test } from "../e2e/fixtures";
 
 declare global {
@@ -30,7 +34,7 @@ for (const throttle of [1, 4] as const) {
           perf.propagate.push(e.duration);
       }).observe({ type: "measure" });
     });
-    await page.goto("./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z");
+    await page.goto("./?cam=subaru-starcam");
     const gpu = await page.evaluate(() => {
       const gl = document.createElement("canvas").getContext("webgl2");
       const ext = gl?.getExtension("WEBGL_debug_renderer_info");
@@ -39,22 +43,32 @@ for (const throttle of [1, 4] as const) {
     expect(gpu, "perf needs a GPU-backed WebGL context").not.toMatch(/SwiftShader|none/);
 
     // App-specific setup (step 1.3): Starlink on, panel closed, 60×, playing.
-    await page.keyboard.press("l");
-    const starlink = page.getByRole("checkbox", { name: "Starlink (about 11,100; loads 4.7 MB)" });
-    await starlink.check();
-    // M3's group status: "11,102 objects, elements fetched 2026-10-11 03:50 UTC" with the shared GP route.
-    await expect(starlink).toHaveAccessibleDescription(/objects, elements fetched/, {
-      timeout: 60_000,
+    await expect(page.getByTestId("video-status")).toHaveAttribute("data-status", "playing", {
+      timeout: 30_000,
     });
+    await page.getByRole("heading", { name: "Overhead", level: 1 }).click(); // out of the player (G4)
+    await page.keyboard.press("l");
+    const starlink = page
+      .getByRole("region", { name: "Layers" })
+      .getByRole("checkbox", { name: "Starlink", exact: true });
+    // The switch reads "Also on the map" as soon as it is on: wait for the group's file too, then its parse.
+    const loaded = page.waitForResponse("**/data/gp/starlink.json", { timeout: 60_000 });
+    await starlink.check();
+    await loaded;
+    // The switch's status once the group is in (the shared GP route serves the 11,102-object snapshot).
+    await expect(starlink).toHaveAccessibleDescription("Also on the map", { timeout: 60_000 });
+    await page.waitForTimeout(1_000); // the worker parses 11,102 elements
     // keyboard.ts ignores keys whose target is an input: l on the focused checkbox would do nothing.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("l");
-    await page.keyboard.press("]");
-    await page.keyboard.press("]");
-    const timeline = page.getByRole("region", { name: "Timeline" });
-    await expect(timeline.getByRole("radio", { name: "60×" })).toBeChecked();
-    await page.keyboard.press(" ");
-    await expect(timeline.getByRole("button", { name: "Pause" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Layers" })).toBeHidden();
+    await page.evaluate(
+      (from) => window.__overhead?.playReplay(60, from),
+      Date.parse("2026-10-11T15:09:50Z"),
+    );
+    await expect
+      .poll(() => page.evaluate(() => window.__overhead?.clock() ?? null))
+      .toMatchObject({ mode: "replay", playing: true, rate: 60 });
 
     // [M9] A measurement is only worth something on the real layout: both maps with a real size, inside the
     // 1440 × 900 viewport (a map wider than the window means the page layout is broken).

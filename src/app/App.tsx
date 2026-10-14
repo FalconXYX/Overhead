@@ -1,21 +1,26 @@
-// src/app/App.tsx — the shell: three named panes and the Inspector (M3), each inside its own error boundary, and the
-// credits; [M5] the video-id resolution of the active YouTube camera (step 12.3) and the VideoPanel; [M8] the incoming
-// chip; [M9] the tour's region (lazy, only while the tour runs) and the keyboard shortcuts list. Placement is visual
-// design, settled from screenshots.
+// src/app/App.tsx — the shell: named panes, each inside its own error boundary; [M5] the video-id resolution of the
+// active YouTube camera (step 12.3) and the VideoPanel; [M8] the incoming chip; [M9] the tour's region (lazy, only while
+// the tour runs). [Redesign] Video first, no sidebar (redesign spec section 2):
+// - a slim header: the title, the camera switcher, the incoming chip, and [Layers], [Credits] and [?];
+// - the main area: the video stage as the hero with its notes (VideoPanel) and the control bar under it, and the
+//   ground map beside it (stacked below 900 px: video, control bar, map);
+// - "Camera alignment (advanced)": a drawer over the map side, holding the Calibration panel.
+// The selected object's card floats over the stage (SkyView); the list of what is in view is the control bar's.
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 import { useAppState } from "../state/hooks";
 import { selectActiveCamera } from "../state/selectors";
 import { store } from "../state/store";
 import type { YoutubeCamera } from "../state/types";
-import { CalibrationPanel } from "../ui/CalibrationPanel";
+import { CalibrationDrawer } from "../ui/CalibrationDrawer";
 import { CameraPicker } from "../ui/CameraPicker";
 import { Credits } from "../ui/Credits";
 import { GroundView } from "../ui/GroundView";
 import { IncomingChip } from "../ui/IncomingChip";
-import { Inspector } from "../ui/Inspector";
 import { KeyboardShortcuts } from "../ui/KeyboardShortcuts";
 import { LayerToggles } from "../ui/LayerToggles";
 import { SkyView } from "../ui/SkyView";
+import { StageHint } from "../ui/StageHint";
+import { STAGE_COLUMN_ID } from "../ui/shellIds";
 import { Timeline } from "../ui/Timeline";
 import { VideoPanel, type VideoResolution } from "../ui/VideoPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -37,7 +42,7 @@ function Pane({
 }) {
   return (
     <section aria-label={name} className={`pane ${className}`}>
-      <h2 className="pane-title">{name}</h2>
+      <h2 className="pane-title visually-hidden">{name}</h2>
       <ErrorBoundary pane={name}>{children}</ErrorBoundary>
     </section>
   );
@@ -124,63 +129,68 @@ export function App() {
           videoId: resolution.videoId,
           restarted: resolution.restarted,
         };
-  // [M9] Layout (visual design, step 12): the header, the sky and ground panes side by side, the timeline bar, and a
-  // sidebar (src/app/layout.css). DOM order is reading order below 900 px: sky, ground, timeline, then the sidebar.
+  // [Redesign] Layout in src/app/layout.css. DOM order is reading order below 900 px: the header, the video, its notes,
+  // the control bar, the tour, then the map.
   return (
-    <>
-      <main className="app">
-        {/* [M8] The incoming chip is its own region, "Incoming satellites", mounted at all times outside the sky stage,
-            so it never covers the player's controls (O1). [M9] The on-screen key list (step 9), from KEY_MAP. */}
-        <header className="app-header">
-          <h1 className="app-title">Overhead</h1>
-          <ErrorBoundary pane="Incoming satellites">
-            <IncomingChip />
+    <div className="app">
+      <header className="app-header">
+        <h1 className="app-title">Overhead</h1>
+        <ErrorBoundary pane="Camera">
+          <CameraPicker />
+        </ErrorBoundary>
+        {/* [M8] The incoming chip is its own region, "Incoming satellites", mounted at all times outside the sky
+            stage, so it never covers the player's controls (O1). */}
+        <ErrorBoundary pane="Incoming satellites">
+          <IncomingChip />
+        </ErrorBoundary>
+        <div className="header-tools">
+          {/* The Layers button and its region, "Layers" (a Pane would name a second one). */}
+          <ErrorBoundary pane="Layers">
+            <LayerToggles />
+          </ErrorBoundary>
+          <ErrorBoundary pane="Credits">
+            <Credits />
           </ErrorBoundary>
           <KeyboardShortcuts />
-        </header>
-        {/* [M9] Not a Pane: DemoCaptions is its own region, "Tour", outside the sky stage, so it never covers the
-            player (M9 step 10 rule 8). */}
-        {demoActive ? (
-          <ErrorBoundary pane="Tour">
-            <Suspense fallback={null}>
-              <DemoCaptions />
-            </Suspense>
-          </ErrorBoundary>
-        ) : null}
-        <Pane name="Sky view" className="pane-sky">
-          <SkyView player={player} onRestart={onRestart} />
-        </Pane>
-        <Pane name="Ground map" className="pane-ground">
-          <GroundView />
-        </Pane>
-        <Pane name="Timeline" className="pane-timeline">
-          <Timeline />
-        </Pane>
-        <div className="sidebar">
-          <div className="sidebar-scroll">
-            {/* The Layers button and its region, "Layers" (a Pane would name a second one). First, so the panel the L
-                key opens is in view. */}
-            <ErrorBoundary pane="Layers">
-              <LayerToggles />
-            </ErrorBoundary>
-            {/* [M5] Not a Pane: VideoPanel is its own region, "Video: <camera name>", and renders nothing for cameras
-                without a video. Keyed by camera, so each camera starts with fresh panel state. */}
+        </div>
+      </header>
+      <main className="app-main">
+        {/* The video, its notes and the control bar: the control bar's Fullscreen takes this column fullscreen. */}
+        <div id={STAGE_COLUMN_ID} className="stage-column">
+          <Pane name="Sky view" className="pane-sky">
+            <SkyView player={player} onRestart={onRestart} />
+          </Pane>
+          {/* [M5] Not a Pane: VideoPanel is its own region, "Video: <camera name>". Keyed by camera, so each camera
+              starts with fresh panel state. */}
+          <div className="stage-notes">
             <ErrorBoundary pane="Video">
               <VideoPanel key={activeId} resolution={resolution} onRetry={onRetry} />
             </ErrorBoundary>
-            {/* [M4] The camera list and the sensor controls. CalibrationPanel carries its own toggle (the on-screen C). */}
-            <Pane name="Camera" className="pane-camera">
-              <CameraPicker />
-              <CalibrationPanel />
-            </Pane>
           </div>
-          {/* Not a Pane: the Inspector is its own region named "Inspector", and a Pane would name a second one. */}
-          <ErrorBoundary pane="Inspector">
-            <Inspector />
-          </ErrorBoundary>
+          <Pane name="Video controls" className="pane-controls">
+            <Timeline />
+          </Pane>
+          <StageHint />
+        </div>
+        <div className="map-column">
+          {/* [M9] Not a Pane: DemoCaptions is its own region, "Tour", outside the sky stage, so it never covers the
+              player (M9 step 10 rule 8). */}
+          {demoActive ? (
+            <ErrorBoundary pane="Tour">
+              <Suspense fallback={null}>
+                <DemoCaptions />
+              </Suspense>
+            </ErrorBoundary>
+          ) : null}
+          <Pane name="Ground map" className="pane-ground">
+            <GroundView />
+          </Pane>
         </div>
       </main>
-      <Credits />
-    </>
+      {/* [Redesign] "Camera alignment (advanced)": its own region, over the map side while open. */}
+      <ErrorBoundary pane="Camera alignment">
+        <CalibrationDrawer />
+      </ErrorBoundary>
+    </div>
   );
 }

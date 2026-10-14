@@ -1,11 +1,23 @@
 // tests/e2e/goes-swap.spec.ts — the M7 acceptance test: scrubbing across a 10-minute boundary swaps the GOES-West tile
 // set exactly once. The routes fixture serves the committed DescribeDomains response and answers every HEAD probe
 // with layer-time-actual equal to its Time, so the newest listed step (2026-10-11T00:00:00Z) is confirmed.
+// [Redesign] On the recorded clip, served as starting a few seconds before each boundary (paused: reduced motion),
+// stepped with the arrow keys; "Cloud imagery (10 min)" is the layer's switch.
 import type { Page, Request } from "@playwright/test";
-import { expect, recordGibsRequests, test } from "./fixtures";
+import {
+  clipReady,
+  clipStartingAt,
+  creditsList,
+  expect,
+  expectSimTime,
+  focusBody,
+  openLayers,
+  recordGibsRequests,
+  test,
+} from "./fixtures";
 
 const GOES_LAYER = "GOES-West_ABI_Band13_Clean_Infrared";
-const TOGGLE = "GOES-West infrared (Band 13, 10 minute)";
+const TOGGLE = "Cloud imagery (10 min)";
 
 type GoesRequest =
   | { kind: "head"; time: string | null }
@@ -43,20 +55,33 @@ function goesRequests(requests: readonly Request[]) {
 
 const times = (list: readonly { time: string | null }[]) => [...new Set(list.map((r) => r.time))];
 
-/** L opens the Layers panel; the toggle stays disabled until the capabilities snapshot is ready. */
+/** The Layers popover's switch; it stays disabled until the capabilities snapshot is ready. */
 async function turnOnGoes(page: Page): Promise<void> {
-  await page.keyboard.press("l");
-  await page
-    .getByRole("region", { name: "Layers" })
-    .getByRole("checkbox", { name: TOGGLE })
-    .check();
+  const layers = await openLayers(page);
+  await layers.getByRole("checkbox", { name: TOGGLE }).check();
+  await page.keyboard.press("Escape");
+  await focusBody(page);
 }
 
-test("scrubbing across a 10-minute boundary swaps the GOES tile set exactly once", async ({
+/** The clip from `startIso`, loaded and paused. */
+async function openClipAt(page: Page, startIso: string): Promise<void> {
+  await clipStartingAt(page, startIso);
+  await page.goto("./");
+  await clipReady(page, "paused");
+}
+
+/** One-second steps with the arrow keys (focus on body). */
+async function step(page: Page, key: "ArrowRight" | "ArrowLeft", count: number): Promise<void> {
+  for (let i = 0; i < count; i += 1) await page.keyboard.press(key);
+}
+
+test.use({ reducedMotion: "reduce" });
+
+test("stepping across a 10-minute boundary swaps the GOES tile set exactly once", async ({
   page,
 }) => {
   const recorder = recordGibsRequests(page);
-  await page.goto("./?t=2026-10-10T09:58:00Z");
+  await openClipAt(page, "2026-10-10T09:59:57Z");
   await recorder.quiet();
   // Layer off: no DescribeDomains, no probe, no tile.
   const atLoad = goesRequests(recorder.requests);
@@ -67,9 +92,7 @@ test("scrubbing across a 10-minute boundary swaps the GOES tile set exactly once
   await turnOnGoes(page);
   const caption = page.getByTestId("goes-asof");
   await expect(caption).toHaveText("Imagery as of 09:50 UTC");
-  await expect(page.getByRole("region", { name: "Credits" })).toContainText(
-    "Imagery: GOES-West/ABI, Band 13 Clean Infrared",
-  );
+  await expect(creditsList(page)).toContainText("Imagery: GOES-West/ABI, Band 13 Clean Infrared");
   await recorder.quiet();
 
   const on = goesRequests(recorder.requests);
@@ -83,11 +106,10 @@ test("scrubbing across a 10-minute boundary swaps the GOES tile set exactly once
   const n0 = on.tiles.length;
   const setA = new Set(on.tiles.map((r) => r.tile));
 
-  // 09:58:01 → 10:02:00, one second per fill.
-  const slider = page.getByRole("slider", { name: "Simulation time" });
-  for (let v = 1; v <= 240; v += 1) await slider.fill(String(v));
+  // 09:59:57 → 10:00:02, one second per step.
+  await step(page, "ArrowRight", 5);
+  await expectSimTime(page, "2026-10-10T10:00:02Z");
   await recorder.quiet();
-  await expect(page.getByTestId("time-utc")).toHaveText("2026-10-10T10:02:00Z");
   await expect(caption).toHaveText("Imagery as of 10:00 UTC");
   const forward = goesRequests(recorder.requests).tiles.slice(n0);
   expect(forward.length).toBeGreaterThanOrEqual(1);
@@ -97,7 +119,8 @@ test("scrubbing across a 10-minute boundary swaps the GOES tile set exactly once
 
   // Back across the boundary: OpenLayers reuses the cached 09:50 tiles.
   const n1 = goesRequests(recorder.requests).tiles.length;
-  for (let v = 239; v >= 0; v -= 1) await slider.fill(String(v));
+  await step(page, "ArrowLeft", 5);
+  await expectSimTime(page, "2026-10-10T09:59:57Z");
   await recorder.quiet();
   await expect(caption).toHaveText("Imagery as of 09:50 UTC");
   const back = goesRequests(recorder.requests).tiles.slice(n1);
@@ -115,11 +138,10 @@ test("scrubbing across a 10-minute boundary swaps the GOES tile set exactly once
   );
 });
 
-test("a time inside a gap shows the step before it, and the ticks show the gap", async ({
-  page,
-}) => {
+test("a time inside a gap shows the step before it", async ({ page }) => {
   const recorder = recordGibsRequests(page);
-  await page.goto("./?t=2026-10-07T19:35:00Z");
+  // The fixture lists no 19:30 step on 2026-10-07: 19:39:55 shows 19:20 until 19:40.
+  await openClipAt(page, "2026-10-07T19:39:55Z");
   await turnOnGoes(page);
   const caption = page.getByTestId("goes-asof");
   await expect(caption).toHaveText("Imagery as of 19:20 UTC");
@@ -128,22 +150,10 @@ test("a time inside a gap shows the step before it, and the ticks show the gap",
   expect(before.length).toBeGreaterThanOrEqual(1);
   expect(times(before)).toEqual(["2026-10-07T19:20:00Z"]);
 
-  // One segment per run of listed steps inside ± 12 h: the 19:30 and 21:10 gaps.
-  const segments = page.getByTestId("goes-ticks").locator("[data-from]");
-  await expect(segments).toHaveCount(3);
-  const ranges = await segments.evaluateAll((els) =>
-    els.map((el) => [el.getAttribute("data-from"), el.getAttribute("data-to")]),
-  );
-  expect(ranges).toEqual([
-    ["2026-10-07T12:00:00Z", "2026-10-07T19:20:00Z"],
-    ["2026-10-07T19:40:00Z", "2026-10-07T21:00:00Z"],
-    ["2026-10-07T21:20:00Z", "2026-10-08T07:30:00Z"],
-  ]);
-  await expect(page.getByTestId("goes-ticks")).toHaveAttribute("aria-hidden", "true");
-
-  // 300 s after 19:35:00 is 19:40:00, the first step after the gap.
+  // 5 s later is 19:40:00, the first step after the gap.
   const mark = before.length;
-  await page.getByRole("slider", { name: "Simulation time" }).fill("300");
+  await step(page, "ArrowRight", 5);
+  await expectSimTime(page, "2026-10-07T19:40:00Z");
   await expect(caption).toHaveText("Imagery as of 19:40 UTC");
   await recorder.quiet();
   const after = goesRequests(recorder.requests).tiles.slice(mark);
@@ -152,9 +162,9 @@ test("a time inside a gap shows the step before it, and the ticks show the gap",
 });
 
 test("before the listed window: the 90-day message and no GOES tiles", async ({ page }) => {
-  // The fixture starts 24 h after this time, so the ± 12 h scrubber cannot reach a listed step.
+  // The fixture starts 24 h after this time.
   const recorder = recordGibsRequests(page);
-  await page.goto("./?t=2026-10-06T12:00:00Z");
+  await openClipAt(page, "2026-10-06T12:00:00Z");
   await turnOnGoes(page);
   await expect(page.getByTestId("goes-asof")).toHaveText(
     "No GOES-West imagery for this time (NASA GIBS keeps 90 days)",

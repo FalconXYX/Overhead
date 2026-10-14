@@ -427,6 +427,9 @@ describe("clipCamera", () => {
     expect(camera).toEqual({
       id: "subaru-2026-10-11-iss",
       name: "Subaru StarCam: ISS pass, 2026-10-11 (recorded)",
+      shortName: "ISS pass (recorded)", // [Redesign]
+      siteName: "Subaru Telescope camera",
+      placeName: "Maunakea, Hawaii", // [Polish]
       kind: "local-video",
       source: {
         sidecarUrl: "recordings/subaru-2026-10-11-iss.json",

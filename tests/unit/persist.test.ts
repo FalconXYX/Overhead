@@ -20,10 +20,10 @@ import {
   startCalibrationPersistence,
 } from "../../src/app/persist";
 import { type Calibration, toGeoPose, validateGeoPose } from "../../src/domain/camera";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig } from "../../src/state/types";
-import { committedCameras } from "../helpers/store";
+import { committedCameras, TEST_CAMERA_ID } from "../helpers/store";
 
 const NOW = Date.parse("2026-10-11T08:00:00Z");
 
@@ -68,7 +68,7 @@ function camera(id: string): CameraConfig {
 }
 
 function newStore(activeId = "cfht-nanaao"): AppStore {
-  const store = createAppStore(initialState(NOW, DEFAULT_CAMERA_ID));
+  const store = createAppStore(initialState(NOW, TEST_CAMERA_ID));
   store.getState().actions.setRegistry(registry());
   store.getState().actions.setActiveCamera(activeId);
   return store;
@@ -240,7 +240,7 @@ describe("calibration files", () => {
         { imagePx: [700.5, 500.25], targetId: "planet:Saturn", role: "holdout" },
       ],
     });
-    const empty = createAppStore(initialState(NOW, DEFAULT_CAMERA_ID));
+    const empty = createAppStore(initialState(NOW, TEST_CAMERA_ID));
     expect(buildCalibrationFile(empty.getState(), NOW)).toBeNull();
   });
 

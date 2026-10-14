@@ -30,6 +30,9 @@ export const M5_CAMERA_ENTRIES = [
   {
     id: "subaru-starcam",
     name: "Subaru-Asahi StarCam (east, live)",
+    shortName: "Subaru live", // [Redesign]
+    siteName: "Subaru Telescope camera",
+    placeName: "Maunakea, Hawaii", // [Polish]
     kind: "youtube",
     source: {
       youtubeVideoId: "Kj5DjRYkzD8",
@@ -50,6 +53,9 @@ export const M5_CAMERA_ENTRIES = [
   {
     id: "cfht-starcam",
     name: "CFHT-Asahi StarCam (west, live)",
+    shortName: "CFHT live", // [Redesign]
+    siteName: "CFHT camera",
+    placeName: "Maunakea, Hawaii", // [Polish]
     kind: "youtube",
     source: {
       youtubeVideoId: "Q3UhCgsWDw8",
@@ -107,6 +113,9 @@ export const M5_CAMERA_ENTRIES = [
   {
     id: "subaru-2026-10-11-iss",
     name: "Subaru StarCam: ISS pass, 2026-10-11 (recorded)",
+    shortName: "ISS pass (recorded)", // [Redesign]
+    siteName: "Subaru Telescope camera",
+    placeName: "Maunakea, Hawaii", // [Polish]
     kind: "local-video",
     source: {
       sidecarUrl: "recordings/subaru-2026-10-11-iss.json",

@@ -151,9 +151,9 @@ const label = (sel: ReturnType<typeof createSkySelection>, which: "selected" | "
 };
 
 describe("writeSkySelection", () => {
-  it("labels the ISS whenever it is drawn", () => {
+  it("labels the ISS whenever it is drawn, by its friendly short name ([Redesign])", () => {
     const { sel, sats } = setup(none);
-    expect(label(sel, "iss")).toBe("ISS (ZARYA)");
+    expect(label(sel, "iss")).toBe("ISS");
     expect(sel.iss.point.getCoordinates()).toEqual([sats.xy[0], sats.xy[1]]);
     expect(sel.drawnSelectedId).toBeNull();
     expect(setup(none, false).sel.iss.visible).toBe(false); // satellites layer off
@@ -167,7 +167,7 @@ describe("writeSkySelection", () => {
       hoverIndex: null,
       issIndex: 0,
     });
-    expect(label(sel, "selected")).toBe("ISS (ZARYA)");
+    expect(label(sel, "selected")).toBe("ISS");
     expect(sel.iss.visible).toBe(false);
     expect(label(sel, "hover")).toBe("Polaris");
     // skyCache holds Float32 az/alt.
@@ -185,9 +185,9 @@ describe("writeSkySelection", () => {
       hoverIndex: 1,
       issIndex: 0,
     });
-    expect(label(sel, "selected")).toBe("SL-3 R/B");
+    expect(label(sel, "selected")).toBe("Rocket stage"); // [Redesign] "SL-3 R/B" in plain words
     expect(sel.hover.visible).toBe(false);
-    expect(label(sel, "iss")).toBe("ISS (ZARYA)");
+    expect(label(sel, "iss")).toBe("ISS");
   });
 
   it("labels bodies with bodyLabel and stars with their name or HR number", () => {

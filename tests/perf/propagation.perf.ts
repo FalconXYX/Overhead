@@ -1,6 +1,8 @@
 // tests/perf/propagation.perf.ts — propagation worker cost per sample (M3 step 16.3; README section 9). Run by hand with
 // `npm run perf`, never in CI. Budget: ISS + visual p95 ≤ 4 ms. [M9] With Starlink (culled, step 2) p95 ≤ 10 ms at 1×,
-// 60× and 600×: gated from M9 (measured 2.1–2.6 ms at 1× to 60×, 4.1–5.1 ms at 600×).
+// 60× and 600×: gated from M9 (measured 2.1–2.6 ms at 1× to 60×, 4.1–5.1 ms at 600×). [Redesign] On the live Subaru
+// StarCam, its rates set through the perf test hook (no control offers 60× or 600× any more, and a live camera has no
+// time controls); the worker's work does not depend on the camera's lens.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import { expect, test } from "../e2e/fixtures";
@@ -9,6 +11,8 @@ const SAMPLES = 600; // 60 s at 1× (D = 100 ms)
 const WARMUP = 5; // JIT warm-up: the first replies took 1.0–3.1 ms
 const BUDGET_P95_MS = 4;
 const STARLINK_BUDGET_P95_MS = 10; // [M9]
+/** The e2e instant: 2026-10-11T15:09:50Z, the ISS pass. */
+const START = Date.parse("2026-10-11T15:09:50Z");
 
 // Collects every "overhead:propagate" duration (the worker's computeMs). The app clears its measures at once; an
 // observer still receives each one.
@@ -68,33 +72,38 @@ async function collect(
 
 test("propagation worker per tick: ISS + visual, then with Starlink", async ({ page, browser }) => {
   test.setTimeout(600_000);
-  await page.goto("./?t=2026-10-11T15:09:50Z");
+  await page.goto("./?cam=subaru-starcam");
   await expect
     .poll(() => page.evaluate(() => (window.__overhead?.readyFrame() ?? null) !== null))
     .toBe(true);
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await expect(timeline.getByRole("radio", { name: "1×" })).toBeChecked();
-  await page.keyboard.press(" "); // play at 1×; from here on only the mouse is used, so Space never hits a control
-  await expect(timeline.getByRole("button", { name: "Pause" })).toBeVisible();
+  const playAt = async (rate: 1 | 60 | 600) => {
+    await page.evaluate(([r, from]) => window.__overhead?.playReplay(r, from), [
+      rate,
+      START,
+    ] as const);
+    await expect
+      .poll(() => page.evaluate(() => window.__overhead?.clock() ?? null))
+      .toMatchObject({ mode: "replay", playing: true, rate });
+  };
+  await playAt(1);
   const base = await collect(page, "ISS + visual (175 objects)");
 
-  await page.getByRole("button", { name: "Layers" }).click();
-  const starlink = page.getByRole("checkbox", { name: "Starlink (about 11,100; loads 4.7 MB)" });
+  await page.getByRole("button", { name: "Layers", exact: true }).click();
+  const starlink = page
+    .getByRole("region", { name: "Layers" })
+    .getByRole("checkbox", { name: "Starlink", exact: true });
+  // The switch reads "Also on the map" as soon as it is on: wait for the group's file too, then its parse.
+  const loaded = page.waitForResponse("**/data/gp/starlink.json", { timeout: 60_000 });
   await starlink.check();
-  await expect(starlink).toHaveAccessibleDescription(/^11,102 objects/, { timeout: 30_000 });
+  await loaded;
+  await expect(starlink).toHaveAccessibleDescription("Also on the map", { timeout: 30_000 });
+  await page.waitForTimeout(1_000); // the worker parses 11,102 elements
   const starlinkRows = [await collect(page, "with Starlink (11,277 objects)")];
-  // [M9] 60× and 600×: each from the start of the ±12 h range (Home on the scrubber), so 600× (10 h of sim time per
-  // minute) never reaches the edge, where the clock pauses.
-  const slider = timeline.getByRole("slider", { name: "Simulation time" });
-  for (const rate of ["60×", "600×"] as const) {
-    await slider.focus();
-    await page.keyboard.press("Home");
-    await timeline.getByRole("radio", { name: rate }).click();
-    await expect(timeline.getByRole("radio", { name: rate })).toBeChecked();
-    await expect(timeline.getByRole("button", { name: "Pause" })).toBeVisible();
-    starlinkRows.push(
-      await collect(page, "with Starlink (11,277 objects)", rate.replace("×", "x")),
-    );
+  // [M9] 60× and 600×: each from the start of its ±12 h range (playReplay), so 600× (10 h of sim time per minute)
+  // never reaches the edge, where the clock pauses.
+  for (const rate of [60, 600] as const) {
+    await playAt(rate);
+    starlinkRows.push(await collect(page, "with Starlink (11,277 objects)", `${rate}x`));
   }
 
   // navigator.userAgentData is no use here: the Desktop Chrome descriptor's Windows x64 user agent overrides it.

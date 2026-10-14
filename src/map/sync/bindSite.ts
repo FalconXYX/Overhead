@@ -32,9 +32,10 @@ export function cameraWedgeGeometry(camera: CameraConfig, calibration: Calibrati
 }
 
 /**
- * On a camera change: the marker at the site, named after the camera, and the view centred there; no camera clears
- * the marker. On a camera or calibration change: the wedge (when given), cleared without a camera. A calibration
- * change leaves the marker and the view alone. Never on clock ticks.
+ * On a camera change: the marker at the site, labelled with the camera's siteName ([Redesign] "Subaru Telescope
+ * camera"; else its name), and the view centred there; no camera clears the marker. On a camera or calibration change:
+ * the wedge (when given), cleared without a camera. A calibration change leaves the marker and the view alone. Never
+ * on clock ticks.
  */
 export function bindSite(
   store: AppStore,
@@ -53,7 +54,7 @@ export function bindSite(
         } else {
           const coordinate = fromLonLat([camera.site.lonDeg, camera.site.latDeg]);
           feature.setGeometry(new Point(coordinate));
-          feature.set("name", camera.name);
+          feature.set("name", camera.siteName ?? camera.name); // [Redesign] the plain site label
           view.setCenter(coordinate);
         }
       }

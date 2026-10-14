@@ -1,7 +1,8 @@
 // src/state/initialState.ts
 import type { StateData } from "./types";
 
-export const DEFAULT_CAMERA_ID = "synthetic-maunakea";
+/** [Redesign] The recorded ISS pass (src/app/cameras.ts RECORDED_CLIP_ID): the site opens on it. */
+export const DEFAULT_CAMERA_ID = "subaru-2026-10-11-iss";
 
 const idleGroup = { status: "idle", fetchedAtMs: null, count: 0 } as const;
 
@@ -21,6 +22,7 @@ export function initialState(nowMs: number, activeId: string): StateData {
       satellites: true,
       starlink: false,
       trails: true,
+      tracks: true, // [Redesign]
       grid: true,
       horizon: true,
       footprintHeightKm: null,

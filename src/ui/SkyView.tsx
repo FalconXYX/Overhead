@@ -2,17 +2,16 @@
 // satellite list and the hover card's portal (M3 step 13); for image cameras the still-image background, its size
 // notice and replay caption, "Fit frame", the focusable map and the calibration crosshair (M4 steps 10, 11 and 14);
 // the sky stage over a video: the YouTube player under the map, the Fullscreen button and its guard (M5 step 8).
-// Imports no OpenLayers module (README import rule 4). Layout and look are visual design, settled from screenshots.
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+// Imports no OpenLayers module (README import rule 4). [Redesign] Layout only (redesign spec section 2): the stage is
+// the hero, a 16:9 box for both the clip and the live player; the selected object's card (ObjectCard) floats over its
+// bottom-left; the lists under the stage are gone (InViewList, in the control bar's [In view] popover, replaces them)
+// and Fullscreen moved to the control bar, which takes the whole stage column fullscreen.
+import { type CSSProperties, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { imageCapturedText, imageSizeNotice } from "../app/stillImage";
 import { mountYoutubePlayer } from "../app/youtube";
-import { BODY_IDS, BODY_STRIDE } from "../domain/astro";
-import { wrap360 } from "../domain/geo";
 import { registerMap } from "../map/registry";
 import { cameraPansAndZooms, createSkyMap } from "../map/sky/createSkyMap";
-import { bodyLabel } from "../map/sky/layers/bodies";
-import { skySatelliteList } from "../map/sky/layers/satellites";
 import { backgroundImageSize, bindBackground } from "../map/sync/bindBackground";
 import { bindBodiesVisible, bindPendingPoint } from "../map/sync/bindCalibrationView";
 import { bindHorizonWorker, bindSkyHorizon } from "../map/sync/bindHorizon";
@@ -20,21 +19,15 @@ import { bindSkyLayerVisible } from "../map/sync/bindLayers";
 import { bindSelection } from "../map/sync/bindSelection";
 import { bindSkyCamera } from "../map/sync/bindSkyCamera";
 import { registerFrameUpdater } from "../state/clockLoop";
-import { ephemeris, indexOfObjectId } from "../state/ephemeris";
 import { useActions, useAppState, useTick4Hz } from "../state/hooks";
-import {
-  selectActiveCamera,
-  selectHorizonProfileDeg,
-  selectHorizonStatus,
-} from "../state/selectors";
+import { selectActiveCamera, selectClipUnavailable } from "../state/selectors";
 import { skyCache } from "../state/skyCache";
 import { store } from "../state/store";
-import type { LoadStatus, SatId } from "../state/types";
 import { HoverCard } from "./HoverCard";
-import { behindTerrain } from "./objectText";
+import { ObjectCard } from "./ObjectCard";
 
 /** [M5] The guard's note when the player's own fullscreen (the f key, G3) was undone. */
-const FULLSCREEN_NOTE = "Use this Fullscreen button to keep the sky on the video.";
+const FULLSCREEN_NOTE = "Use the Fullscreen button under the video to keep the sky drawn on it.";
 /**
  * [M9] Layout lives in src/app/layout.css (visual design, step 12): the stage box fills the pane, a map target needs a
  * non-zero size (M1 gotcha 15), and the frame is fitted inside it, whatever its shape. The box carries the frame's
@@ -46,80 +39,14 @@ const ratioStyle = (widthPx: number, heightPx: number) =>
 const youtubeStageStyle = (widthPx: number, heightPx: number) =>
   ({ aspectRatio: `${widthPx} / ${heightPx}` }) as const;
 
-/** [M6] The non-visual equivalent of the dimming fill, appended to an item's accessible name. */
-const BEHIND_TERRAIN_SUFFIX = ", behind terrain";
-
-interface BodyItem {
-  readonly id: string;
-  readonly text: string;
+/** [Redesign] Phone widths: the video is too small to cover, so the card goes under it instead (layout.css). */
+const NARROW = "(max-width: 599.98px)";
+function subscribeNarrow(onChange: () => void): () => void {
+  const query = window.matchMedia(NARROW);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
 }
-
-/**
- * Bodies at apparent alt ≥ 0, in BODY_IDS order, e.g. "Saturn, az 120°, alt 58°"; null before the first pass. [M6]
- * ", behind terrain" is appended for a body at or below a ready terrain profile (`terrain`, else null).
- */
-function bodiesAboveHorizon(bodies: Float64Array, terrain: Float32Array | null): BodyItem[] | null {
-  let computed = false;
-  const items: BodyItem[] = [];
-  for (let i = 0; i < BODY_IDS.length; i++) {
-    const id = BODY_IDS[i];
-    const o = i * BODY_STRIDE;
-    const az = bodies[o] ?? Number.NaN;
-    const alt = bodies[o + 1] ?? Number.NaN;
-    if (id === undefined || !Number.isFinite(alt)) continue;
-    computed = true;
-    if (alt < 0) continue;
-    const azRounded = wrap360(Math.round(az)); // 359.6 shows as 0, not 360
-    const label = bodyLabel(id, bodies[o + 3] ?? Number.NaN);
-    const behind = behindTerrain(terrain, az, alt) ? BEHIND_TERRAIN_SUFFIX : "";
-    items.push({ id, text: `${label}, az ${azRounded}°, alt ${Math.round(alt)}°${behind}` });
-  }
-  return computed ? items : null;
-}
-
-interface SatelliteItem {
-  readonly noradId: number;
-  readonly id: SatId;
-  /** The button's text and accessible name, e.g. "ISS (ZARYA), NORAD 25544, az 124°, alt 29°, sunlit". */
-  readonly text: string;
-  readonly index: number;
-}
-
-/** The satellites drawn in the sky this frame, highest first; null before the first ready frame. */
-function satellitesAboveHorizon(
-  selectedIndex: number | null,
-  satellitesOn: boolean,
-  starlinkOn: boolean,
-  terrain: Float32Array | null, // [M6] a ready profile, else null
-): { items: SatelliteItem[]; starlinkCount: number } | null {
-  const { frame, catalog } = ephemeris;
-  const list = skySatelliteList(frame, catalog, selectedIndex, satellitesOn, starlinkOn);
-  if (list === null) return null;
-  const items = list.indices.map((i): SatelliteItem => {
-    const noradId = catalog.noradIds[i] ?? 0;
-    const azDeg = frame.azAltDeg[2 * i] ?? 0;
-    const altDeg = frame.azAltDeg[2 * i + 1] ?? 0;
-    const az = wrap360(Math.round(azDeg));
-    const alt = Math.round(altDeg);
-    const lit = ((frame.flags[i] ?? 0) & 2) !== 0 ? "sunlit" : "in shadow";
-    const name = catalog.names[i] ?? `NORAD ${noradId}`;
-    const behind = behindTerrain(terrain, azDeg, altDeg) ? BEHIND_TERRAIN_SUFFIX : "";
-    return {
-      noradId,
-      id: `sat:${noradId}`,
-      text: `${name}, NORAD ${noradId}, az ${az}°, alt ${alt}°, ${lit}${behind}`,
-      index: i,
-    };
-  });
-  return { items, starlinkCount: list.starlinkCount };
-}
-
-/** "Loading satellite data" or "Satellite data failed to load" for the stations and visual groups; else null. */
-function satelliteStatusText(stations: LoadStatus, visual: LoadStatus): string | null {
-  if (stations === "error" || visual === "error") return "Satellite data failed to load";
-  if (stations !== "ready" || visual !== "ready") return "Loading satellite data";
-  return null;
-}
+const getNarrow = (): boolean => window.matchMedia(NARROW).matches;
 
 /** [M5] App's resolved video id for the active YouTube camera (step 12.3). */
 export interface SkyViewPlayer {
@@ -137,14 +64,12 @@ export interface SkyViewProps {
 const NO_RESTART = (): void => {};
 
 export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps = {}) {
-  useTick4Hz(); // the lists read skyCache and ephemeris during render (React rule 5)
+  useTick4Hz(); // the size notice reads backgroundImageSize during render (React rule 5)
   const ref = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
   // [M5] The camera whose player's own fullscreen the guard undid: the note shows only for that camera.
   const [fullscreenNoteFor, setFullscreenNoteFor] = useState<string | null>(null);
-  const headingId = useId();
-  const satellitesHeadingId = useId();
   const [hoverElement, setHoverElement] = useState<HTMLElement | null>(null);
   // "Fit frame" calls the live map's fitFrame; null while no map is mounted.
   const fitFrameRef = useRef<(() => void) | null>(null);
@@ -157,12 +82,9 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
   const frameTimeMs = useAppState((s) => s.camera.frameTimeMs);
   const mode = useAppState((s) => s.clock.mode);
   const calibrating = useAppState((s) => s.ui.panel === "calibration");
-  const selectedId = useAppState((s) => s.selection.selectedId);
-  const satellitesOn = useAppState((s) => s.layers.satellites);
-  const starlinkOn = useAppState((s) => s.layers.starlink);
-  const stationsStatus = useAppState((s) => s.data.gp.stations.status);
-  const visualStatus = useAppState((s) => s.data.gp.visual.status);
-  const starlinkStatus = useAppState((s) => s.data.gp.starlink.status);
+  // [Redesign] The clip is missing or failed: say so on the stage itself, never a black box (spec section 1).
+  const clipUnavailable = useAppState(selectClipUnavailable);
+  const narrow = useSyncExternalStore(subscribeNarrow, getNarrow, () => false);
   // [M5] Once embed-blocked or in error, the effect's cleanup destroys the player; Retry sets "idle" again.
   const playerBlocked = useAppState(
     (s) => s.video.status === "embed-blocked" || s.video.status === "error",
@@ -227,6 +149,8 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
     const onChange = (): void => {
       const stage = stageRef.current;
       const element = document.fullscreenElement;
+      // [Redesign] The control bar's Fullscreen (the stage column, around the stage) clears the note.
+      if (stage !== null && element?.contains(stage) === true) setFullscreenNoteFor(null);
       if (stage === null || element === null || element === stage || !stage.contains(element))
         return;
       document.exitFullscreen().catch((error: unknown) => {
@@ -239,23 +163,7 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
   }, [overVideo]);
 
   const statusText =
-    stars === "loading"
-      ? "Loading star catalogue"
-      : stars === "error"
-        ? "Star catalogue failed to load"
-        : null;
-  // [M6] Read during render (React rule 5): the suffix applies only while the profile is ready.
-  const state = store.getState();
-  const terrain = selectHorizonStatus(state) === "ready" ? selectHorizonProfileDeg(state) : null;
-  const above = bodiesAboveHorizon(skyCache.bodies, terrain);
-  const selectedIndex = selectedId === null ? null : indexOfObjectId(selectedId);
-  const satellites = satellitesAboveHorizon(selectedIndex, satellitesOn, starlinkOn, terrain);
-  const satellitesText = satelliteStatusText(stationsStatus, visualStatus);
-  const starlinkCount =
-    starlinkOn && starlinkStatus === "ready" && satellites !== null
-      ? satellites.starlinkCount
-      : null;
-
+    stars === "loading" ? "Loading stars…" : stars === "error" ? "The stars failed to load" : null;
   const still = kind === "still-image";
   const panZoom = kind !== null && cameraPansAndZooms(kind);
   // Read during render; bindBackground writes it in place on every load, and useTick4Hz re-renders.
@@ -265,12 +173,12 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
       : null;
   const capturedText =
     still && mode === "replay" && frameTimeMs !== null ? imageCapturedText(frameTimeMs) : null;
-  // M2's wording describes only the synthetic cameras (M4 step 11.5; M5 step 8.6 for the videos).
+  // M2's wording describes only the synthetic cameras (M4 step 11.5); [Redesign] plain words for the videos.
   const name = cameraName ?? "the camera";
   const label = youtube
-    ? `Computed sky drawn over the live video from ${name}`
+    ? `Live video from ${name}, with the sky drawn over it`
     : kind === "local-video"
-      ? `Computed sky drawn over the clip from ${name}`
+      ? `Recorded video from ${name}, with the sky drawn over it`
       : still
         ? `Computed sky over the image from ${name}`
         : `Computed sky${cameraName === null ? "" : ` for ${cameraName}`}: zenith fisheye, north up, east left`;
@@ -283,12 +191,13 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
         tabIndex: 0,
       } as const)
     : null;
-  const videoSize = youtube ? imageSize : undefined; // [M5] the stage takes this aspect
+  // [M5] The stage takes this aspect; [Redesign] a clip's too.
+  const videoSize = overVideo ? imageSize : undefined;
 
   return (
     <section className="sky" aria-label={label} aria-busy={stars !== "ready" && stars !== "error"}>
       {/* [M5] The fullscreen note shares the one status element: sky.spec reads the region's only role="status". */}
-      <div role="status">
+      <div role="status" className="sky-status">
         {statusText}
         {overVideo && fullscreenNoteFor === activeId ? <p>{FULLSCREEN_NOTE}</p> : null}
       </div>
@@ -329,73 +238,36 @@ export function SkyView({ player = null, onRestart = NO_RESTART }: SkyViewProps 
               +
             </div>
           ) : null}
-        </div>
-      </div>
-      {panZoom || overVideo ? (
-        <div className="sky-tools">
           {panZoom ? (
-            <button type="button" onClick={() => fitFrameRef.current?.()}>
-              Fit frame
-            </button>
-          ) : null}
-          {/* [M5] Outside the stage: the player and the overlay go fullscreen together; the browser's Esc exits. */}
-          {overVideo ? (
             <button
               type="button"
-              onClick={() => {
-                setFullscreenNoteFor(null);
-                stageRef.current?.requestFullscreen().catch((error: unknown) => {
-                  console.warn("Fullscreen was refused", error);
-                });
-              }}
+              className="sky-fit btn-quiet"
+              title="Show the whole picture again after zooming"
+              onClick={() => fitFrameRef.current?.()}
             >
-              Fullscreen
+              Reset zoom
             </button>
           ) : null}
+          {clipUnavailable ? (
+            <div className="stage-message">
+              <p>The recorded video can't be shown here.</p>
+              <p>Choose “Watch live” to see the sky over Maunakea now.</p>
+            </div>
+          ) : null}
+          {/* The selected object's card, over the stage's bottom-left; only the card itself takes the pointer. */}
+          {narrow ? null : (
+            <div className="stage-card">
+              <ObjectCard />
+            </div>
+          )}
+        </div>
+      </div>
+      {narrow ? (
+        <div className="stage-card stage-card--below">
+          <ObjectCard />
         </div>
       ) : null}
       {hoverElement === null ? null : createPortal(<HoverCard />, hoverElement)}
-      <div className="sky-objects">
-        <div className="sky-objects-group sky-objects-bodies">
-          <h3 id={headingId}>Above the horizon</h3>
-          <ul aria-labelledby={headingId}>
-            {above?.map((item) => (
-              <li key={item.id}>{item.text}</li>
-            ))}
-          </ul>
-          {above !== null && above.length === 0 ? (
-            <p>No Sun, Moon or planets above the horizon</p>
-          ) : null}
-        </div>
-        <div className="sky-objects-group sky-objects-satellites">
-          <h3 id={satellitesHeadingId}>Satellites above the horizon</h3>
-          {/* The keyboard path to every stations/visual satellite in the sky; keyed by NORAD id so focus survives. */}
-          <ul aria-labelledby={satellitesHeadingId}>
-            {satellites?.items.map((item) => (
-              <li key={item.noradId}>
-                <button
-                  type="button"
-                  aria-pressed={item.index === selectedIndex}
-                  onClick={() => actions.select(item.id)}
-                >
-                  {item.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {starlinkCount === null ? null : (
-            <p>
-              and {starlinkCount.toLocaleString("en-US")} Starlink{" "}
-              {starlinkCount === 1 ? "satellite" : "satellites"}
-            </p>
-          )}
-          {satellitesText !== null ? (
-            <p>{satellitesText}</p>
-          ) : satellites !== null && satellites.items.length === 0 ? (
-            <p>No satellites above the horizon</p>
-          ) : null}
-        </div>
-      </div>
     </section>
   );
 }

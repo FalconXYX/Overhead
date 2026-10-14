@@ -1,14 +1,15 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseCameraRegistry } from "../../src/app/cameras";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 const T = 1791603000000; // 2026-10-10T03:30:00Z
 const HALF = 43_200_000;
 
-const newStore = (): AppStore => createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+const newStore = (): AppStore => createAppStore(initialState(T, TEST_CAMERA_ID));
 
 function liveStore(): AppStore {
   const store = newStore();
@@ -589,16 +590,16 @@ describe("M9 tour actions", () => {
     expect(store.getState().ui.demo).toEqual({ active: true, step: 0, paused: false });
   });
 
-  it("setDemoStep clamps to 0–9 (DEMO_STEPS.length − 1), keeps whole steps and ignores non-finite input", () => {
+  it("setDemoStep clamps to 0–4 (DEMO_STEPS.length − 1, [Redesign] five steps), keeps whole steps and ignores non-finite input", () => {
     const store = newStore();
     const { actions } = store.getState();
     actions.startDemo();
     const steps: number[] = [];
-    for (const step of [3, 9, 10, 42, -1, 2.7, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const step of [3, 4, 5, 42, -1, 2.7, Number.NaN, Number.POSITIVE_INFINITY]) {
       actions.setDemoStep(step);
       steps.push(store.getState().ui.demo.step);
     }
-    expect(steps).toEqual([3, 9, 9, 9, 0, 2, 2, 2]);
+    expect(steps).toEqual([3, 4, 4, 4, 0, 2, 2, 2]);
     expect(store.getState().ui.demo.active).toBe(true);
   });
 

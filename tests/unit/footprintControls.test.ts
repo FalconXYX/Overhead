@@ -53,26 +53,33 @@ describe("selectedHeightOptionText", () => {
   });
 });
 
-describe("LayerToggles: the footprint controls", () => {
-  it("has the toggle, the select with three options, and the always-visible note", () => {
-    const html = render();
-    expect(html).toMatch(
-      /<input type="checkbox" aria-describedby="([^"]+)"\/>Camera view at orbit height<\/label>/,
+describe("LayerToggles: the footprint controls ([Redesign] a switch; the height and note while it is on)", () => {
+  it("has the switch, and while it is on the select with three options and the note", () => {
+    const off = render();
+    expect(off).toContain(
+      '<span class="switch-label">Camera view at orbit height</span><input type="checkbox"/>',
     );
+    expect(options(off)).toEqual([]);
+    store.getState().actions.setLayer("footprint", true);
+    const html = render();
     const noteId =
-      /<input type="checkbox" aria-describedby="([^"]+)"\/>Camera view at orbit height/.exec(
+      /Camera view at orbit height<\/span><input type="checkbox" aria-describedby="([^"]+)" checked=""\/>/.exec(
         html,
       )?.[1];
-    expect(html).toContain(`<p id="${noteId}">Exact only for satellites at this height</p>`);
+    expect(noteId).toBeDefined();
+    expect(html).toContain(
+      `<p id="${noteId}" class="switch-note">Exact only for satellites at this height</p>`,
+    );
     expect(options(html)).toEqual([
       ["selected", true, "Selected satellite (none: 420 km)"],
-      ["420", false, "ISS shell (420 km)"],
-      ["480", false, "Starlink shell (480 km)"],
+      ["420", false, "Space station height (420 km)"],
+      ["480", false, "Starlink height (480 km)"],
     ]);
   });
 
   it("names the selected satellite's height, and selects the preset in use", () => {
     const { actions } = store.getState();
+    actions.setLayer("footprint", true);
     ephemerisMock.heightKm = 422.4;
     actions.select("sat:25544");
     expect(options(render())[0]).toEqual(["selected", true, "Selected satellite (422 km)"]);
@@ -87,10 +94,10 @@ describe("LayerToggles: the footprint controls", () => {
   });
 
   it("says when there is nothing to draw, only while the footprint is on", () => {
-    expect(render()).toContain('<p role="status"></p>');
+    expect(render()).toContain('<p role="status" class="switch-note"></p>');
     store.getState().actions.setLayer("footprint", true);
-    expect(render()).toContain(`<p role="status">${NOTHING}</p>`);
+    expect(render()).toContain(`<p role="status" class="switch-note">${NOTHING}</p>`);
     footprintStatus.pairCount = 66;
-    expect(render()).toContain('<p role="status"></p>');
+    expect(render()).toContain('<p role="status" class="switch-note"></p>');
   });
 });

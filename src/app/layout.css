@@ -1,88 +1,317 @@
-/* src/app/layout.css — the visual design pass (M9 step 12): the split view. From 900 px wide the sky view and the
-   ground map sit side by side and fill the screen, the timeline is a bar along the bottom, and a right sidebar holds
-   Layers, the video panel, Camera with Calibration (scrolling on its own) and, pinned below them, the Inspector. The
-   tour's captions head the right column; the header holds the incoming chip and the key list; the credits are one
-   line along the bottom that expands. Below 900 px everything stacks in DOM order (sky, ground map, timeline,
-   sidebar) and the credits stick to the bottom of the screen. Colours and sizes come from theme.css. The maps observe
-   their own size (OpenLayers' ResizeObserver), so nothing here calls updateSize. */
+/* src/app/layout.css — [Redesign] video first, no sidebar (redesign spec section 2). A slim header (the title, the camera
+   switcher, the incoming chip, [Layers], [Credits] and [?]); the video stage as the hero with its notes and the control
+   bar under it; the ground map beside it, smaller. From 900 px the page fills the screen without scrolling; below it
+   everything stacks in DOM order: video, control bar, map. Popovers hang off their buttons; "Camera alignment
+   (advanced)" is a drawer over the map side. Colours and sizes come from theme.css. The maps observe their own size
+   (OpenLayers' ResizeObserver), so nothing here calls updateSize. */
 
 /* biome-ignore-all lint/style/noDescendingSpecificity: rules are grouped by component, and each component's container
    class scopes its own controls, so a later component's lower-specificity rule never meets an earlier one's element. */
 
 :root {
-  --header-h: 44px;
-  --title-h: 30px;
-  --sidebar-w: clamp(300px, 24vw, 360px);
+  --page-pad: 16px;
+  --map-w: clamp(320px, 31vw, 560px);
+  /* Room the stage column keeps under the video for its notes, the control bar and the hint (from 900 px). */
+  --controls-reserve: 112px;
+  /* Everything on screen above and below the video from 900 px: the header, the bottom padding and the reserve. */
+  --chrome-h: calc(64px + var(--page-pad) + var(--controls-reserve));
 }
 
-/* ---- The shell: below 900 px a column in DOM order ---- */
+@media (max-width: 599.98px) {
+  :root {
+    --page-pad: 12px;
+  }
+}
 
-#root {
+/* ---- The shell ---- */
+
+.app {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
 }
 
-.app {
+.pane {
+  position: relative;
   display: flex;
-  flex: 1 0 auto;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
-/* ---- Header: the name, the incoming chip and the key list ---- */
+/* ---- Header ---- */
 
 .app-header {
+  position: relative;
+  z-index: 40;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 16px;
-  min-height: var(--header-h);
-  padding: 6px var(--gap) 6px 14px;
-  border-bottom: 1px solid var(--c-line);
-  background: var(--c-bg);
+  gap: 10px 16px;
+  padding: 12px var(--page-pad);
 }
 
 .app-title {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 9px;
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  gap: 10px;
+  font-size: var(--fs-xl);
+  font-weight: 750;
+  letter-spacing: -0.01em;
 }
 
-/* An orbit mark: decorative, empty content, so the heading's name stays "Overhead". */
+/* A sunset planet with an orbiting dot: decorative, empty content, so the heading's name stays "Overhead". */
 .app-title::before {
   content: "";
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--c-text-2);
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: radial-gradient(circle at 74% 26%, var(--c-accent) 0 2.6px, transparent 3.2px);
+  background:
+    radial-gradient(circle at 82% 22%, var(--k-iss) 0 3px, transparent 3.6px),
+    radial-gradient(
+      circle at 50% 50%,
+      transparent 0 8.5px,
+      rgb(255 255 255 / 0.7) 9px 10px,
+      transparent 10.5px
+    ),
+    radial-gradient(circle at 38% 34%, #ffe0a3 0%, #ff9a6b 45%, #7b5cff 100%);
+  background-size:
+    100% 100%,
+    100% 100%,
+    13px 13px;
+  background-position:
+    0 0,
+    0 0,
+    center;
+  background-repeat: no-repeat;
 }
 
-/* The incoming chip (its own region, "Incoming satellites"). Empty, it is visually hidden by its inline style. */
+/* The header's popovers hang from the tools group's right edge (the page's), so they never leave the screen. */
+.header-tools {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.header-tools .popover {
+  position: static;
+}
+
+.header-button:not(.ol-viewport *) {
+  min-height: 36px;
+  padding-inline: 14px;
+  border-color: var(--c-line-strong);
+  background: rgb(255 255 255 / 0.08);
+}
+
+.header-button:not(.ol-viewport *):hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
+.header-button.btn-icon:not(.ol-viewport *) {
+  min-width: 36px;
+  padding: 6px;
+  border-radius: 50%;
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+/* Below 900 px: the title and the tools on the first line, then the switcher, then "Watch live" and the incoming chip
+   side by side (the switcher's box steps aside, so its parts are the header's items). */
+@media (max-width: 899.98px) {
+  .app-header .cam-switch {
+    display: contents;
+  }
+
+  .app-header .cam-switch > fieldset {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .app-header .watch-live {
+    order: 3;
+  }
+
+  .app-header .incoming {
+    flex: 0 1 auto;
+    order: 4;
+  }
+
+  .header-tools {
+    order: 1;
+  }
+}
+
+/* ---- Camera switcher: a segmented control of native radios ---- */
+
+.cam-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.cam-switch > fieldset {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cam-switch-status:empty {
+  display: none;
+}
+
+.cam-switch-status {
+  margin-bottom: 4px;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.cam-switch-segments {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
+  overflow-x: auto;
+  border: 1px solid var(--c-line);
+  border-radius: 999px;
+  background: rgb(13 20 51 / 0.45);
+  scrollbar-width: none;
+}
+
+.cam-seg {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+/* The radio covers its segment: the whole segment is the target, and the label stays its name. */
+.cam-seg > input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 999px;
+  opacity: 0;
+}
+
+.cam-seg:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--c-text);
+}
+
+.cam-seg:has(> input:focus-visible) {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.cam-seg:has(> input:checked) {
+  background: var(--c-text);
+  box-shadow: 0 2px 10px rgb(6 10 32 / 0.35);
+  color: var(--c-ink-blue);
+}
+
+.cam-seg-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.cam-seg[data-status="live"] .cam-seg-dot {
+  border-color: #2f9e62;
+  background: var(--c-live);
+  opacity: 1;
+}
+
+.cam-seg[data-status="daytime"] .cam-seg-dot {
+  border-color: #b8860b;
+  background: var(--k-planet);
+  opacity: 1;
+}
+
+.cam-seg[data-status="recorded"] .cam-seg-dot {
+  border-color: #c4561b;
+  background: var(--k-iss);
+  opacity: 1;
+}
+
+.cam-seg-status {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+.watch-live:not(.ol-viewport *) {
+  min-height: 36px;
+  padding-inline: 14px 16px;
+  border-radius: 999px;
+}
+
+.live-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Phones: the three segments share the width. */
+@media (max-width: 599.98px) {
+  .cam-switch > fieldset,
+  .cam-switch-segments {
+    width: 100%;
+  }
+
+  .cam-seg {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding-inline: 8px;
+    font-size: var(--fs-xs);
+  }
+
+  .cam-seg-status {
+    display: none;
+  }
+}
+
+/* ---- Incoming chip (its own region, "Incoming satellites"). Empty, it is visually hidden by its inline style. ---- */
 /* One line that never wraps: the countdown changes four times a second and must never move the layout. */
 .incoming {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding-block: 3px;
   overflow: hidden;
   font-size: var(--fs-sm);
   white-space: nowrap;
-}
-
-/* Below 900 px the chip takes a line of its own under the name and the key list. */
-@media (max-width: 899.98px) {
-  .incoming {
-    flex-basis: 100%;
-    order: 1;
-  }
 }
 
 .incoming > p {
@@ -94,10 +323,9 @@
   display: flex;
   flex: 0 1 auto;
   flex-wrap: nowrap;
-  align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 0 0 0 3px;
+  padding: 0;
   list-style: none;
 }
 
@@ -106,206 +334,146 @@
   min-width: 0;
 }
 
-/* The visible caption; the empty alternative text keeps it out of the accessible text. */
-.incoming ul::before {
-  content: "Incoming" / "";
-  margin-right: 2px;
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .incoming ul button:not(.ol-viewport *) {
   display: block;
   max-width: 100%;
-  padding-inline: 10px 12px;
+  min-height: 32px;
+  padding-inline: 12px 14px;
   overflow: hidden;
+  border-color: rgb(255 138 61 / 0.6);
   border-radius: 999px;
+  background: rgb(255 138 61 / 0.16);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
 }
 
+.incoming ul button:not(.ol-viewport *):hover {
+  background: rgb(255 138 61 / 0.28);
+}
+
+/* The incoming object is the selection: the solid orange face. */
+.incoming ul button[aria-pressed="true"]:not(.ol-viewport *) {
+  border-color: var(--k-iss);
+  background: var(--k-iss);
+  color: var(--c-ink);
+}
+
+/* Narrower screens show the first entry only (and not "and N more", which would then miscount). */
+@media (max-width: 1399.98px) {
+  .incoming li:nth-child(n + 2),
+  .incoming ul + p {
+    display: none;
+  }
+}
+
 .incoming ul button::before {
   display: inline-block;
-  margin-right: 6px;
+  margin-right: 7px;
   vertical-align: -0.5px;
 }
 
-/* Keyboard shortcuts: a disclosure at the header's end that opens as a popover. */
-.shortcuts {
-  position: relative;
-  flex: none;
-  margin-left: auto;
-}
+/* ---- Main area ---- */
 
-.shortcuts > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: var(--control-h);
-  padding: 3px 10px;
-  border: 1px solid var(--c-line-strong);
-  border-radius: var(--radius-sm);
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  list-style: none;
-}
-
-.shortcuts > summary::-webkit-details-marker {
-  display: none;
-}
-
-.shortcuts > summary::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.shortcuts > summary:hover,
-.shortcuts[open] > summary {
-  border-color: var(--c-line-hover);
-  background: var(--c-surface-2);
-  color: var(--c-text);
-}
-
-.shortcuts[open] > summary::after {
-  margin-top: 3px;
-  transform: rotate(225deg);
-}
-
-.shortcuts-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  width: min(620px, calc(100vw - 24px));
-  padding: 10px 12px 12px;
-  border-radius: var(--radius);
-  background: var(--c-surface-2);
-  box-shadow: var(--shadow-pop);
-}
-
-.shortcuts-panel th[scope="row"] {
-  min-width: 64px;
-  color: var(--c-accent-strong);
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.shortcuts-panel td:last-child {
-  color: var(--c-text-2);
-}
-
-.shortcuts-panel p {
-  margin-top: 8px;
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-}
-
-/* ---- Panes ---- */
-
-.pane {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.pane-title {
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* The two map panes: a slim title bar over the view. */
-.pane-sky > .pane-title,
-.pane-ground > .pane-title {
-  display: flex;
-  flex: none;
-  align-items: center;
-  height: var(--title-h);
-  padding: 0 var(--gap);
-  border-bottom: 1px solid var(--c-line);
-  background: var(--c-surface);
-}
-
-/* ---- Sky view ---- */
-
-.pane-sky {
-  background: var(--c-sky);
-}
-
-.sky {
+.app-main {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 0 var(--page-pad) var(--page-pad);
+}
+
+.stage-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.map-column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---- The video stage ---- */
+
+.pane-sky {
+  flex: none;
+}
+
+.sky {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
-.sky > [role="status"]:not(:empty),
+/* Load states float over the top of the stage, so the video never shifts. */
+.sky-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 6;
+  max-width: calc(100% - 24px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sky-status:not(:empty) {
+  padding: 6px 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 999px;
+  background: rgb(38 53 111 / 0.92);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+}
+
 .sky > p {
-  padding: 6px var(--gap);
-  border-bottom: 1px solid var(--c-line);
-  background: var(--c-surface);
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--c-panel);
   color: var(--c-text-2);
   font-size: var(--fs-sm);
 }
 
 .sky > p button {
-  margin-left: 6px;
+  margin-left: 8px;
 }
 
-/* The stage's room: a square-ish box below 900 px, the rest of the pane above. */
 .sky-stage-box {
   position: relative;
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: var(--stage-ratio, 1);
-  max-height: 78vh;
-  background: var(--c-sky);
+  aspect-ratio: var(--stage-ratio, 1.7778);
 }
 
 .sky-stage {
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--c-sky);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--c-stage);
+  box-shadow:
+    0 0 0 1px rgb(201 209 243 / 0.14),
+    0 18px 50px rgb(6 10 32 / 0.55);
 }
 
-/* The computed fisheye: its horizon circle is the frame's inscribed circle (r = f·90° = 512 px of 1024), and the
-   frame is contained in the stage, so a centred closest-side disc is the sky. */
-.sky-stage-box--synthetic .sky-stage {
-  background: radial-gradient(
-    circle closest-side,
-    #0d1729 0%,
-    #0a1322 62%,
-    #08101d 96%,
-    #111d31 99.4%,
-    var(--c-sky) 100%
-  );
-}
-
-/* [M5] The YouTube stage keeps the camera's aspect (inline aspect-ratio) and is contained in the box; the UA's
-   :fullscreen rules make it fill the screen. Player and map both fill it (README "Sky over video" rules 4 and 8). */
-/* Whole CSS px, a multiple of 16 wide (so a 16:9 stage is a whole number of px tall too): OpenLayers sizes the map
-   from the target's rounded offsetWidth/offsetHeight, and a fractional stage would offset the overlay from the
-   player by a fraction of a px (video.spec.ts test 5 allows 1 image px). */
+/* [M5] The video stage keeps the camera's aspect (inline aspect-ratio). Whole CSS px, a multiple of 16 wide (so a 16:9
+   stage is a whole number of px tall too): OpenLayers sizes the map from the target's rounded offsetWidth and
+   offsetHeight, and a fractional stage would offset the overlay from the player by a fraction of a px. */
 .sky-stage--video {
   width: round(down, 100%, 16px);
   height: auto;
 }
 
 .sky-stage:fullscreen {
+  border-radius: 0;
   background: #000;
 }
 
@@ -328,7 +496,7 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  color: var(--c-accent-strong);
+  color: var(--k-planet);
   font: 300 30px / 1 var(--font-sans);
   text-shadow:
     0 0 3px #000,
@@ -337,97 +505,804 @@
   pointer-events: none;
 }
 
-/* "Fit frame" and "Fullscreen" sit in the pane's title bar, never over the stage. */
-.sky-tools {
+/* "Reset zoom": over the stage's top-right corner, shown while the pointer is on the stage or it has focus. */
+.sky-fit:not(.ol-viewport *) {
   position: absolute;
-  top: calc((var(--title-h) - 24px) / 2);
-  right: 8px;
-  z-index: 2;
-  display: flex;
-  gap: 6px;
-}
-
-.sky-tools button {
-  min-height: 24px;
-  padding: 2px 9px;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  min-height: 30px;
+  padding: 4px 11px;
+  border-color: var(--c-line-strong);
+  background: rgb(38 53 111 / 0.85);
   font-size: var(--fs-xs);
+  opacity: 0;
+  transition: opacity 150ms ease;
 }
 
-/* The text alternative under the stage: bodies as a row, satellites as buttons, the keyboard path to every object. */
-.sky-objects {
+.sky-stage:hover .sky-fit,
+.sky-fit:focus-visible {
+  opacity: 1;
+}
+
+/* The clip cannot be shown: a plain message in the middle of the stage (spec section 1, never a black box). */
+.stage-message {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  flex: none;
-  gap: 10px;
-  padding: 8px var(--gap) 10px;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-surface);
+  place-content: center;
+  gap: 6px;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 45%, rgb(42 59 122 / 0.85), rgb(13 20 51 / 0.92));
+  color: var(--c-text-2);
+  font-size: var(--fs-md);
+  text-align: center;
+  pointer-events: none;
 }
 
-.sky-objects h3 {
-  margin-bottom: 4px;
+.stage-message p:first-child {
+  color: var(--c-text);
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+/* The selected object's card: over the stage's bottom-left; only the card takes the pointer (README "Sky over video"
+   rule: over the player, only hit targets and the card do). */
+.stage-card {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 5;
+  max-width: min(360px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+}
+
+.stage-card:empty {
+  display: none;
+}
+
+.stage-card > * {
+  pointer-events: auto;
+}
+
+/* Phones: the video is too small to cover; SkyView puts the card under it, in the flow. */
+.stage-card--below {
+  position: static;
+  max-width: none;
+  max-height: none;
+  margin-top: 10px;
+  overflow: visible;
+}
+
+/* ---- The selected object's card (ObjectCard) ---- */
+
+.object-card {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-lg);
+  background: rgb(38 53 111 / 0.95);
+  box-shadow:
+    inset 0 3px 0 var(--kind, var(--c-text-2)),
+    var(--shadow-pop);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  backdrop-filter: blur(8px);
+}
+
+.object-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: -6px;
+}
+
+.object-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.object-card-close:not(.ol-viewport *) {
+  flex: none;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.object-card-close:not(.ol-viewport *):hover {
+  background: var(--c-glass);
+  color: var(--c-text);
+}
+
+.object-card-what {
+  color: var(--c-text);
+}
+
+.object-card :is(.object-card-where, .object-card-visibility, .object-card-note) {
+  color: var(--c-text-2);
+  line-height: 1.4;
+}
+
+.object-card-where {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.object-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.object-card-details {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--c-line);
+}
+
+.object-card-details summary {
   color: var(--c-text-2);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 650;
 }
 
-.sky-objects ul {
+.object-card-details summary:hover {
+  color: var(--c-text);
+}
+
+.object-card-details ul {
+  display: grid;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 0;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+}
+
+/* ---- Notes under the video (VideoPanel) ---- */
+
+.stage-notes:empty {
+  display: none;
+}
+
+/* The routine status line ("Playing…", "Paused…", "Live, about 50 s behind…") repeats the control bar: read by screen
+   readers (it is the status region), not shown. A line with a button (the rebuffer prompt) stays on screen. */
+.stage-notes
+[data-testid="video-status"]:is([data-status="playing"], [data-status="paused"]):not(:has(button)) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.video-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+.video-panel:not(:has(:is(p, li, dd):not(:empty))) {
+  display: none;
+}
+
+.video-panel [role="status"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.video-panel [role="status"] > p:first-child {
+  color: var(--c-text);
+}
+
+.video-panel ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 0;
   list-style: none;
 }
 
-.sky-objects p {
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
+.video-panel dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-.sky-objects-bodies ul {
+.video-panel h3 {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+/* ---- The control bar ---- */
+
+.pane-controls {
+  flex: none;
+}
+
+.control-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 16px;
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  background: var(--c-panel);
+  box-shadow: var(--shadow);
 }
 
-.sky-objects-satellites ul {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1px;
-  margin-bottom: 2px;
+.cb-main {
+  display: flex;
+  flex: 1 1 340px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
 }
 
-.sky-objects-satellites li button {
-  justify-content: flex-start;
-  width: 100%;
-  min-height: 24px;
-  padding: 2px 8px;
-  overflow: hidden;
-  border-color: transparent;
-  background: transparent;
+.cb-play:not(.ol-viewport *) {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-text);
+  color: var(--c-ink-blue);
+}
+
+.cb-play:not(.ol-viewport *):hover {
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.15);
+}
+
+.cb-play svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cb-scrubber {
+  flex: 1 1 140px;
+  min-width: 100px;
+}
+
+.cb-position {
+  flex: none;
   font-variant-numeric: tabular-nums;
-  text-align: left;
-  text-overflow: ellipsis;
+  font-weight: 650;
   white-space: nowrap;
 }
 
-.sky-objects-satellites li button:hover {
-  border-color: var(--c-line-strong);
+.cb-clock {
+  flex: none;
+  color: var(--c-text-2);
+  white-space: nowrap;
 }
 
-.sky-objects-satellites li button[aria-pressed="true"] {
-  border-color: var(--c-accent-line);
+.cb-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
 }
 
-.sky-objects-satellites li button:focus-visible {
-  outline-offset: -2px;
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 10px;
+  border-radius: 999px;
+  background: #c92a3f;
+  color: #ffffff;
+  font-size: var(--fs-xs);
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-badge--off {
+  background: var(--c-control);
+  color: var(--c-text);
+}
+
+.cb-behind {
+  color: var(--c-text);
+}
+
+.cb-tools {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.cb-copy {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cb-copy svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* "Link copied": a small bubble over the button, not a line of layout. */
+.cb-toast {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--c-text);
+  color: var(--c-ink-blue);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cb-toast:empty {
+  padding: 0;
+}
+
+.cb-manual {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 10;
+  display: grid;
+  gap: 6px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius);
+  background: var(--c-panel);
+  box-shadow: var(--shadow-pop);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+.cb-manual input {
+  width: 100%;
+}
+
+/* Phones: Copy link is its icon alone (still named "Copy link"). */
+@media (max-width: 599.98px) {
+  .control-bar {
+    padding: 8px;
+  }
+
+  .cb-tools {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .cb-tools .in-view {
+    margin-right: auto;
+  }
+}
+
+/* ---- The colour key and tip under the control bar ---- */
+
+.stage-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 18px;
+  padding: 0 6px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+.stage-hint-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.stage-hint-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* ---- Popovers (Layers, Credits, [?], In view) ---- */
+
+.popover {
+  position: relative;
+  flex: none;
+}
+
+.popover-panel {
+  position: absolute;
+  z-index: 70;
+  width: min(360px, calc(100vw - 2 * var(--page-pad)));
+  max-height: min(72dvh, 680px);
+  padding: 14px 14px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--c-panel);
+  box-shadow: var(--shadow-pop);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.popover-panel[hidden] {
+  display: none;
+}
+
+.popover-panel--below {
+  top: calc(100% + 8px);
+  max-height: min(calc(100dvh - 90px), 760px);
+}
+
+.popover-panel--above {
+  bottom: calc(100% + 10px);
+}
+
+.popover-panel--end {
+  right: 0;
+}
+
+.popover-panel--start {
+  left: 0;
+}
+
+.popover-title {
+  margin: 0 2px 10px;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.popover-foot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-line);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+/* Phones: In view is a sheet along the bottom of the screen. */
+@media (max-width: 599.98px) {
+  .in-view .popover-panel {
+    position: fixed;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    max-height: 60dvh;
+  }
+}
+
+/* -- Layers -- */
+
+.layers .popover-panel {
+  width: min(360px, calc(100vw - 2 * var(--page-pad)));
+}
+
+.layer-group {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 10px;
+}
+
+.layer-group > legend {
+  margin: 0 8px 4px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.switch > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.switch > label:hover {
+  background: rgb(255 255 255 / 0.07);
+}
+
+.switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--fs-md);
+}
+
+.switch-status,
+.switch-note {
+  display: block;
+  padding: 0 8px 4px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+.switch-status {
+  margin-top: -4px;
+}
+
+.switch-status:empty,
+.switch-note:empty {
+  padding: 0;
+}
+
+.switch-more {
+  display: grid;
+  gap: 4px;
+  padding: 0 8px 4px;
+}
+
+.switch-more select {
+  width: 100%;
+}
+
+.switch-more .switch-note {
+  padding: 0;
+}
+
+.legend {
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgb(13 20 51 / 0.4);
+}
+
+.legend-title {
+  margin-bottom: 6px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.legend ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+.legend-lit,
+.legend-shadow {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--k-satellite);
+}
+
+.legend-lit {
+  border-color: #0d1433;
+  border-radius: 50%;
+  background: var(--k-satellite);
+  box-shadow: 0 0 0 1px var(--k-satellite);
+}
+
+.legend-shadow {
+  margin-left: 10px;
+  background: #16345a;
+  transform: rotate(45deg) scale(0.9);
+}
+
+.layers .popover-foot {
+  padding-top: 6px;
+}
+
+.layers .popover-foot button {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.layers .popover-foot button::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+/* -- Credits -- */
+
+.credits .popover-panel {
+  width: min(540px, calc(100vw - 2 * var(--page-pad)));
+}
+
+.credits-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  color: var(--c-text-2);
+  list-style: none;
+  line-height: 1.45;
+}
+
+.credits-list > li {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgb(13 20 51 / 0.3);
+}
+
+.credits-list ul {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding-left: 16px;
+  font-size: var(--fs-xs);
+}
+
+.credits-list a {
+  color: var(--c-text);
+}
+
+/* -- Keyboard shortcuts -- */
+
+.shortcuts .popover-panel {
+  width: min(500px, calc(100vw - 2 * var(--page-pad)));
+}
+
+.shortcuts th[scope="row"] {
+  width: 1%;
+  min-width: 72px;
+  color: var(--k-planet);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.shortcut-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+
+/* -- In view -- */
+
+.in-view .popover-panel {
+  width: min(380px, calc(100vw - 2 * var(--page-pad)));
+}
+
+.in-view-list > h3 {
+  margin: 10px 8px 4px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.in-view-list > h3:first-child {
+  margin-top: 0;
+}
+
+.in-view-items {
+  display: grid;
+  gap: 1px;
+  padding: 0;
+  list-style: none;
+}
+
+.in-view-item:not(.ol-viewport *) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-content: stretch;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 8px;
+  border-color: transparent;
+  background: transparent;
+  font-weight: 500;
+  text-align: left;
+}
+
+.in-view-item:not(.ol-viewport *):hover {
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.08);
+}
+
+/* The pressed state is the selection: an orange edge, not the white toggle face. */
+.in-view-item[aria-pressed]:not(.ol-viewport *)::before {
+  display: none;
+}
+
+.in-view-item[aria-pressed="true"]:not(.ol-viewport *) {
+  border-color: var(--k-selection);
+  background: rgb(255 138 61 / 0.16);
+  color: var(--c-text);
+}
+
+.in-view-name {
+  min-width: 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.in-view-position {
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.in-view-more,
+.in-view-empty {
+  margin: 4px 8px;
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
 }
 
 /* ---- Ground map ---- */
 
 .pane-ground {
-  background: #0a0f17;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: #1a2556;
+  box-shadow:
+    0 0 0 1px rgb(201 209 243 / 0.14),
+    0 18px 50px rgb(6 10 32 / 0.45);
 }
 
 .ground {
@@ -438,23 +1313,27 @@
   min-height: 0;
 }
 
-.ground > [role="status"] {
-  padding: 6px var(--gap);
-  border-bottom: 1px solid var(--c-line);
-  background: var(--c-surface);
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
+.ground-map {
+  height: clamp(300px, 78vw, 520px);
 }
 
-.ground > div[role="status"] {
+/* Load states float over the map's top edge. */
+.ground-status {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.ground-map {
-  height: 62vh;
-  min-height: 256px;
+  max-width: calc(100% - 100px);
+  padding: 5px 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 999px;
+  background: rgb(38 53 111 / 0.92);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  transform: translateX(-50%);
 }
 
 /* The GOES caption and the night badge, over the map's bottom-left corner; they never take the pointer. */
@@ -471,244 +1350,31 @@
 }
 
 .ground-badges > p {
-  padding: 3px 8px;
+  padding: 4px 10px;
   border: 1px solid var(--c-line-strong);
-  border-radius: var(--radius-sm);
-  background: rgb(14 19 27 / 0.88);
+  border-radius: 999px;
+  background: rgb(38 53 111 / 0.9);
   color: var(--c-text);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- Timeline bar ---- */
-
-.pane-timeline {
-  padding: 7px var(--gap) 6px;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-surface);
-}
-
-.timeline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  font-size: var(--fs-sm);
-}
-
-.tl-mode {
-  color: var(--c-text-2);
-  white-space: nowrap;
-}
-
-.tl-mode button {
-  margin-right: 8px;
-  vertical-align: middle;
-}
-
-.tl-mode [data-testid="time-mode"] {
-  color: var(--c-text);
-  font-weight: 600;
-}
-
-.tl-play button {
-  min-width: 68px;
-  font-weight: 600;
-}
-
-/* The rate: a segmented group of native radios. A floated legend is an ordinary flex item. */
-.tl-rate {
-  display: flex;
-  align-items: center;
-}
-
-.tl-rate legend {
-  float: left;
-  margin-right: 8px;
-  color: var(--c-text-2);
-}
-
-.tl-rate label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: var(--control-h);
-  padding: 2px 9px 2px 7px;
-  border: 1px solid var(--c-line-strong);
-  background: var(--c-surface-2);
-  font-variant-numeric: tabular-nums;
-}
-
-.tl-rate label + label {
-  margin-left: -1px;
-}
-
-.tl-rate label:first-of-type {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-}
-
-.tl-rate label:last-of-type {
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.tl-rate label:has(input:checked) {
-  position: relative;
-  border-color: var(--c-accent-line);
-  background: var(--c-accent-soft);
-  color: var(--c-accent-strong);
-}
-
-.tl-steps {
-  display: flex;
-}
-
-.tl-steps button {
-  border-radius: 0;
-  padding-inline: 8px;
-}
-
-.tl-steps button + button {
-  margin-left: -1px;
-}
-
-.tl-steps button:first-child {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-}
-
-.tl-steps button:last-child {
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.tl-steps button:focus-visible {
-  position: relative;
-  z-index: 1;
-}
-
-/* A phone: the four steps as a 2 × 2 grid rather than four buttons squeezed onto two lines each. */
-@media (max-width: 519.98px) {
-  .tl-steps {
-    display: grid;
-    flex: 1 1 100%;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-  }
-
-  .tl-steps button + button {
-    margin-left: 0;
-  }
-
-  .tl-steps button:not(.ol-viewport *) {
-    border-radius: var(--radius-sm);
-  }
-}
-
-/* The clock: UTC over local time, at the end of the first row. */
-.tl-clock {
-  order: 1;
-  display: grid;
-  margin-left: auto;
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-  line-height: 1.35;
-  text-align: right;
-}
-
-.tl-clock time,
-.tl-clock span {
-  color: var(--c-text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-}
-
-/* The second row: the ±12 h scrubber with its twilight markers and GOES ticks, Now, and Copy link. */
-.tl-scrub {
-  order: 2;
-  display: flex;
-  flex: 1 1 55%;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: min(100%, 320px);
-}
-
-.tl-scrubber {
-  position: relative;
-  display: block;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.tl-scrubber > input[type="range"] {
-  display: block;
-  width: 100%;
-}
-
-/* GOES availability: muted bars under the track (aria-hidden; the caption over the map is the text). */
-.tl-goes {
-  position: relative;
-  display: block;
-  height: 3px;
-  margin: 2px 0 1px;
-  color: #5d6c82;
-}
-
-.tl-markers {
-  position: relative;
-  display: block;
-  min-height: 24px;
-}
-
-.tl-markers button {
-  min-height: 24px;
-  padding: 1px 8px;
-  border-color: var(--c-line);
-  background: var(--c-bg);
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-}
-
-.tl-markers button:hover {
-  color: var(--c-text);
-}
-
-.tl-copy {
-  order: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-}
-
-.tl-copy [role="status"] {
-  color: var(--c-accent-strong);
-}
-
-.tl-copy label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--c-text-2);
-}
-
-.tl-copy input {
-  width: min(360px, 60vw);
-}
-
-/* ---- Tour (its own region, outside the sky stage) ---- */
+/* ---- Tour (its own region, outside the sky stage): a card over the top of the map ---- */
 
 .tour {
   display: grid;
   gap: 8px;
-  padding: 12px var(--gap) 12px 14px;
-  border-bottom: 1px solid var(--c-line);
-  border-left: 3px solid var(--c-accent);
-  background: var(--c-surface-2);
+  padding: 14px 16px;
+  border: 1px solid rgb(255 138 61 / 0.55);
+  border-radius: var(--radius-lg);
+  background: var(--c-panel);
+  box-shadow: var(--shadow-pop);
 }
 
 .tour-title {
-  color: var(--c-accent-strong);
+  color: var(--k-iss);
   font-size: var(--fs-xs);
-  font-weight: 700;
+  font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -741,580 +1407,231 @@
   overflow-y: auto;
   border: 1px solid var(--c-line);
   border-radius: var(--radius-sm);
-  background: var(--c-bg);
+  background: #1a2556;
   color: var(--c-text-2);
   white-space: pre-wrap;
 }
 
-/* ---- Sidebar ---- */
+/* ---- "Camera alignment (advanced)": a drawer over the map side ---- */
 
-.sidebar {
+.drawer {
+  position: fixed;
+  top: 68px;
+  right: var(--page-pad);
+  bottom: var(--page-pad);
+  z-index: 80;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  background: var(--c-surface);
+  width: min(460px, calc(100vw - 2 * var(--page-pad)));
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--c-panel);
+  box-shadow: var(--shadow-pop);
 }
 
-.sidebar-scroll {
+.drawer[hidden] {
+  display: none;
+}
+
+.drawer-head {
   display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 10px 4px 18px;
 }
 
-.sidebar-scroll > *,
-.inspector {
-  flex: none;
-  padding: 12px var(--gap) 14px;
+.drawer-head h2 {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.drawer-intro {
+  padding: 0 18px 12px;
   border-bottom: 1px solid var(--c-line);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
 }
 
-.sidebar .pane-title {
-  margin-bottom: 8px;
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-/* The video's status and offers (VideoPanel), and the clip's information. */
-.video-panel {
+@media (max-width: 599.98px) {
+  .drawer {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+}
+
+/* The Calibration panel's content, inside the drawer. */
+.calibration {
   display: grid;
   gap: 8px;
   font-size: var(--fs-sm);
 }
 
-.video-panel [role="status"] {
-  display: grid;
-  gap: 4px;
-}
-
-.video-panel [role="status"] p:first-child {
-  color: var(--c-text);
-}
-
-.video-panel ul {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  list-style: none;
-}
-
-.video-panel ul[aria-label] {
-  padding-left: 16px;
-  color: var(--c-text-2);
-  list-style: disc;
-}
-
-.video-panel h3 {
-  margin: 4px 0 6px;
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.video-panel dl {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 3px 12px;
-  margin-bottom: 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-.video-panel dt {
-  color: var(--c-text-2);
-}
-
-.video-panel dd {
-  overflow-wrap: anywhere;
-}
-
-.video-panel p {
-  color: var(--c-text-2);
-}
-
-.video-panel p button {
-  margin-right: 6px;
-}
-
-/* The camera list: one row per camera, the name over its kind and status. */
-.pane-camera fieldset {
-  display: grid;
-  gap: 1px;
-  margin-bottom: 10px;
-}
-
-.camera-option {
-  display: grid;
-  grid-template-columns: 15px minmax(0, 1fr);
-  column-gap: 9px;
-  padding: 4px 8px 5px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  line-height: 1.3;
-}
-
-.camera-option > label {
-  display: contents;
-  font-size: var(--fs-md);
-}
-
-.camera-option > label > input {
-  margin-top: 1px;
-}
-
-.camera-meta {
-  grid-column: 2;
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-}
-
-.camera-option:hover {
-  background: var(--c-surface-2);
-}
-
-.camera-option:has(input:checked) {
-  border-color: var(--c-accent-line);
-  background: var(--c-accent-soft);
-  box-shadow: inset 3px 0 0 var(--c-accent);
-}
-
-.camera-option:has(input:checked) > label {
-  font-weight: 600;
-}
-
-/* Layers and Calibration: full-width disclosure rows; one panel opens at a time (ui.panel). */
-.disclosure:not(.ol-viewport *) {
-  justify-content: space-between;
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 10px;
-  font-size: var(--fs-md);
-  font-weight: 600;
-  text-align: left;
-}
-
-.disclosure::after {
-  content: "";
-  width: 7px;
-  height: 7px;
-  margin: -3px 2px 0 0;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-
-.disclosure[aria-expanded="true"]:not(.ol-viewport *) {
-  border-color: var(--c-accent-line);
-  color: var(--c-accent-strong);
-}
-
-.disclosure[aria-expanded="true"]::after {
-  margin-top: 4px;
-  transform: rotate(225deg);
-}
-
-.panel {
-  display: grid;
-  gap: 7px;
-  margin-top: 10px;
-  font-size: var(--fs-sm);
-}
-
-.panel[hidden] {
-  display: none;
-}
-
-.panel h3 {
+.calibration h3 {
   margin-top: 8px;
-  padding-top: 10px;
+  padding-top: 12px;
   border-top: 1px solid var(--c-line);
   color: var(--c-text-2);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
-.panel label {
+.calibration label {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 
-.panel label > input[type="checkbox"],
-.panel label > input[type="radio"] {
-  margin-top: 1px;
-}
-
-/* A status after a toggle (layer load states) and notes: smaller, secondary, under their control. */
-.panel p > [role="status"],
-.panel p > span[id] {
+/* A status after a control and notes: smaller, secondary, under their control. */
+.calibration p > [role="status"],
+.calibration p > span[id] {
   display: block;
-  padding-left: 23px;
   color: var(--c-text-2);
   font-size: var(--fs-xs);
 }
 
-.panel p[id],
-.panel > p[role="status"]:not(:empty) {
+.calibration p[id],
+.calibration p[role="status"]:not(:empty) {
   color: var(--c-text-2);
   font-size: var(--fs-xs);
 }
 
-.panel > p[role="status"]:empty {
+.calibration p[role="status"]:empty {
   display: none;
 }
 
-.panel fieldset {
+.calibration fieldset {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   margin-top: 4px;
-  padding: 8px 10px 10px;
+  padding: 10px 12px 12px;
   border: 1px solid var(--c-line);
   border-radius: var(--radius-sm);
 }
 
-.panel legend {
+.calibration legend {
   padding: 0 4px;
   color: var(--c-text-2);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.panel select {
+.calibration select {
   max-width: 100%;
-  margin-top: 4px;
 }
 
-.panel output {
+.calibration output {
   color: var(--c-text-2);
 }
 
-.panel input[type="range"] {
-  width: 120px;
+.calibration input[type="range"] {
+  width: 140px;
   vertical-align: middle;
 }
 
-.panel input[type="number"] {
-  width: 86px;
+.calibration input[type="number"] {
+  width: 96px;
 }
 
-.panel p:has(> input[type="range"]) {
+.calibration p:has(> input[type="range"]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
 }
 
-.panel p:has(> input[type="range"]) > label:first-child {
+.calibration p:has(> input[type="range"]) > label:first-child {
   flex: 1 0 100%;
   color: var(--c-text-2);
 }
 
-.panel p:has(> input[type="range"]) > input[type="range"] {
-  flex: 1 1 120px;
+.calibration p:has(> input[type="range"]) > input[type="range"] {
+  flex: 1 1 140px;
 }
 
-.panel p button,
-.panel li button {
+.calibration p button,
+.calibration li button {
   margin: 0 6px 4px 0;
 }
 
-.panel ul {
+.calibration ul {
   display: grid;
   gap: 4px;
   padding-left: 18px;
 }
 
-.panel table {
+.calibration table {
   margin: 4px 0;
 }
 
-/* The Inspector: the selected object's name in the accent, its live lines, its actions. */
-.inspector {
-  flex: 0 1 auto;
-  max-height: none;
-  border-top: 1px solid var(--c-line-strong);
-  border-bottom: 0;
-  background: var(--c-surface);
-}
-
-.inspector h3 {
-  margin-bottom: 4px;
-  color: var(--c-accent-strong);
-  font-size: var(--fs-xl);
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-.inspector p {
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
-}
-
-.inspector p:last-child:has(button) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-/* ---- Credits: one line along the bottom; "Show all credits" (or a focused link) expands it ---- */
-
-.credits {
-  position: sticky;
-  bottom: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 30px;
-  padding: 3px var(--gap) 3px 14px;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-bg);
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-}
-
-.credits-title {
-  flex: none;
-  color: var(--c-text-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.credits-list {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  align-items: baseline;
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  list-style: none;
-  white-space: nowrap;
-  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
-}
-
-.credits-list li {
-  flex: none;
-}
-
-/* The active camera's credit and terms note come first and always show in full (README Credits rule 1): on a narrow
-   screen the line wraps rather than clipping them. */
-.credits-list > li:first-child {
-  max-width: 100%;
-  white-space: normal;
-}
-
-.credits-list > li + li {
-  margin-left: 10px;
-  padding-left: 10px;
-  border-left: 1px solid var(--c-line-strong);
-}
-
-.credits-list ul {
-  display: inline;
-  padding: 0;
-  list-style: none;
-}
-
-.credits-list ul li {
-  display: inline;
-  margin-left: 10px;
-}
-
-.credits a {
-  color: var(--c-text-2);
-}
-
-.credits a:hover {
-  color: var(--c-accent-strong);
-}
-
-.credits-toggle:not(.ol-viewport *) {
-  flex: none;
-  align-self: flex-start;
-  min-height: 24px;
-  padding: 2px 9px;
-  font-size: var(--fs-xs);
-}
-
-/* Below 900 px the line keeps its width for the credits: the title is read but not shown, and the toggle is its
-   chevron alone (still named "Show all credits", still 24 × 24 px or more). */
-@media (max-width: 899.98px) {
-  .credits-title,
-  .credits-toggle-text {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .credits-toggle:not(.ol-viewport *) {
-    min-width: 30px;
-    min-height: 26px;
-    padding: 2px;
-  }
-
-  /* Collapsed, the camera's credit fills the line and the rest sit past its end, clipped: hide them outright, so
-     nothing invisible takes the focus or crowds the toggle (Lighthouse target-size). The toggle shows them all. */
-  .credits:not([data-expanded="true"]) .credits-list > li + li {
-    visibility: hidden;
-  }
-}
-
-.credits-toggle::after {
-  content: "";
-  width: 5px;
-  height: 5px;
-  margin-top: 3px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(225deg);
-}
-
-.credits[data-expanded="true"] .credits-toggle::after {
-  margin-top: -3px;
-  transform: rotate(45deg);
-}
-
-.credits[data-expanded="true"],
-.credits:has(a:focus-visible) {
-  align-items: flex-start;
-}
-
-.credits[data-expanded="true"] .credits-title,
-.credits:has(a:focus-visible) .credits-title {
-  padding-top: 4px;
-}
-
-.credits[data-expanded="true"] .credits-list,
-.credits:has(a:focus-visible) .credits-list {
-  flex-wrap: wrap;
-  row-gap: 3px;
-  max-height: 40vh;
-  padding: 4px 0;
-  overflow-y: auto;
-  white-space: normal;
-  mask-image: none;
-}
-
-.credits[data-expanded="true"] .credits-list li,
-.credits:has(a:focus-visible) .credits-list li {
-  flex: 0 1 auto;
-}
-
-.credits[data-expanded="true"] .credits-list ul,
-.credits:has(a:focus-visible) .credits-list ul {
-  display: grid;
-  gap: 1px;
-  margin-top: 3px;
-}
-
-.credits[data-expanded="true"] .credits-list ul li,
-.credits:has(a:focus-visible) .credits-list ul li {
-  margin-left: 0;
-}
-
-/* ---- The split view, from 900 px ---- */
+/* ---- From 900 px: the page fills the screen; the video and the map side by side ---- */
 
 @media (min-width: 900px) {
-  #root {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    /* minmax(0, …): the one-line credits must never widen the page past the viewport. */
-    grid-template-columns: minmax(0, 1fr);
-    height: 100dvh;
-    min-height: 560px;
-  }
-
   .app {
-    display: grid;
-    grid-template-areas:
-      "header header header"
-      "sky ground tour"
-      "sky ground side"
-      "timeline timeline timeline";
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-    /* The computed fisheye is square, so the ground map takes a little more; a video takes more of the width. */
-    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr) var(--sidebar-w);
-    min-height: 0;
-  }
-
-  .app:has(.sky-stage-box--youtube, .sky-stage-box--local-video) {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) var(--sidebar-w);
+    height: 100dvh;
+    min-height: 600px;
   }
 
   .app-header {
-    grid-area: header;
     flex-wrap: nowrap;
-    height: var(--header-h);
   }
 
-  .tour {
-    grid-area: tour;
-    max-height: 48vh;
-    overflow-y: auto;
-    border-left: 1px solid var(--c-line);
-    box-shadow: inset 3px 0 0 var(--c-accent);
+  /* The switcher keeps its size; the incoming chip takes what is left and clips its own entries. */
+  .app-header .cam-switch {
+    flex: none;
+    flex-wrap: nowrap;
   }
 
-  .pane-sky {
-    grid-area: sky;
-    border-right: 1px solid var(--c-line);
+  .app-header .incoming {
+    flex: 1 1 0;
   }
 
-  .pane-ground {
-    grid-area: ground;
-  }
-
-  .pane-timeline {
-    grid-area: timeline;
-  }
-
-  .sidebar {
-    grid-area: side;
+  /* The main area is as tall as the video column's content and sits centred in the space under the header; the map
+     column stretches to the same height, so both columns share their top and bottom edges. */
+  .app-main {
+    flex: 0 1 auto;
+    flex-direction: row;
+    gap: 16px;
     min-height: 0;
-    border-left: 1px solid var(--c-line);
+    margin-block: auto;
   }
 
-  .sidebar-scroll {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  .inspector {
-    max-height: 64%;
-    overflow-y: auto;
-  }
-
-  /* The stage fills what the pane leaves; the box is the size container the video stage is contained in. */
-  .sky-stage-box {
+  /* The column is the inline-size container the video is fitted in: as wide as the column, and as tall as the screen
+     leaves under the header and over the control bar. */
+  .stage-column {
     flex: 1 1 auto;
-    min-height: 0;
+    container-type: inline-size;
+  }
+
+  .sky-stage-box {
     aspect-ratio: auto;
-    max-height: none;
-    container-type: size;
   }
 
   .sky-stage--video {
-    width: round(down, min(100cqw, 100cqh * var(--stage-ratio, 1.7778)), 16px);
+    width: round(down, min(100cqw, (100dvh - var(--chrome-h)) * var(--stage-ratio, 1.7778)), 16px);
   }
 
-  .sky-objects {
-    max-height: clamp(88px, 22vh, 220px);
-    overflow-y: auto;
+  .map-column {
+    flex: 0 0 var(--map-w);
+    min-height: 0;
+  }
+
+  .pane-ground {
+    flex: 1 1 auto;
   }
 
   .ground-map {
@@ -1323,7 +1640,40 @@
     min-height: 0;
   }
 
-  .credits {
-    position: static;
+  /* The tour floats over the top of the map. */
+  .map-column > .tour {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    z-index: 6;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
   }
+}
+
+/* ---- Fullscreen: the stage column alone, the video as large as fits over the control bar ---- */
+
+.stage-column:fullscreen {
+  --chrome-h: calc(var(--controls-reserve) + 32px);
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: 10px;
+  padding: 16px;
+  overflow: hidden;
+  background: var(--c-page);
+  container-type: inline-size;
+}
+
+.stage-column:fullscreen .sky-stage-box {
+  aspect-ratio: auto;
+}
+
+.stage-column:fullscreen .stage-hint {
+  display: none;
+}
+
+.stage-column:fullscreen .sky-stage--video {
+  width: round(down, min(100cqw, (100dvh - var(--chrome-h)) * var(--stage-ratio, 1.7778)), 16px);
 }

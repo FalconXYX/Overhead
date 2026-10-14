@@ -82,6 +82,7 @@ function fakeMap(rect = { left: 10, top: 20, width: 512, height: 512 }): OlMap &
       return fake.pixelOf(coordinate);
     },
     getTargetElement: () => ({ getBoundingClientRect: () => rect }),
+    getView: () => ({ getZoom: () => 6, getAnimating: () => false }),
   };
   Object.defineProperty(map, "calls", { get: () => fake.calls });
   Object.defineProperty(map, "pixelOf", {
@@ -351,5 +352,32 @@ describe("commits (M9 step 5)", () => {
     recordCommit();
     recordCommit();
     expect(hooks.commits()).toBe(before + 2);
+  });
+});
+
+describe("[Redesign] clock and playReplay", () => {
+  it("clock() reads the clock; playReplay plays replay at a rate from the start of a ±12 h range", () => {
+    const { hooks, store } = setup();
+    const t = Date.parse("2026-10-11T15:09:50Z");
+    expect(hooks.clock()).toEqual({ mode: "replay", playing: false, rate: 1, simTimeMs: t });
+    hooks.playReplay(600, t - 3_600_000);
+    expect(hooks.clock()).toEqual({
+      mode: "replay",
+      playing: true,
+      rate: 600,
+      simTimeMs: t - 3_600_000,
+    });
+    expect(store.getState().clock.rangeCenterMs).toBe(t - 3_600_000 + 43_200_000);
+    hooks.playReplay(60); // from the clock's own time
+    expect(hooks.clock()).toMatchObject({ playing: true, rate: 60, simTimeMs: t - 3_600_000 });
+  });
+});
+
+describe("[Redesign] view", () => {
+  it("reads a map view's zoom and animation state; null for a map that is not registered", () => {
+    const { hooks, maps } = setup();
+    expect(hooks.view("ground")).toEqual({ zoom: 6, animating: false });
+    maps.delete("sky");
+    expect(hooks.view("sky")).toBeNull();
   });
 });

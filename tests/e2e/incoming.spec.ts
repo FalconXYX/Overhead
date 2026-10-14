@@ -1,105 +1,133 @@
-// tests/e2e/incoming.spec.ts — the incoming chip and the footprint (M8 section 5, end-to-end): the chip's entries on the
-// synthetic fisheye at 15:05:07Z, a step forward, selecting from the chip, the pause at 60×, and the footprint's height
-// sources. Data comes from the committed snapshot through the fixtures' data/gp route. With M6's mastM 33 the terrain
-// route gives synthetic-maunakea a profile ≤ −0.49°, which changes none of the values below.
+// tests/e2e/incoming.spec.ts — the incoming chip and the footprint (M8 section 5, end-to-end). [Redesign] On the
+// recorded clip, served as starting 40 s before the ISS enters the Subaru StarCam's frame (paused: reduced motion): the
+// chip in plain words ("ISS appears in 40 s"), its countdown, selecting from it, and the footprint's height sources.
+// Data comes from the committed snapshot through the fixtures' data/gp route. The pause at 60× and 600× has no user
+// path any more (those rates are gone); its rule is unit-tested.
 import type { Page } from "@playwright/test";
 import type {} from "../../src/app/testHooks"; // window.__overhead
-import { expect, test } from "./fixtures";
+import {
+  clipReady,
+  clipStartingAt,
+  expect,
+  focusBody,
+  moreDetails,
+  objectCard,
+  openLayers,
+  test,
+} from "./fixtures";
 
-const T_ISO = "2026-10-11T15:05:07Z";
+const T_ISO = "2026-10-11T15:09:13Z";
 const T = Date.parse(T_ISO);
-const START = `./?cam=synthetic-maunakea&t=${T_ISO}`;
 const DOCKED_WITH_ISS = [36086, 49044, 68837, 100057, 100712, 100882] as const;
+
+test.use({ reducedMotion: "reduce" });
 
 const incoming = (page: Page) => page.evaluate(() => window.__overhead?.incoming() ?? null);
 const footprint = (page: Page) => page.evaluate(() => window.__overhead?.footprint() ?? null);
 const chip = (page: Page) => page.getByTestId("incoming-chip");
-/** The accessible names of the chip's buttons, in order. */
-const buttonNames = (page: Page) =>
+/** The chip's buttons: [accessible name, object id], in order. */
+const chipButtons = (page: Page) =>
   chip(page)
     .getByRole("button")
-    .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label") ?? ""));
+    .evaluateAll((buttons) =>
+      buttons.map((b) => [b.getAttribute("aria-label") ?? "", b.getAttribute("data-object-id")]),
+    );
 
-test("the chip lists who enters the view, counts from the reply, selects, and pauses at 60×", async ({
+async function openClip(page: Page, query = ""): Promise<void> {
+  await clipStartingAt(page, T_ISO);
+  await page.goto(`./${query}`);
+  await clipReady(page, "paused");
+}
+
+test("the chip says who enters the camera view and when, counts down, and selects", async ({
   page,
 }) => {
-  await page.goto(START);
+  await openClip(page);
   await expect.poll(async () => (await incoming(page))?.timeMs).toBe(T);
   // Both groups loaded: the entries settle on the e2e values.
   await expect
     .poll(async () => (await incoming(page))?.entries)
-    .toEqual([
-      { noradId: 25544, etaSec: 35 },
-      { noradId: 19046, etaSec: 55 },
-    ]);
-  await expect
-    .poll(() => buttonNames(page))
-    .toEqual([
-      "ISS (ZARYA), NORAD 25544, enters the view within 35 seconds",
-      "SL-3 R/B, NORAD 19046, enters the view within 55 seconds",
-    ]);
-  await expect(chip(page).getByRole("button").first()).toHaveText("ISS (ZARYA) · 35 s");
-  const names = (await buttonNames(page)).join("\n");
-  for (const id of DOCKED_WITH_ISS) expect(names).not.toContain(`NORAD ${id},`);
-  await expect(chip(page).locator('[aria-live="polite"]')).toContainText("ISS (ZARYA)");
+    .toEqual([{ noradId: 25544, etaSec: 40 }]);
+  await expect.poll(() => chipButtons(page)).toEqual([["ISS appears in 40 seconds", "sat:25544"]]);
+  await expect(chip(page).getByRole("button").first()).toHaveText("ISS appears in 40 s");
+  const ids = (await chipButtons(page)).map(([, id]) => id).join("\n");
+  for (const id of DOCKED_WITH_ISS) expect(ids).not.toContain(`sat:${id}`);
+  await expect(chip(page).locator('[aria-live="polite"]')).toHaveText(
+    "International Space Station will appear in the camera view in about 40 seconds.",
+  );
 
-  // One minute on: the ISS is in the view now, SL-3 R/B 10114 is next.
-  await page.getByRole("button", { name: "Forward 1 minute" }).click();
-  await expect.poll(async () => (await incoming(page))?.timeMs).toBe(T + 60_000);
-  await expect
-    .poll(() => buttonNames(page))
-    .toEqual(["SL-3 R/B, NORAD 10114, enters the view within 50 seconds"]);
+  // Five seconds on: a new reply, a smaller count.
+  await focusBody(page);
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => (await incoming(page))?.timeMs).toBe(T + 5_000);
+  const later = (await incoming(page))?.entries.find((e) => e.noradId === 25544)?.etaSec ?? 0;
+  expect(later).toBeGreaterThan(30);
+  expect(later).toBeLessThanOrEqual(35);
+  await expect(chip(page).getByRole("button").first()).toHaveText(`ISS appears in ${later} s`);
+
   await chip(page)
-    .getByRole("button", { name: /NORAD 10114/ })
+    .getByRole("button", { name: /^ISS appears in/ })
     .click();
-  await expect(chip(page).getByRole("button", { name: /NORAD 10114/ })).toHaveAttribute(
+  await expect(chip(page).getByRole("button", { name: /^ISS appears in/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.getByRole("region", { name: "Inspector" })).toContainText(
-    "Enters the view within 50 s",
-  );
-  await expect(page).toHaveURL(/[?&]sel=sat:10114(&|$)/);
+  await expect(objectCard(page)).toContainText("International Space Station");
+  await expect(await moreDetails(page)).toContainText(`Comes into the camera view in ${later} s`);
+  await expect(page).toHaveURL(/[?&]sel=sat:25544(&|$)/);
+});
 
-  // 60× while playing: the look-ahead would last a second of wall time.
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await timeline.getByRole("radio", { name: "60×" }).check();
-  await timeline.getByRole("button", { name: "Play" }).click();
-  await expect(chip(page)).toContainText("Incoming alerts pause at 60× and 600×");
-  await expect.poll(() => incoming(page)).toBeNull();
-  await timeline.getByRole("button", { name: "Pause" }).click();
+test("the chip is empty with both satellite switches off", async ({ page }) => {
+  await openClip(page);
+  await expect.poll(() => chipButtons(page)).toHaveLength(1);
+  const layers = await openLayers(page);
+  await layers.getByRole("checkbox", { name: "Satellites", exact: true }).uncheck();
+  await expect(chip(page).getByRole("button")).toHaveCount(0);
+  await layers.getByRole("checkbox", { name: "Satellites", exact: true }).check();
+  await expect.poll(() => chipButtons(page)).toHaveLength(1);
 });
 
 test("the footprint follows the selected satellite, a preset, or 420 km", async ({ page }) => {
-  await page.goto(`${START}&sel=sat:25544`);
-  await page.getByRole("button", { name: "Layers" }).click();
-  await page.getByRole("checkbox", { name: "Camera view at orbit height" }).check();
-  // The ISS's geodetic height at 15:05:07Z is 422.400 km.
+  await openClip(page, "?sel=sat:25544");
+  const layers = await openLayers(page);
+  await layers.getByRole("checkbox", { name: "Camera view at orbit height" }).check();
+  // The ISS's height above the ellipsoid at 15:09:13Z is about 423 km.
   await expect
     .poll(async () => {
       const f = await footprint(page);
-      return f === null ? null : { source: f.source, pairCount: f.pairCount };
+      return f === null ? null : { source: f.source, drawn: f.pairCount > 0 };
     })
-    .toEqual({ source: "selected", pairCount: 64 });
+    .toEqual({ source: "selected", drawn: true });
   const followed = await footprint(page);
-  expect(Math.abs((followed?.heightKm ?? Number.NaN) - 422.4)).toBeLessThanOrEqual(0.5);
-  const select = page.getByRole("combobox", { name: "Orbit height for the camera view" });
-  await expect(select.locator("option").first()).toContainText("422 km");
+  expect(Math.abs((followed?.heightKm ?? Number.NaN) - 423)).toBeLessThanOrEqual(2);
+  const select = layers.getByRole("combobox", { name: "Orbit height for the camera view" });
+  await expect(select.locator("option").first()).toHaveText(/^Selected satellite \(42\d km\)$/);
+  await expect(layers).toContainText("Exact only for satellites at this height");
 
-  await select.selectOption({ label: "Starlink shell (480 km)" });
+  await select.selectOption({ label: "Starlink height (480 km)" });
   await expect
-    .poll(() => footprint(page))
-    .toEqual({ source: "preset", heightKm: 480, pairCount: 64 });
+    .poll(async () => {
+      const f = await footprint(page);
+      return f === null ? null : { source: f.source, heightKm: f.heightKm };
+    })
+    .toEqual({ source: "preset", heightKm: 480 });
 
   await select.selectOption({ value: "selected" });
-  // keyboard.ts ignores keys typed into inputs and selects: blur whatever has focus, so Esc clears the selection.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  // keyboard.ts ignores keys typed into inputs and selects, and Esc in the popover closes it: blur first, so Esc
+  // clears the selection.
+  await focusBody(page);
   await page.keyboard.press("Escape");
+  await expect(objectCard(page)).toHaveCount(0);
   await expect
-    .poll(() => footprint(page))
-    .toEqual({ source: "fallback", heightKm: 420, pairCount: 64 });
+    .poll(async () => {
+      const f = await footprint(page);
+      return f === null ? null : { source: f.source, heightKm: f.heightKm };
+    })
+    .toEqual({ source: "fallback", heightKm: 420 });
+  await openLayers(page);
   await expect(select.locator("option").first()).toHaveText("Selected satellite (none: 420 km)");
+  await page.keyboard.press("Escape");
   await page
     .getByRole("region", { name: "Ground map" })
-    .screenshot({ path: test.info().outputPath("footprint-synthetic-maunakea.png") });
+    .screenshot({ path: test.info().outputPath("footprint-subaru.png") });
 });

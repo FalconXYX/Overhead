@@ -1,33 +1,46 @@
 // tests/e2e/share.spec.ts — "Copy link" (M9 step 8; section 5): the link comes from the store, so while playing it
 // carries the current t, not the address bar's stale one; without a clipboard the link shows in a read-only field.
-import { APP_ORIGIN, expect, test } from "./fixtures";
+// [Redesign] On the recorded clip (paused at first: reduced motion), and on a live camera, whose link never has a t.
+import {
+  APP_ORIGIN,
+  CLIP_ID,
+  cameraRadio,
+  clipReady,
+  expect,
+  expectSimTime,
+  objectCard,
+  test,
+} from "./fixtures";
 
-const VIEW = "./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544";
-const MAUNAKEA = "Computed sky, Maunakea";
+test.use({ reducedMotion: "reduce" });
 
-test("Copy link while playing: the current t, cam and sel, and the link opens the same view", async ({
+const VIEW = "./?t=2026-10-11T08:00:01Z&sel=sat:25544";
+const controls = (page: Parameters<typeof cameraRadio>[0]) =>
+  page.getByRole("region", { name: "Video controls" });
+
+test("Copy link while the clip plays: the current t, cam and sel, and the link opens the same view", async ({
   page,
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP_ORIGIN });
   await page.goto(VIEW);
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await expect(page.getByRole("region", { name: "Inspector" })).toContainText("ISS (ZARYA)");
-  await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T15:09:50Z");
+  await clipReady(page, "paused");
+  await expectSimTime(page, "2026-10-11T08:00:01Z");
+  await expect(objectCard(page)).toContainText("International Space Station");
 
-  await timeline.getByRole("button", { name: "Play", exact: true }).click(); // 1×
+  await controls(page).getByRole("button", { name: "Play", exact: true }).click();
   await page.waitForTimeout(2_000);
-  await timeline.getByRole("button", { name: "Copy link" }).click();
-  await expect(timeline.getByRole("status")).toHaveText("Link copied");
+  await controls(page).getByRole("button", { name: "Copy link" }).click();
+  await expect(controls(page).getByRole("status")).toHaveText("Link copied");
 
   const link = await page.evaluate(() => navigator.clipboard.readText());
   expect(link.startsWith("http://localhost:4173/Overhead/?"), link).toBe(true);
   const params = new URL(link).searchParams;
   const t = params.get("t") ?? "";
   expect(t).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-  expect(Date.parse(t)).toBeGreaterThanOrEqual(Date.parse("2026-10-11T15:09:51Z"));
-  expect(Date.parse(t)).toBeLessThanOrEqual(Date.parse("2026-10-11T15:09:54Z"));
-  expect(params.get("cam")).toBe("synthetic-maunakea");
+  expect(Date.parse(t)).toBeGreaterThanOrEqual(Date.parse("2026-10-11T08:00:02Z"));
+  expect(Date.parse(t)).toBeLessThanOrEqual(Date.parse("2026-10-11T08:00:05Z"));
+  expect(params.get("cam")).toBe(CLIP_ID);
   expect(params.get("sel")).toBe("sat:25544");
   expect(params.has("demo")).toBe(false);
 
@@ -37,12 +50,29 @@ test("Copy link while playing: the current t, cam and sel, and the link opens th
     if (m.type() === "error") openedErrors.push(m.text());
   });
   await opened.goto(link);
-  await expect(opened.getByRole("radio", { name: MAUNAKEA })).toBeChecked();
-  await expect(opened.getByTestId("time-utc")).toHaveText(t);
-  await expect(opened.getByTestId("time-mode")).toHaveText("Replay");
-  await expect(opened.getByRole("region", { name: "Inspector" })).toContainText("ISS (ZARYA)");
+  await expect(cameraRadio(opened, "ISS pass (recorded)")).toBeChecked();
+  await clipReady(opened, "paused");
+  await expectSimTime(opened, t);
+  await expect(objectCard(opened)).toContainText("International Space Station");
   expect(openedErrors).toEqual([]);
   await opened.close();
+});
+
+test("on a live camera the link has no t: a live link always opens now", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP_ORIGIN });
+  await page.clock.setFixedTime(new Date("2026-10-11T08:00:00Z"));
+  await page.goto("./?cam=subaru-starcam&sel=planet:Uranus");
+  await expect(page.getByTestId("video-status")).toHaveAttribute("data-status", "playing");
+  await expect(page.getByTestId("time-mode")).toHaveText("Live");
+  await controls(page).getByRole("button", { name: "Copy link" }).click();
+  await expect(controls(page).getByRole("status")).toHaveText("Link copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "http://localhost:4173/Overhead/?cam=subaru-starcam&sel=planet:Uranus",
+  );
+  await expect.poll(() => new URL(page.url()).search).toBe("?cam=subaru-starcam&sel=planet:Uranus");
 });
 
 test("without a clipboard (as on the http URL) the link shows in a read-only, selected field", async ({
@@ -51,15 +81,15 @@ test("without a clipboard (as on the http URL) the link shows in a read-only, se
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true }),
   );
-  await page.goto(VIEW);
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await expect(page.getByTestId("time-utc")).toHaveText("2026-10-11T15:09:50Z");
+  await page.goto("./?t=2026-10-11T08:00:03Z&sel=sat:25544");
+  await clipReady(page, "paused");
+  await expectSimTime(page, "2026-10-11T08:00:03Z");
   expect(await page.evaluate(() => navigator.clipboard === undefined)).toBe(true);
 
-  await timeline.getByRole("button", { name: "Copy link" }).click();
-  const field = timeline.getByRole("textbox", { name: "Link to this view" });
+  await controls(page).getByRole("button", { name: "Copy link" }).click();
+  const field = controls(page).getByRole("textbox", { name: "Link to this view" });
   await expect(field).toHaveValue(
-    "http://localhost:4173/Overhead/?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z&sel=sat:25544",
+    `http://localhost:4173/Overhead/?cam=${CLIP_ID}&t=2026-10-11T08:00:03Z&sel=sat:25544`,
   );
   await expect(field).toHaveAttribute("readonly", "");
   await expect(field).toBeFocused();
@@ -68,5 +98,5 @@ test("without a clipboard (as on the http URL) the link shows in a read-only, se
     return [input.selectionStart, input.selectionEnd, input.value.length];
   });
   expect(selection).toEqual([0, selection[2], selection[2]]);
-  await expect(timeline.getByRole("status")).toHaveText("");
+  await expect(controls(page).getByRole("status")).toHaveText("");
 });

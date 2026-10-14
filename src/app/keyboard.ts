@@ -1,7 +1,8 @@
 // src/app/keyboard.ts — the one keydown handler (M1 step 7; README Keyboard); Esc in M3; C, the calibration nudges and
 // Esc on a pending calibration point in M4 (step 15); [M9] Esc ends the tour first, and KEY_MAP (step 9). Every key has
-// an on-screen control (Esc: the tour's "Exit tour", the Inspector's "Clear selection" and the panel's "Cancel point";
-// the nudges: the panel's pointing fields).
+// an on-screen control (Esc: the tour's "Exit tour", the object card's close button and the alignment panel's "Cancel
+// point"; the nudges: the panel's pointing fields). [Redesign] Space, the arrows and [ ] are the recorded clip's only:
+// a live camera has no time controls, so they do nothing there; [ and ] pick 1× or 10× (60× and 600× are gone).
 import { selectActiveCamera, selectCalibration } from "../state/selectors";
 import type { AppStore } from "../state/store";
 import type { ClockRate } from "../state/types";
@@ -45,7 +46,7 @@ function targetInfo(target: unknown): {
   };
 }
 
-/** The next of the rates the Timeline offers ([M5] only 1× and 10× with a clip), clamped at the ends. */
+/** The next of the offered rates ([Redesign] 1× and 10×; none on a live camera), clamped at the ends. */
 function nextRate(rates: readonly ClockRate[], rate: ClockRate, step: 1 | -1): ClockRate {
   const index = Math.max(0, rates.indexOf(rate));
   return rates[Math.min(rates.length - 1, Math.max(0, index + step))] ?? rate;
@@ -73,6 +74,8 @@ function nudgeCalibration(store: AppStore, key: string, shiftKey: boolean): bool
 /**
  * true when handled. Ignores inputs, a focused map (except Esc), defaultPrevented events, Alt/Ctrl/Meta chords and
  * Space on a button. While the Calibration panel is open the arrows nudge the calibration instead of stepping time.
+ * [Redesign] On a live (youtube) camera Space, ← → and [ ] are not handled: live has no time controls, and pausing
+ * the clock there would leave the sky behind the video with no way back.
  */
 export function handleKeyDown(store: AppStore, e: KeyLike): boolean {
   const { tagName, isContentEditable, inMap } = targetInfo(e.target);
@@ -99,22 +102,24 @@ export function handleKeyDown(store: AppStore, e: KeyLike): boolean {
   ) {
     return nudgeCalibration(store, e.key, e.shiftKey);
   }
+  const kind = selectActiveCamera(store.getState())?.kind;
+  const live = kind === "youtube";
   switch (e.key) {
     case " ":
       // Our preventDefault() would cancel the focused button's own activation.
-      if (tagName === "BUTTON") return false;
+      if (tagName === "BUTTON" || live) return false;
       actions.togglePlay();
       return true;
     case "ArrowLeft":
-      actions.stepBy(e.shiftKey ? -60_000 : -1_000);
-      return true;
     case "ArrowRight":
-      actions.stepBy(e.shiftKey ? 60_000 : 1_000);
+      if (live) return false;
+      actions.stepBy((e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 60_000 : 1_000));
       return true;
     case "[":
     case "]": {
-      // Clamped at the ends: no setRate there, which would also leave Live.
-      const rates = offeredRates(selectActiveCamera(store.getState())?.kind);
+      const rates = offeredRates(kind);
+      if (rates.length === 0) return false; // live, or no camera yet
+      // Clamped at the ends: no setRate there.
       const rate = nextRate(rates, clock.rate, e.key === "[" ? -1 : 1);
       if (rate !== clock.rate) actions.setRate(rate);
       return true;
@@ -161,39 +166,42 @@ export interface KeyMapRow {
   readonly notes: string;
 }
 
-/** [M9] README Keyboard and M9 step 9, in that order, in words for people; handleKeyDown above is the behaviour. */
+/**
+ * [M9] README Keyboard and M9 step 9, in that order, in words for people; handleKeyDown above is the behaviour.
+ * [Redesign] Plain words; the time keys are the recorded video's only.
+ */
 export const KEY_MAP: readonly KeyMapRow[] = [
   {
     keys: "Space",
-    effect: "Play or pause",
-    notes: "On a focused button, Space presses the button",
+    effect: "Play or pause the recorded video",
+    notes: "Not on live cameras. On a focused button, Space presses the button",
   },
   {
     keys: "← / →",
-    effect: "Step back or forward 1 second",
-    notes: "Shift: 1 minute. Off while the Calibration panel is open",
+    effect: "Back or forward 1 second in the recorded video",
+    notes: "Shift: 1 minute. Not on live cameras, or while Camera alignment is open",
   },
   {
     keys: "[ / ]",
-    effect: "Previous or next rate",
-    notes: "1×, 10×, 60× and 600×; 1× and 10× with a recorded clip",
+    effect: "Normal speed or 10 times faster",
+    notes: "Recorded video only",
   },
-  { keys: "L", effect: "Open or close the Layers panel", notes: "" },
-  { keys: "C", effect: "Open or close the Calibration panel", notes: "" },
+  { keys: "L", effect: "Open or close Layers", notes: "" },
+  { keys: "C", effect: "Open or close Camera alignment (advanced)", notes: "" },
   {
-    keys: "← → ↑ ↓ with the Calibration panel open",
+    keys: "← → ↑ ↓ with Camera alignment open",
     effect:
-      "← → turn the azimuth by 0.05° (the roll on a zenith-locked fisheye); ↑ ↓ raise or lower the altitude by 0.05°",
+      "← → turn the camera's view left or right; ↑ ↓ tilt it up or down (0.05° a press; the roll on an all-sky lens pointing straight up)",
     notes: "Shift: 0.5°",
   },
   {
     keys: "Esc",
-    effect: "Exit the tour; else cancel a pending calibration point; else clear the selection",
+    effect: "Exit the tour; else cancel an alignment point; else close the object card",
     notes: "First match only",
   },
   {
     keys: "Arrows, + and − on a focused map",
-    effect: "Pan and zoom the map",
-    notes: "OpenLayers keyboard pan and zoom; the other keys do nothing there, except Esc",
+    effect: "Move and zoom the map",
+    notes: "The other keys do nothing there, except Esc",
   },
 ];

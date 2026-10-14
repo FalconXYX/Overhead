@@ -2,7 +2,8 @@
 // never in CI, on the development build (React's Profiler counts nothing in a production build, gotcha 3):
 //   npm run build:dev && PERF_OUTDIR=dist-dev npm run perf -- commits
 // Gate: 31–41 commits in 10 s at 60× (≤ 4 per second from the shared 4 Hz ticker, plus one window edge; more than
-// 30 proves the Profiler is live).
+// 30 proves the Profiler is live). [Redesign] On the live Subaru StarCam (the stub player), at 60× from the perf test
+// hook: the computed fisheye is gone and no control offers 60× any more.
 import { mkdirSync, writeFileSync } from "node:fs";
 import type {} from "../../src/app/testHooks"; // window.__overhead
 import { expect, test } from "../e2e/fixtures";
@@ -13,18 +14,22 @@ const MIN_COMMITS = 31;
 const MAX_COMMITS = 41;
 
 test("React commits while playing at 60x with no input", async ({ page }) => {
-  await page.goto("./?cam=synthetic-maunakea&t=2026-10-11T15:09:50Z");
+  await page.goto("./?cam=subaru-starcam");
+  await expect(page.getByTestId("video-status")).toHaveAttribute("data-status", "playing", {
+    timeout: 30_000,
+  });
   await expect
     .poll(() => page.evaluate(() => (window.__overhead?.readyFrame() ?? null) !== null), {
       timeout: 30_000,
     })
     .toBe(true);
-  await page.keyboard.press("]");
-  await page.keyboard.press("]");
-  const timeline = page.getByRole("region", { name: "Timeline" });
-  await expect(timeline.getByRole("radio", { name: "60×" })).toBeChecked();
-  await page.keyboard.press(" ");
-  await expect(timeline.getByRole("button", { name: "Pause" })).toBeVisible();
+  await page.evaluate(
+    (from) => window.__overhead?.playReplay(60, from),
+    Date.parse("2026-10-11T15:09:50Z"),
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__overhead?.clock() ?? null))
+    .toMatchObject({ mode: "replay", playing: true, rate: 60 });
   // No input from here on: the mouse stays where it is and no key is pressed.
   await page.waitForTimeout(SETTLE_MS);
   const before = await page.evaluate(() => window.__overhead?.commits() ?? Number.NaN);

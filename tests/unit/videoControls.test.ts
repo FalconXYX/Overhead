@@ -1,6 +1,6 @@
-// tests/unit/videoControls.test.ts — the M5 controls outside VideoPanel, rendered with renderToStaticMarkup against the
-// app store (no DOM): the Layers panel's "On the video" group (step 8.8), the Timeline's "Follows the video"
-// description (step 12.1), and the Calibration panel's stream-delay section and star-pair text (step 9).
+// tests/unit/videoControls.test.ts — the controls outside VideoPanel, rendered with renderToStaticMarkup against the
+// app store (no DOM): [Redesign] the Layers popover's two plain groups and the control bar (live versus clip), and the
+// Calibration panel's stream-delay section and star-pair text (M5 step 9).
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -25,6 +25,7 @@ beforeEach(() => {
   actions.setActiveCamera("synthetic-maunakea");
   actions.openPanel(null);
   for (const key of ["starlink", "grid", "denseLabels"] as const) actions.setVideoLayer(key, false);
+  actions.setMode("replay");
   actions.recenter(T);
 });
 
@@ -32,53 +33,128 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("LayerToggles: On the video", () => {
+/** [Redesign] A switch's checkbox tag, found by its label text. */
+const switchTag = (html: string, label: string): string =>
+  new RegExp(
+    `<span class="switch-label">(?:<span[^>]*></span>)?${label}</span>(<input[^>]*>)`,
+  ).exec(html)?.[1] ?? "";
+
+describe("LayerToggles ([Redesign] two plain groups in a popover)", () => {
   const render = (): string => renderToStaticMarkup(createElement(LayerToggles));
 
-  it("is absent while the sky is not over a video", () => {
-    expect(render()).not.toContain("On the video");
-    store.getState().actions.setActiveCamera("cfht-nanaao");
-    expect(render()).not.toContain("On the video");
+  it("has the On the video and On the map groups with the spec's plain labels, a key and the alignment button", () => {
+    store.getState().actions.setActiveCamera("subaru-starcam");
+    const html = render();
+    const group = (legend: string): string =>
+      new RegExp(`<legend>${legend}</legend>(.*?)</fieldset>`).exec(html)?.[1] ?? "";
+    const labels = (g: string): string[] =>
+      [...g.matchAll(/<span class="switch-label">(?:<span[^>]*><\/span>)?([^<]+)<\/span>/g)].map(
+        (m) => m[1] ?? "",
+      );
+    expect(labels(group("On the video"))).toEqual([
+      "Satellites",
+      "Starlink",
+      "Stars",
+      "Planets and Moon",
+      "Trails",
+      "Grid lines",
+      "Horizon line",
+    ]);
+    expect(labels(group("On the map"))).toEqual([
+      "Cloud imagery (10 min)",
+      "Terrain shading",
+      "Camera view at orbit height",
+      "Satellite paths",
+    ]);
+    expect(html).toContain('<h3 class="legend-title">Colour key</h3>');
+    expect(html).toMatch(
+      /<button type="button" class="btn-quiet" aria-controls="camera-alignment" aria-expanded="false">Camera alignment \(advanced\)<\/button>/,
+    );
+    // No jargon in the panel (spec section 3).
+    for (const word of ["NORAD", "GIBS", "GOES", "az/alt", "Alt/az", "magnitude", "EPSG"]) {
+      expect(html, word).not.toContain(word);
+    }
   });
 
-  it("shows three unchecked boxes over a YouTube player or a clip, the Starlink one with its note", () => {
-    for (const id of ["subaru-starcam", "local-replay"]) {
-      store.getState().actions.setActiveCamera(id);
-      const html = render();
-      const group =
-        /<fieldset><legend>On the video<\/legend>(.*?)<\/fieldset>/.exec(html)?.[1] ?? "";
-      expect(group, id).toContain("Starlink on the video");
-      expect(group).toContain("Grid on the video");
-      expect(group).toContain("All labels on the video");
-      expect(group).toContain("Also needs the Starlink layer, which loads the data.");
-      const boxes = [...group.matchAll(/<input type="checkbox"[^>]*>/g)].map((m) => m[0]);
-      expect(boxes).toHaveLength(3);
-      for (const box of boxes) expect(box).not.toContain("checked");
-    }
-    store.getState().actions.setVideoLayer("grid", true);
-    const html = render();
-    const checked = [...html.matchAll(/<input type="checkbox"[^>]*checked=""[^>]*\/?>([^<]*)/g)];
-    expect(checked.some((m) => (m[1] ?? "").includes("Grid on the video"))).toBe(true);
+  it("is a closed popover until ui.panel is layers", () => {
+    expect(render()).toMatch(
+      /^<div class="popover layers"><button type="button" class="header-button" aria-expanded="false" aria-controls="layers-panel">Layers<\/button><section id="layers-panel" aria-label="Layers"[^>]* hidden="">/,
+    );
+    store.getState().actions.openPanel("layers");
+    const open = render();
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).not.toContain('hidden=""');
+  });
+
+  it("over a video, Starlink and Grid lines are on only with their video gates; one switch sets both", () => {
+    const { actions } = store.getState();
+    actions.setActiveCamera("subaru-starcam");
+    actions.setLayer("starlink", true); // the data layer alone: not on the video
+    expect(switchTag(render(), "Starlink")).not.toContain("checked");
+    actions.setVideoLayer("starlink", true);
+    expect(switchTag(render(), "Starlink")).toContain('checked=""');
+    expect(switchTag(render(), "Grid lines")).not.toContain("checked");
+    actions.setVideoLayer("grid", true);
+    expect(switchTag(render(), "Grid lines")).toContain('checked=""');
+    actions.setLayer("starlink", false);
+  });
+
+  it("Satellite paths follows layers.tracks", () => {
+    const { actions } = store.getState();
+    expect(switchTag(render(), "Satellite paths")).toContain('checked=""');
+    actions.setLayer("tracks", false);
+    expect(switchTag(render(), "Satellite paths")).not.toContain("checked");
+    actions.setLayer("tracks", true);
   });
 });
 
-describe("Timeline: Follows the video", () => {
+describe("Timeline ([Redesign] the control bar)", () => {
   const render = (): string => renderToStaticMarkup(createElement(Timeline));
 
-  it("describes the live mode readout on a YouTube camera only", () => {
+  it("on a live camera: the LIVE badge and no play, rate, step or scrubber; Watch the recorded ISS pass", () => {
     const { actions } = store.getState();
     actions.setActiveCamera("subaru-starcam");
     actions.setMode("live");
     const html = render();
-    const id = /data-testid="time-mode" aria-describedby="([^"]+)"/.exec(html)?.[1];
-    expect(id).toBeDefined();
-    expect(html).toContain(`id="${id}">Follows the video</span>`);
-    expect(html).toMatch(/data-testid="time-mode"[^>]*>Live<\/span>/);
+    expect(html).toMatch(/<span class="live-badge" data-testid="time-mode">.*Live<\/span>/);
+    expect(html).toContain("Waiting for the video…");
+    expect(html).not.toContain('type="range"');
+    expect(html).not.toContain('type="radio"');
+    expect(html).not.toMatch(/>(Play|Pause|Back 1 second|Forward 1 minute|Now)</);
+    expect(html).toContain(">Watch the recorded ISS pass</button>");
     actions.setMode("replay");
-    expect(render()).not.toContain("Follows the video");
-    actions.setActiveCamera("synthetic-maunakea");
-    actions.setMode("live");
-    expect(render()).not.toContain("Follows the video");
+    expect(render()).toContain(">Back to live</button>");
+  });
+
+  it("on the recorded clip: play, a scrubber over the clip and m:ss / m:ss (dashes until it loads)", () => {
+    const { actions } = store.getState();
+    actions.setActiveCamera("subaru-2026-10-11-iss");
+    const html = render();
+    expect(html).toContain('<span class="visually-hidden">Play</span>');
+    expect(html).toMatch(
+      /<input type="range" class="cb-scrubber" aria-label="Position in the recording"/,
+    );
+    expect(html).toContain('data-testid="clip-position">–:–– / –:––</span>');
+    expect(html).not.toContain("live-badge");
+    expect(html).not.toContain("Watch the recorded ISS pass");
+  });
+
+  it("shows the local time in plain words, with UTC only in the tooltip and dateTime", () => {
+    store.getState().actions.setActiveCamera("subaru-starcam");
+    const html = render();
+    expect(html).toContain(
+      '<time class="cb-clock" data-testid="time-local" dateTime="2026-10-11T08:00:00Z" title="2026-10-11 08:00:00 UTC">22:00 in Hawaii</time>',
+    );
+  });
+
+  it("has In view, Fullscreen and Copy link", () => {
+    store.getState().actions.setActiveCamera("subaru-starcam");
+    const html = render();
+    expect(html).toMatch(/aria-expanded="false" aria-controls="[^"]+">In view<\/button>/);
+    expect(html).toContain('<section id="');
+    expect(html).toContain('aria-label="In view"');
+    expect(html).toContain('aria-label="Fullscreen"');
+    expect(html).toMatch(/<\/svg>Copy link<\/button>/);
   });
 });
 

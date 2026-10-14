@@ -1,5 +1,6 @@
 // src/ui/GroundView.tsx — the ground map container, its lifecycle and its load states (M1 step 13), the GOES
-// caption (M7 step 7) and the hillshade's night badge (M6 step 11.4).
+// caption (M7 step 7) and the hillshade's night badge (M6 step 11.4). [Redesign] Beside the video, smaller (spec
+// section 2); layout only.
 // Imports no OpenLayers module (README import rule 4).
 import { useEffect, useRef } from "react";
 import { createGroundMap } from "../map/ground/createGroundMap";
@@ -34,7 +35,7 @@ function NightBadge() {
   useTick4Hz();
   const on = useAppState((s) => s.layers.hillshade);
   const sunAltDeg = skyCache.bodies[1] ?? Number.NaN;
-  return on && sunAltDeg < 0 ? <p>Night: fixed lighting (315°, 45°)</p> : null;
+  return on && sunAltDeg < 0 ? <p>Night: the terrain shading uses a fixed light</p> : null;
 }
 
 export function GroundView() {
@@ -52,20 +53,27 @@ export function GroundView() {
 
   const gibsText = gibsStatusText(gibs);
   // [M9] Layout in src/app/layout.css: the map fills the pane (a container needs a non-zero size: a zero-size map
-  // requests no tiles, Gotcha 15), and the GOES caption and night badge sit over its bottom-left corner.
+  // requests no tiles, Gotcha 15), and the GOES caption and night badge sit over its bottom-left corner. [Redesign]
+  // The load states float over the map's top edge, so the map never shifts.
   return (
     <div className="ground">
       {cameras === "error" ? (
-        <div role="status">
+        <div role="status" className="ground-status">
           <p>Camera list failed to load</p>
           <button type="button" onClick={() => window.location.reload()}>
             Reload
           </button>
         </div>
       ) : cameras !== "ready" ? (
-        <p role="status">Loading cameras…</p>
+        <p role="status" className="ground-status">
+          Loading cameras…
+        </p>
       ) : null}
-      {gibsText === null ? null : <p role="status">{gibsText}</p>}
+      {gibsText === null ? null : (
+        <p role="status" className="ground-status">
+          {gibsText}
+        </p>
+      )}
       <div
         ref={ref}
         data-map="ground"

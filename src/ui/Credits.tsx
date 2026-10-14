@@ -1,7 +1,8 @@
-// src/ui/Credits.tsx — every credit, on screen at all times, outside every pane and panel (README Credits).
-// (<footer aria-label> fails Biome's useAriaPropsSupportedByRole, so this is a labelled section.) [M9] A compact line
-// along the bottom, the active camera's credit first; "Show all credits" (or a focused link) expands it (layout.css).
-import { useId, useState } from "react";
+// src/ui/Credits.tsx — every credit in use (README Credits). [Redesign] One [Credits] button, always in the header,
+// opens the full list (redesign spec section 5): the camera's credit and terms first, then GIBS, OSM, CelesTrak, the
+// star catalogue and names, and the terrain sources. Nothing else about credits is on screen. The list stays in the
+// DOM while closed (hidden), so it is the same list either way.
+import { useState } from "react";
 import {
   dataCredits,
   GOES_SUBTITLE,
@@ -14,6 +15,7 @@ import {
 import { useAppState } from "../state/hooks";
 import { selectActiveCamera, selectHorizonStatus, selectTrueColorDate } from "../state/selectors";
 import type { Credit } from "../state/types";
+import { Popover } from "./Popover";
 
 function ExternalLink({ href, children }: { href: string; children: string }) {
   return (
@@ -57,13 +59,19 @@ export function Credits() {
   // [M6] The full "Required attribution" block while terrain data is in use (README Credits).
   const horizonStatus = useAppState(selectHorizonStatus);
   const terrain = terrainInUse(layers.hillshade, horizonStatus);
-  const [expanded, setExpanded] = useState(false);
-  const listId = useId();
+  const [open, setOpen] = useState(false);
 
   return (
-    <section aria-label="Credits" className="credits" data-expanded={expanded}>
-      <h2 className="credits-title">Credits</h2>
-      <ul id={listId} className="credits-list">
+    <Popover
+      label="Credits"
+      title="Credits"
+      open={open}
+      onOpenChange={setOpen}
+      className="credits"
+      buttonClassName="header-button"
+    >
+      <h2 className="popover-title">Credits</h2>
+      <ul className="credits-list">
         {camera === undefined ? null : (
           <li>
             <CreditLine credit={camera.credit} />
@@ -97,16 +105,6 @@ export function Credits() {
           </li>
         ) : null}
       </ul>
-      {/* A toggle: its label never changes, aria-expanded says the state. */}
-      <button
-        type="button"
-        className="credits-toggle"
-        aria-expanded={expanded}
-        aria-controls={listId}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="credits-toggle-text">Show all credits</span>
-      </button>
-    </section>
+    </Popover>
   );
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BODY_IDS, BODY_STRIDE, type StarRow } from "../../src/domain/astro";
 import type { ObserverSite } from "../../src/domain/geo";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import {
   createSkyCache,
   invalidateSky,
@@ -18,6 +18,7 @@ import {
 } from "../../src/state/skyCache";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { LoadStatus } from "../../src/state/types";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 const STARS_URL = new URL("../../public/data/stars.json", import.meta.url);
 const STARS_TEXT = readFileSync(STARS_URL, "utf8");
@@ -31,7 +32,7 @@ function cacheWithStars(vmagLimit = 4.5): SkyCache {
   return cache;
 }
 
-const newStore = (): AppStore => createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+const newStore = (): AppStore => createAppStore(initialState(T, TEST_CAMERA_ID));
 
 /** Records every data.stars status the store passes through. */
 function starStatuses(store: AppStore): LoadStatus[] {

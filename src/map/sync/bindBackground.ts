@@ -124,9 +124,11 @@ export function startLocalVideo(
         shown.changed();
       });
       // The store's time: recenter(startUtcMs) put it at media 0; a kept ?t= or a re-activation may not have.
-      const offsetSec = (store.getState().clock.simTimeMs - startUtcMs) / 1000;
+      const { simTimeMs } = store.getState().clock;
+      const offsetSec = (simTimeMs - startUtcMs) / 1000;
       if (offsetSec !== video.currentTime) clock.seekToSec(offsetSec);
-      setMediaClock(clock);
+      // [Redesign] Remembered: a step or seek before the loop's next frame then moves the video (it was lost).
+      setMediaClock(clock, simTimeMs);
       if (video.paused) actions().setFrameTimeMs(frameUtcMs());
     },
     seeked: () => {

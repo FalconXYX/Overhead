@@ -1,6 +1,8 @@
 // src/main.tsx — boot: URL state, keyboard, the clock loop, render, then cameras.json and the GIBS snapshot (M1 step 16),
 // the star catalogue (M2 step 7), the satellite ephemeris and test hooks (M3 steps 11 and 16), and saved calibrations
 // (M4 step 8); [M9] the visual design (step 12), the accessibility styles (step 11) and the ?demo=1 tour (step 10).
+// [Redesign] The site opens on the recorded ISS pass (DEFAULT_CAMERA_ID), paused a little before the ISS enters; the
+// clip loader runs here; ?cam= names only enabled cameras, and ?t= applies only to the recorded clip.
 import "ol/ol.css"; // OpenLayers' own control styles: without it the hidden rotate button shows
 import "./app/theme.css"; // [M9] the visual design (step 12): tokens, type and controls, after ol/ol.css
 import "./app/layout.css"; // [M9] the split view and the panels
@@ -8,7 +10,9 @@ import "./app/a11y.css"; // [M9] after ol/ol.css, which it overrides
 import { Profiler, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { activateCamera } from "./app/activateCamera";
 import { enabledCameras, parseCameraRegistry } from "./app/cameras";
+import { startClipLoader } from "./app/clip";
 import { installKeyboard } from "./app/keyboard";
 import { browserStorage, restoreCalibrations, startCalibrationPersistence } from "./app/persist";
 import { createTestHooks, installTestHooks, recordCommit } from "./app/testHooks";
@@ -32,18 +36,14 @@ if (rootElement === null) throw new Error("index.html has no #root element");
 
 const { actions } = store.getState();
 
-// 1. URL state, before the first render. ?t= opens paused replay there; without it the app starts live.
+// 1. URL state, before the first render. [Redesign] ?cam= and ?t= wait for the camera list (below): ?t= is a time in
+// the recorded clip, and a live camera has no time controls.
 const url = parseUrlState(window.location.search);
 const urlParams = new URLSearchParams(window.location.search);
-if (url.tMs !== null) {
-  actions.recenter(url.tMs);
-} else {
-  if (urlParams.has("t")) {
-    console.warn(
-      "Ignoring ?t=: it must be an ISO 8601 UTC time ending in Z, e.g. 2026-10-10T03:30:00Z",
-    );
-  }
-  actions.setMode("live");
+if (url.tMs === null && urlParams.has("t")) {
+  console.warn(
+    "Ignoring ?t=: it must be an ISO 8601 UTC time ending in Z, e.g. 2026-10-11T15:09:30Z",
+  );
 }
 // ?sel= may name a satellite whose group has not loaded yet: the Inspector says so until it has.
 if (url.sel !== null) {
@@ -77,6 +77,8 @@ if (navigator.webdriver) {
   installTestHooks(hooks);
 }
 startClockLoop(store);
+// [Redesign] Loads the active clip camera's clip on each activation, whatever the layout renders.
+startClipLoader(store, { baseHref: new URL(import.meta.env.BASE_URL, window.location.href).href });
 
 createRoot(rootElement).render(
   <StrictMode>
@@ -110,22 +112,23 @@ async function loadCameras(): Promise<void> {
     const storage = browserStorage();
     restoreCalibrations(store, storage);
     startCalibrationPersistence(store, storage);
-    if (url.cam !== null && Object.hasOwn(enabled, url.cam)) {
-      actions.setActiveCamera(url.cam);
-      // [M5] A clip camera is always replay (step 12.2): replay instead of the live mode set at boot, paused.
-      if (enabled[url.cam]?.kind === "local-video") {
-        actions.setMode("replay");
-        actions.pause();
-      }
-    } else {
-      if (url.cam !== null) {
-        console.warn(
-          Object.hasOwn(all, url.cam)
-            ? `Camera ${url.cam} is not enabled yet; showing ${DEFAULT_CAMERA_ID}`
-            : `Unknown camera ${url.cam}; showing ${DEFAULT_CAMERA_ID}`,
-        );
-      }
-      actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    // [Redesign] ?cam= names an enabled camera, else the recorded ISS pass. A live camera goes live and ignores ?t=; the
+    // clip opens paused at ?t= when the time lies inside it (clip.ts claimUrlTime), else a little before the ISS.
+    const urlCam = url.cam !== null && Object.hasOwn(enabled, url.cam) ? url.cam : null;
+    if (url.cam !== null && urlCam === null) {
+      console.warn(
+        Object.hasOwn(all, url.cam)
+          ? `Camera ${url.cam} is not offered any more; showing ${DEFAULT_CAMERA_ID}`
+          : `Unknown camera ${url.cam}; showing ${DEFAULT_CAMERA_ID}`,
+      );
+    }
+    const id = urlCam ?? DEFAULT_CAMERA_ID;
+    activateCamera(store, id);
+    const kind = enabled[id]?.kind;
+    if (kind === "youtube") {
+      if (url.tMs !== null) console.warn("Ignoring ?t=: a live camera always shows now");
+    } else if (url.tMs !== null) {
+      actions.recenter(url.tMs);
     }
     actions.setLoadStatus("cameras", "ready");
     startUrlSync(store, writeUrl);
@@ -137,17 +140,13 @@ async function loadCameras(): Promise<void> {
 }
 
 /**
- * [M9] ?demo=1 (M9 step 10 rule 6): the lazy tour module, then the computed-sky anchor from the element sets'
- * snapshot (loadDemoAnchorMs never rejects), then the runner and startDemo(). After the camera list: the anchor needs
- * the computed-sky camera's site, and the intro step activates the clip camera.
+ * [M9] ?demo=1 (M9 step 10 rule 6): the lazy tour module, then the runner and startDemo(). After the camera list: the
+ * intro step activates the clip camera. [Redesign] No computed-sky anchor any more.
  */
 async function startTour(): Promise<void> {
   try {
-    const { loadDemoAnchorMs, startDemoRunner } = await import("./app/demo");
-    const site = store.getState().camera.registry[DEFAULT_CAMERA_ID]?.site;
-    if (site === undefined) throw new Error(`The camera list has no ${DEFAULT_CAMERA_ID}`);
-    const anchorMs = await loadDemoAnchorMs(import.meta.env.BASE_URL, site);
-    startDemoRunner(store, anchorMs);
+    const { startDemoRunner } = await import("./app/demo");
+    startDemoRunner(store);
     actions.startDemo();
   } catch (error) {
     console.error("The tour could not start", error);

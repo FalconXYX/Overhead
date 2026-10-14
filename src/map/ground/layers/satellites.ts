@@ -2,8 +2,8 @@
 // class MultiPoints (stations and visual; Starlink), every valid, undocked object on the whole globe, plus a canvas
 // markers layer with the labelled ISS, selected and hovered satellites. WebGLVector draws about one frame late and
 // freezes while the view moves, so those three are drawn only on the canvas layer (gotcha 11). Picking is ours
-// (pick.ts), so the WebGL layers disable hit detection. Looks are visual design; the values here are placeholders,
-// with lit and shadowed differing in shape (circle, square).
+// (pick.ts), so the WebGL layers disable hit detection. [Redesign] Colour-coded as on the video (kindColors.ts):
+// satellites cyan, Starlink violet, the ISS orange; lit and shadowed differ in shape (circle, square).
 import Feature from "ol/Feature";
 import MultiPoint from "ol/geom/MultiPoint";
 import LayerGroup from "ol/layer/Group";
@@ -13,6 +13,13 @@ import type { Rule } from "ol/style/flat";
 import type { SatCatalog, SatFrame } from "../../../state/ephemeris";
 import type { ObjectId } from "../../../state/types";
 import { writeClassPoints } from "../../classPoints";
+import {
+  INK,
+  KIND_COLOR,
+  KIND_SHADOW_FILL,
+  type SatelliteKind,
+  satelliteKind,
+} from "../../kindColors";
 import { WORLD_WIDTH_M } from "../../pick";
 import type { SkySatelliteIds } from "../../sky/layers/satellites";
 import {
@@ -22,6 +29,7 @@ import {
   type MarkerSlot,
   placeMarker,
   type SelectionTargets,
+  satelliteLabel,
 } from "../../sky/layers/selection";
 
 /** SatFrame flag bits (README section 6, ephemeris.ts). */
@@ -34,15 +42,21 @@ const STARLINK_CLASS = 4;
 /** Points per class in the current write (writes are synchronous, so one scratch array serves every call). */
 const classCounts = new Int32Array(8);
 
-/** WebGL flat style: lit (feature property lit = 1) a filled circle, shadowed a square of the same size. */
-export function satelliteWebglStyle(radiusPx: number): Rule[] {
+/**
+ * WebGL flat style: lit (feature property lit = 1) a filled circle in the kind's colour with a dark rim, shadowed a
+ * dark square of the same size with an edge in the kind's colour.
+ */
+export function satelliteWebglStyle(
+  radiusPx: number,
+  kind: Exclude<SatelliteKind, "iss"> = "satellite",
+): Rule[] {
   return [
     {
       filter: ["==", ["get", "lit"], 1],
       style: {
         "circle-radius": radiusPx,
-        "circle-fill-color": "#f2f5f9",
-        "circle-stroke-color": "#04060b",
+        "circle-fill-color": KIND_COLOR[kind],
+        "circle-stroke-color": INK,
         "circle-stroke-width": 1,
       },
     },
@@ -52,8 +66,8 @@ export function satelliteWebglStyle(radiusPx: number): Rule[] {
         "shape-points": 4,
         "shape-radius": radiusPx * Math.SQRT2,
         "shape-angle": Math.PI / 4,
-        "shape-fill-color": "#3e4a5c",
-        "shape-stroke-color": "#b4bfce",
+        "shape-fill-color": KIND_SHADOW_FILL[kind],
+        "shape-stroke-color": KIND_COLOR[kind],
         "shape-stroke-width": 1,
       },
     },
@@ -102,7 +116,11 @@ export function createGroundSatellites(capacity = 256): GroundSatellites {
   const starlinkEvenSource = new VectorSource({ useSpatialIndex: false });
   const starlinkOddSource = new VectorSource({ useSpatialIndex: false });
   const starlinkLayer = (source: VectorSource) =>
-    new WebGLVectorLayer({ source, style: satelliteWebglStyle(2), disableHitDetection: true });
+    new WebGLVectorLayer({
+      source,
+      style: satelliteWebglStyle(2, "starlink"),
+      disableHitDetection: true,
+    });
   return {
     satellitesLayer: new WebGLVectorLayer({
       source: satellitesSource,
@@ -214,7 +232,8 @@ function placeGroundSatellite(
   const y = frame.mercator[2 * index + 1] ?? Number.NaN;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return hideMarker(slot); // never NaN into a geometry
   const shape = (flags & FLAG_SUNLIT) !== 0 ? "lit" : "shadowed";
-  return placeMarker(slot, x, y, shape, catalog.names[index] ?? "");
+  const kind = satelliteKind(catalog.noradIds[index], catalog.groupIndex[index]);
+  return placeMarker(slot, x, y, shape, satelliteLabel(catalog.names[index] ?? ""), kind);
 }
 
 /** Stars and bodies have no ground position: only a `sat:` id gets a marker. */

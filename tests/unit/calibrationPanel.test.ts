@@ -17,6 +17,7 @@ import type {
   StarPair,
   StillImageCamera,
 } from "../../src/state/types";
+import { CalibrationDrawer } from "../../src/ui/CalibrationDrawer";
 import { CalibrationPanel, CalibrationPanelView } from "../../src/ui/CalibrationPanel";
 import { catalogTargetsAt, targetsById } from "../../src/ui/calibrationPairs";
 import { committedCameras } from "../helpers/store";
@@ -323,23 +324,28 @@ describe("CalibrationPanel (store-connected)", () => {
     vi.restoreAllMocks();
   });
 
-  it("is a toggle button and a hidden labelled section until the panel opens", () => {
+  it("[Redesign] lives in the Camera alignment (advanced) drawer, hidden until the panel opens", () => {
     // Server rendering reads getInitialState(); point it at the live state for these renders.
     vi.spyOn(store, "getInitialState").mockImplementation(() => store.getState());
     const { actions } = store.getState();
     actions.setRegistry({ "synthetic-maunakea": synthetic, "cfht-nanaao": nanaao });
-    const closed = renderToStaticMarkup(createElement(CalibrationPanel));
+    actions.openPanel(null);
+    const closed = renderToStaticMarkup(createElement(CalibrationDrawer));
     expect(closed).toMatch(
-      // [M9] Class attributes are the visual design's hooks (step 12).
-      /^<div(?: class="[^"]*")?><button type="button"(?: class="[^"]*")? aria-expanded="false" aria-controls="([^"]+)">Calibration<\/button><section id="\1"(?: class="[^"]*")? aria-label="Calibration" hidden="">/,
+      /^<section id="camera-alignment" aria-labelledby="([^"]+)" class="drawer" hidden=""><header class="drawer-head"><h2 id="\1">Camera alignment \(advanced\)<\/h2><button type="button" class="btn-icon btn-quiet" aria-label="Close camera alignment">/,
     );
     actions.togglePanel("calibration");
     actions.setActiveCamera("cfht-nanaao");
-    const open = renderToStaticMarkup(createElement(CalibrationPanel));
-    expect(open).toContain('aria-expanded="true"');
+    const open = renderToStaticMarkup(createElement(CalibrationDrawer));
     expect(open).not.toContain('hidden=""');
+    expect(open).toContain('<div class="drawer-body"><div class="calibration">');
     expect(open).toContain("Camera: CFHT Nānā ao all-sky (visible). Lens: Equidistant fisheye.");
     expect(open).toContain("<p>No image yet.</p>");
+    // The panel's own content has no toggle of its own any more.
+    expect(renderToStaticMarkup(createElement(CalibrationPanel))).toMatch(
+      /^<div class="calibration">/,
+    );
+    actions.openPanel(null);
   });
 });
 

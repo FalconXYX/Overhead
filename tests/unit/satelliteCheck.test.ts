@@ -18,7 +18,7 @@ import {
   satelliteCheckClickAt,
   setSatelliteCheckClicks,
 } from "../../src/map/sky/calibrationClick";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig, LocalVideoCamera } from "../../src/state/types";
 import {
@@ -28,6 +28,7 @@ import {
   satelliteCheckSummaryText,
 } from "../../src/ui/SatelliteCheck";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 const committed: unknown = JSON.parse(
   readFileSync(new URL("../../public/data/cameras.json", import.meta.url), "utf8"),
@@ -48,7 +49,7 @@ const model = createCameraModel({
 
 /** The clip camera active and paused on a frame, with the Calibration panel open. */
 function pausedClip(): AppStore {
-  const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+  const store = createAppStore(initialState(T, TEST_CAMERA_ID));
   const { actions } = store.getState();
   actions.setRegistry({ ...registry });
   actions.setActiveCamera(CLIP_ID);
@@ -104,7 +105,7 @@ describe("satelliteCheckClickAt", () => {
     expect(satelliteCheckClickAt(store.getState(), 1, 1)).toBe(false);
     actions.setFrameTimeMs(T);
     expect(satelliteCheckClickAt(store.getState(), Number.NaN, 1)).toBe(false);
-    actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    actions.setActiveCamera(TEST_CAMERA_ID);
     actions.setFrameTimeMs(T);
     expect(satelliteCheckClickAt(store.getState(), 1, 1)).toBe(false);
     expect(clicks).toEqual([]);

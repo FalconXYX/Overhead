@@ -1,11 +1,14 @@
 // src/app/clip.ts — recorded clips (O2): the ClipSidecar contract, its validation, and the clip camera it runs as
 // (M5 step 10); [M5] loading a clip from its sidecar URL or from picked files (with the H1 Range probe), the probe of
-// the video, the per-camera load state ClipControls shows, "Copy pointing", "Save sidecar", the rates a clip allows
-// and the stretches where the sidecar says a satellite is hidden (step 13).
+// the video, the per-camera load state ClipControls shows, "Copy pointing", the rates a clip allows and the stretches
+// where the sidecar says a satellite is hidden (step 13). [Redesign] Picked files (local-replay) and "Save sidecar" are
+// gone from the UI; loadClip stays for the unit tests. The clip loader runs from main.tsx (startClipLoader), opens a
+// clip a little before its pass, and gives the control bar the clip's position and length (clipProgress).
 import { createCameraModel, distortionValid } from "../domain/camera";
-import { isoUtcSeconds } from "../domain/time";
+import { isoUtcSeconds, localVideoTimeMs } from "../domain/time";
 import type { AppStore } from "../state/store";
 import type {
+  AppState,
   Calibration,
   CameraConfig,
   ClockRate,
@@ -303,10 +306,11 @@ export function clipGpBaseUrl(sidecarAbsUrl: string): string {
 }
 
 /**
- * The camera a loaded clip runs as: entry's id, name and source.sidecarUrl; site, lens, imageSize and termsNote
- * from registry[sidecar.cameraId]; defaults = sidecar.calibration ?? that camera's defaults, with streamDelayMs 0;
- * the sidecar's credit; source.sourceCameraId, videoUrl and startUtcMs filled in. null when sidecar.cameraId is
- * not in the registry or differs from a non-null entry.source.sourceCameraId.
+ * The camera a loaded clip runs as: entry's id, name, [Redesign] shortName and siteName (else the source camera's
+ * siteName), [Polish] placeName (likewise) and source.sidecarUrl; site, lens, imageSize and termsNote from registry[sidecar.cameraId]; defaults =
+ * sidecar.calibration ?? that camera's defaults, with streamDelayMs 0; the sidecar's credit; source.sourceCameraId,
+ * videoUrl and startUtcMs filled in. null when sidecar.cameraId is not in the registry or differs from a non-null
+ * entry.source.sourceCameraId.
  */
 export function clipCamera(
   entry: LocalVideoCamera,
@@ -318,9 +322,15 @@ export function clipCamera(
   if (source === undefined) return null;
   const expected = entry.source.sourceCameraId;
   if (expected !== null && expected !== sidecar.cameraId) return null;
+  // [Redesign] The entry's plain names; the site label falls back to the source camera's (the clip's site is its).
+  const siteName = entry.siteName ?? source.siteName;
+  const placeName = entry.placeName ?? source.placeName; // [Polish] the switcher's place line, likewise
   return {
     id: entry.id,
     name: entry.name,
+    ...(entry.shortName === undefined ? {} : { shortName: entry.shortName }),
+    ...(siteName === undefined ? {} : { siteName }),
+    ...(placeName === undefined ? {} : { placeName }),
     kind: "local-video",
     source: {
       sidecarUrl: entry.source.sidecarUrl,
@@ -339,15 +349,47 @@ export function clipCamera(
 
 // ---- [M5] Rates, hidden stretches, the saved sidecar and the probe checks (pure) ----
 
-/** [M5] The registry id of the picked-files clip camera (M5 step 2). */
+/** [M5] The registry id of the picked-files clip camera (M5 step 2). [Redesign] Never enabled: tests only. */
 export const LOCAL_REPLAY_ID = "local-replay";
-const ALL_RATES: readonly ClockRate[] = [1, 10, 60, 600];
 /** [M5] The rates with a clip: Chromium's playbackRate stops at 16 (gotcha G16). */
 export const CLIP_RATES: readonly ClockRate[] = [1, 10];
+const NO_RATES: readonly ClockRate[] = [];
 
-/** [M5] The rates the Timeline offers and [ and ] cycle: CLIP_RATES on a local-video camera, else all four. */
+/**
+ * [Redesign] The rates [ and ] cycle: 1× and 10× (CLIP_RATES) on a recorded clip, and on the test-only computed and
+ * still cameras; none on a live camera (it has no time controls) or before the camera list loads. 60× and 600× are
+ * gone from every user path; ClockRate keeps them for the perf harness.
+ */
 export function offeredRates(kind: CameraConfig["kind"] | undefined): readonly ClockRate[] {
-  return kind === "local-video" ? CLIP_RATES : ALL_RATES;
+  return kind === undefined || kind === "youtube" ? NO_RATES : CLIP_RATES;
+}
+
+/** [M5] "<videoFile without its extension>.json": a clip's sidecar file name, next to its video. */
+export function sidecarFileName(videoFile: string): string {
+  const dot = videoFile.lastIndexOf(".");
+  return `${dot > 0 ? videoFile.slice(0, dot) : videoFile}.json`;
+}
+
+/** [Redesign] Where a clip opens: at least this long before its pass enters the frame. */
+const CLIP_OPEN_LEAD_S = 15;
+
+/**
+ * [Redesign] The media second a clip opens at: the last whole 10 s at least 15 s before its pass enters the frame
+ * (media 60 s on the 2026-10-11 ISS clip, whose ISS enters at 78.7 s), so the pass starts within about 20 s of
+ * pressing play; 0 for a clip without a pass.
+ */
+export function clipOpenMediaS(sidecar: Pick<ClipSidecar, "pass" | "durationS">): number {
+  const from = sidecar.pass?.inFrameFromMediaS;
+  if (from === undefined) return 0;
+  const openS = Math.max(0, Math.floor((from - CLIP_OPEN_LEAD_S) / 10) * 10);
+  return Math.min(openS, sidecar.durationS);
+}
+
+/** [Redesign] A media time as m:ss, rounded down to the second: 95.4 → "1:35", 480 → "8:00" (the control bar). */
+export function formatClipTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const whole = Math.floor(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
 /**
@@ -366,23 +408,6 @@ export function clipHiddenMs(sidecar: ClipSidecar, noradId: number): [number, nu
     out.push([sidecar.startUtcMs + a * 1000, sidecar.startUtcMs + b * 1000]);
   }
   return out;
-}
-
-/** [M5] "<videoFile without its extension>.json": the file "Save sidecar" downloads (M5 step 10.8). */
-export function sidecarFileName(videoFile: string): string {
-  const dot = videoFile.lastIndexOf(".");
-  return `${dot > 0 ? videoFile.slice(0, dot) : videoFile}.json`;
-}
-
-/**
- * [M5] The sidecar "Save sidecar" writes: the loaded object with every key kept (provenance included) and
- * `calibration` replaced by the clip camera's current calibration with streamDelayMs 0.
- */
-export function sidecarToSave(
-  sidecarJson: Readonly<Record<string, unknown>>,
-  calibration: Calibration,
-): Record<string, unknown> {
-  return { ...sidecarJson, calibration: { ...calibration, streamDelayMs: 0 } };
 }
 
 /** [M5] A media duration as m:ss.s, e.g. 480 → "8:00.0" and 7 → "0:07.0". */
@@ -486,18 +511,22 @@ export function satelliteCheckFileName(cameraId: string, nowMs: number): string 
 // ---- [M5] Loading a clip (M5 step 10.4–10.6 and DECISIONS H1's Range probe) ----
 
 export const CLIP_TEXT = {
-  loading: "Loading the clip…",
-  notInBuild: "This clip is not part of this build.",
+  loading: "Loading the recorded video…",
+  notInBuild: "The recorded video is not included in this copy of the site.",
+  /** [Redesign] ClipControls' plain line for any other failed load; the technical message goes under "Details". */
+  failed: "The recorded video could not be loaded.",
+  /** [Redesign] ClipControls' line when the <video> reports a MediaError. */
+  cannotPlay: "This browser cannot play the recorded video.",
   problems: "The sidecar has problems:",
   pickBoth:
     "Pick the clip and its .json sidecar together (scripts/record-clip.ts writes the sidecar).",
   notJson: "the .json file is not valid JSON",
 } as const;
 
-/** [M5] A clip on screen: what ClipControls shows and "Save sidecar" writes. */
+/** [M5] A clip on screen: what ClipControls shows. */
 export interface LoadedClip {
   readonly sidecar: ClipSidecar;
-  /** The sidecar as read, every key kept: "Save sidecar" writes it back with the current calibration. */
+  /** The sidecar as read, every key kept (provenance included). */
   readonly sidecarJson: Readonly<Record<string, unknown>>;
   readonly fileName: string; // the sidecar's videoFile, or the picked video's name
   readonly probe: VideoProbe;
@@ -546,15 +575,16 @@ const INITIAL_SEARCH = typeof location === "undefined" ? "" : location.search;
 let urlTimeClaimed = false;
 
 /**
- * [M5] The first clip that loads on a page keeps the URL time, instead of recentring on the clip, when the page was
- * loaded with a valid ?t= and ?cam= names its camera (M5 step 10.4.7). Claimed when a load commits, so React
- * StrictMode's aborted first load claims nothing; every later call is false.
+ * [M5] The first clip that loads on a page keeps the URL time, instead of opening at clipOpenMediaS, when the page was
+ * loaded with a valid ?t= and ?cam= names its camera, or [Redesign] names none (the default camera is the clip) (M5
+ * step 10.4.7). commitClip also needs that time inside the clip. Claimed when a load commits, so an aborted load
+ * claims nothing; every later call is false.
  */
 export function claimUrlTime(cameraId: string, search: string = INITIAL_SEARCH): boolean {
   if (urlTimeClaimed) return false;
   urlTimeClaimed = true;
   const url = parseUrlState(search);
-  return url.tMs !== null && url.cam === cameraId;
+  return url.tMs !== null && (url.cam === null || url.cam === cameraId);
 }
 
 /** [M5] Loads videoUrl's metadata in a temporary, muted <video preload="metadata">; a MediaError gives "media-error". */
@@ -666,9 +696,10 @@ async function playableClipUrl(
 }
 
 /**
- * Probes the video, then commits in the step 10.4.7 order: setRegistry, the calibration import, setRate(1) from 60× or
- * 600×, recenter(startUtcMs) unless the URL time is kept, camera status "live", video status "paused". The previous
- * object URL of this camera is revoked once the new clip is in the registry.
+ * Probes the video, then commits in the step 10.4.7 order: setRegistry, the calibration import, setRate(1) unless the
+ * rate is a clip rate, recenter at clipOpenMediaS unless the URL time is kept (asked, or claimed and inside the clip),
+ * camera status "live", video status "paused". The previous object URL of this camera is revoked once the new clip is
+ * in the registry.
  */
 async function commitClip(
   run: LoadRun,
@@ -720,9 +751,13 @@ async function commitClip(
       s.camera.registry[sidecar.cameraId]?.defaults;
     if (base !== undefined) actions.importCalibration(cameraId, { ...base, streamDelayMs: 0 });
   }
-  const { rate } = store.getState().clock;
-  if (rate === 60 || rate === 600) actions.setRate(1);
-  if (!(options.keepTime ?? claimUrlTime(cameraId))) actions.recenter(sidecar.startUtcMs);
+  const { rate, simTimeMs } = store.getState().clock;
+  if (!CLIP_RATES.includes(rate)) actions.setRate(1);
+  const endUtcMs = localVideoTimeMs(sidecar.startUtcMs, probe.durationS);
+  const keep =
+    options.keepTime ??
+    (claimUrlTime(cameraId) && simTimeMs >= sidecar.startUtcMs && simTimeMs <= endUtcMs);
+  if (!keep) actions.recenter(localVideoTimeMs(sidecar.startUtcMs, clipOpenMediaS(sidecar)));
   actions.setCameraStatus(cameraId, "live");
   actions.setVideoStatus("paused");
   return publish(cameraId, {
@@ -885,4 +920,137 @@ export function copyClipPointing(store: AppStore, clipCameraId: string): boolean
   const streamDelayMs = (before ?? source.defaults).streamDelayMs;
   s.actions.importCalibration(sourceId, { ...calibration, streamDelayMs });
   return store.getState().camera.calibration[sourceId] !== before;
+}
+
+// ---- [Redesign] The clip loader, and the clip's position and length for the control bar ----
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+/**
+ * [Redesign] Whether a clip that has just opened starts playing (muted: bindBackground's <video> always is): yes,
+ * unless the visitor asks for reduced motion (then it opens paused) or the tour runs (its steps play the clip
+ * themselves). No matchMedia (Node): yes.
+ */
+export function clipAutoplay(state: AppState): boolean {
+  if (state.ui.demo.active) return false;
+  const reduced =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(REDUCED_MOTION).matches;
+  return !reduced;
+}
+
+/** [Redesign] startClipLoader's options: the load's, a fetch, and the autoplay rule (clipAutoplay by default). */
+export interface ClipLoaderOptions extends Pick<ClipLoadOptions, "baseHref" | "probe"> {
+  readonly fetchFn?: typeof fetch;
+  readonly autoplay?: (state: AppState) => boolean;
+}
+
+/**
+ * [Redesign] The active camera's clip, loaded from its sidecar URL on each activation (M5 step 10.4), from main.tsx
+ * rather than from a component, so the clip loads whatever the layout renders. Subscribes to the active camera and
+ * the registry: an activation of a clip camera that has not loaded starts loadClipFromSidecarUrl with its own
+ * AbortController (a camera change aborts it); an activation of a clip that has loaded brings the clock back to the
+ * clip's opening time when the clock is outside it (as after "Watch the recorded ISS pass" from live). A failed load
+ * is retried on the next activation. Once the clip is open (loaded, or activated again), it plays when `autoplay`
+ * says so (clipAutoplay: not with reduced motion, not during the tour), muted. Returns the stop function.
+ */
+export function startClipLoader(store: AppStore, options: ClipLoaderOptions = {}): () => void {
+  const { fetchFn, autoplay = clipAutoplay, ...loadOptions } = options;
+  /** The camera of the current activation, once its registry entry is known. */
+  let activated: string | null = null;
+  let controller: AbortController | null = null;
+  let stopped = false;
+
+  /** Plays the clip of this activation, if it is still the active one, loaded, paused and wanted playing. */
+  const startPlaying = (id: string, activation: AbortController): void => {
+    const s = store.getState();
+    if (stopped || activation.signal.aborted || s.camera.activeId !== id) return;
+    const camera = s.camera.registry[id];
+    if (camera?.kind !== "local-video" || camera.source.videoUrl === null) return;
+    if (s.clock.playing || !autoplay(s)) return;
+    s.actions.play();
+  };
+
+  const onChange = (): void => {
+    const s = store.getState();
+    const id = s.camera.activeId;
+    if (id === activated) return; // the same activation (its own commit replaces the registry entry)
+    controller?.abort();
+    controller = null;
+    const camera = s.camera.registry[id];
+    activated = camera === undefined ? null : id;
+    if (camera?.kind !== "local-video" || camera.source.sidecarUrl === null) return;
+    const activation = new AbortController();
+    controller = activation;
+    const { startUtcMs, videoUrl } = camera.source;
+    if (videoUrl === null || startUtcMs === null) {
+      void loadClipFromSidecarUrl(store, id, fetchFn ?? fetch, {
+        ...loadOptions,
+        signal: activation.signal,
+      }).then((result) => {
+        if (result?.clip != null && result.failure === null) startPlaying(id, activation);
+      });
+      return;
+    }
+    const clip = loadStates.get(id)?.clip;
+    if (clip === undefined || clip === null) return;
+    const { simTimeMs } = s.clock;
+    if (simTimeMs < startUtcMs || simTimeMs > localVideoTimeMs(startUtcMs, clip.probe.durationS))
+      s.actions.recenter(localVideoTimeMs(startUtcMs, clipOpenMediaS(clip.sidecar)));
+    // After the activation: activateCamera pauses the clock once setActiveCamera (and this listener) returns.
+    queueMicrotask(() => startPlaying(id, activation));
+  };
+
+  const unsubscribe = store.subscribe(
+    (s) => [s.camera.activeId, s.camera.registry] as const,
+    onChange,
+    { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] },
+  );
+  onChange();
+  return () => {
+    stopped = true;
+    unsubscribe();
+    controller?.abort();
+    controller = null;
+    activated = null;
+  };
+}
+
+/** [Redesign] The active camera's loaded clip and its start, or null (not a clip camera, or not loaded). */
+function activeClip(
+  state: AppState,
+): { readonly startUtcMs: number; readonly clip: LoadedClip } | null {
+  const camera = state.camera.registry[state.camera.activeId];
+  if (camera?.kind !== "local-video") return null;
+  const { startUtcMs, videoUrl } = camera.source;
+  const clip = loadStates.get(camera.id)?.clip ?? null;
+  return startUtcMs === null || videoUrl === null || clip === null ? null : { startUtcMs, clip };
+}
+
+/**
+ * [Redesign] The active clip's position and length in media seconds, for the control bar's scrubber and "1:35 / 8:00";
+ * null unless the active camera is a clip that has loaded. The position is the store's time, clamped to the clip. A
+ * new object per call: read it during a 4 Hz render (useTick4Hz), never through useAppState.
+ */
+export function clipProgress(
+  state: AppState,
+): { readonly positionS: number; readonly durationS: number } | null {
+  const active = activeClip(state);
+  if (active === null) return null;
+  const { durationS } = active.clip.probe;
+  const positionS = Math.min(
+    Math.max((state.clock.simTimeMs - active.startUtcMs) / 1000, 0),
+    durationS,
+  );
+  return { positionS, durationS };
+}
+
+/** [Redesign] The scrubber: seek the active clip to media positionS, clamped to the clip; nothing without one. */
+export function seekClipTo(store: AppStore, positionS: number): void {
+  const s = store.getState();
+  const active = activeClip(s);
+  if (active === null || !Number.isFinite(positionS)) return;
+  const clamped = Math.min(Math.max(positionS, 0), active.clip.probe.durationS);
+  s.actions.seek(localVideoTimeMs(active.startUtcMs, clamped));
 }

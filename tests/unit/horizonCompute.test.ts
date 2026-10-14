@@ -181,7 +181,7 @@ describe("computeHorizon", () => {
     expect(progress).toHaveLength(45 - siteTiles.length);
   });
 
-  it("synthetic-maunakea with mastM 33 on the e2e mix (fixture tiles, else flat): z0 4,203.9 m, 46 tiles, max −0.49°", async () => {
+  it("the CFHT site with mastM 33 on the e2e tiles ([Redesign] its whole horizon is committed): z0 4,203.9 m, 46 tiles, max −0.27°", async () => {
     const urls: string[] = [];
     const load = createTerrariumTileLoader(fixtureFetch("maunakea", urls), decodeWithPng);
     const r = await computeHorizon({ latDeg: 19.8253, lonDeg: -155.4689, mastM: 33 }, load);
@@ -189,7 +189,8 @@ describe("computeHorizon", () => {
     expect(Math.abs(r.z0M - 4203.9)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(r.limitM - 260_541)).toBeLessThanOrEqual(5);
     expect(urls).toHaveLength(46);
-    expect(Math.max(...r.profileDeg)).toBeCloseTo(-0.49, 2);
+    // M6's mix (fixture tiles, else flat.png) gave −0.49°; the real relief all round is a little higher.
+    expect(Math.max(...r.profileDeg)).toBeCloseTo(-0.274, 3);
     expect(r.imagerySources).toEqual(["etopo1", "gmted", "ned13", "srtm"]);
     expect(horizonAltAtAzDeg(r.profileDeg, 81.2)).toBeLessThan(0);
   });

@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseCameraRegistry } from "../../src/app/cameras";
 import type { TimeInterval } from "../../src/domain/time";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import {
   selectActiveCamera,
   selectCalibration,
+  selectClipUnavailable,
+  selectClipWaiting,
   selectGoesLabel,
   selectGoesStepMs,
   selectGoesVisible,
@@ -15,6 +17,8 @@ import {
   selectHorizonStatus,
   selectIncomingActive,
   selectIncomingMask,
+  selectIsClipCamera,
+  selectIsLiveCamera,
   selectLiveLocked,
   selectSampleStepMs,
   selectSite,
@@ -28,7 +32,7 @@ import {
 import { createAppStore } from "../../src/state/store";
 import type { AppState, Calibration } from "../../src/state/types";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
-import { storeAt } from "../helpers/store";
+import { storeAt, TEST_CAMERA_ID } from "../helpers/store";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -61,9 +65,7 @@ describe("M1 selectors", () => {
   });
 
   it("null with an empty registry", () => {
-    const store = createAppStore(
-      initialState(Date.parse("2026-10-10T03:30:00Z"), DEFAULT_CAMERA_ID),
-    );
+    const store = createAppStore(initialState(Date.parse("2026-10-10T03:30:00Z"), TEST_CAMERA_ID));
     const state = store.getState();
     expect(selectTrueColorDate(state)).toBeNull();
     expect(selectSite(state)).toBeNull();
@@ -87,7 +89,7 @@ describe("M1 selectors", () => {
 describe("M2 selectors", () => {
   const T = Date.parse("2026-10-10T08:00:00Z");
   const stateWith = (starMagLimit: number, panel: AppState["ui"]["panel"]): AppState => {
-    const s = createAppStore(initialState(T, DEFAULT_CAMERA_ID)).getState();
+    const s = createAppStore(initialState(T, TEST_CAMERA_ID)).getState();
     // The Calibration panel lands in M4: build the state directly.
     return { ...s, layers: { ...s.layers, starMagLimit }, ui: { ...s.ui, panel } };
   };
@@ -129,7 +131,7 @@ describe("M2 selectors", () => {
   });
 
   it("selectCalibration is undefined with an empty registry", () => {
-    const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T, TEST_CAMERA_ID));
     expect(selectCalibration(store.getState())).toBeUndefined();
   });
 });
@@ -227,6 +229,50 @@ describe("M5 selectors", () => {
     actions.setActiveCamera("synthetic-maunakea");
     actions.setMode("live");
     expect(selectLiveLocked(store.getState())).toBe(false);
+  });
+
+  it("[Redesign] selectIsLiveCamera and selectIsClipCamera by the active camera's kind, in either mode", () => {
+    const store = videoStore("subaru-starcam");
+    const { actions } = store.getState();
+    const at = (id: string) => {
+      actions.setActiveCamera(id);
+      return [selectIsLiveCamera(store.getState()), selectIsClipCamera(store.getState())];
+    };
+    expect(at("subaru-starcam")).toEqual([true, false]);
+    expect(at("cfht-starcam")).toEqual([true, false]);
+    expect(at("subaru-2026-10-11-iss")).toEqual([false, true]);
+    expect(at("synthetic-maunakea")).toEqual([false, false]);
+    expect(at("no-such-camera")).toEqual([false, false]);
+  });
+
+  it("[Redesign] selectClipUnavailable: the active clip is missing from the build or failed, never a live camera", () => {
+    const store = videoStore("subaru-2026-10-11-iss");
+    const { actions } = store.getState();
+    const unavailable = () => selectClipUnavailable(store.getState());
+    expect(unavailable()).toBe(false); // loading
+    actions.setCameraStatus("subaru-2026-10-11-iss", "offline"); // "not included in this copy of the site"
+    expect(unavailable()).toBe(true);
+    actions.setCameraStatus("subaru-2026-10-11-iss", "live");
+    actions.setVideoStatus("error");
+    expect(unavailable()).toBe(true);
+    actions.setActiveCamera("subaru-starcam"); // video status back to idle
+    actions.setVideoStatus("error");
+    expect(unavailable()).toBe(false);
+  });
+
+  it("[Redesign] selectClipWaiting: the active clip's video has not loaded; never a live camera", () => {
+    const store = videoStore("subaru-2026-10-11-iss");
+    const { actions } = store.getState();
+    expect(selectClipWaiting(store.getState())).toBe(true); // videoUrl null until the clip loads
+    const clip = store.getState().camera.registry["subaru-2026-10-11-iss"];
+    if (clip?.kind !== "local-video") throw new Error("no clip camera");
+    actions.setRegistry({
+      ...store.getState().camera.registry,
+      [clip.id]: { ...clip, source: { ...clip.source, videoUrl: "blob:x", startUtcMs: 0 } },
+    });
+    expect(selectClipWaiting(store.getState())).toBe(false);
+    actions.setActiveCamera("subaru-starcam");
+    expect(selectClipWaiting(store.getState())).toBe(false);
   });
 
   it("selectSkyOverVideo and selectStarMagLimit by camera kind and panel", () => {

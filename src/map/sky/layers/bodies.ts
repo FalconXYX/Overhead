@@ -1,5 +1,5 @@
 // src/map/sky/layers/bodies.ts — the Sun, Moon and planets with labels (M2 step 8.5).
-// Colours, fonts and sizes are visual design (M9 step 12): warm-white discs and light labels on dark halos.
+// [Redesign] Gold discs (kindColors.ts: planets and the Moon) with dark rims, and gold-white labels on dark halos.
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import VectorLayer from "ol/layer/Vector";
@@ -11,6 +11,7 @@ import Style from "ol/style/Style";
 import Text from "ol/style/Text";
 import { BODY_IDS, BODY_STRIDE } from "../../../domain/astro";
 import { type CameraModel, projectAzAltDeg, toSkyMapCoord } from "../../../domain/camera";
+import { HALO, KIND_COLOR } from "../../kindColors";
 
 export type BodyId = (typeof BODY_IDS)[number];
 
@@ -58,12 +59,12 @@ export interface BodiesLayer {
   readonly styleKeys: string[]; // "label|radius|hollow"
 }
 
-const MARKER_FILL = new Fill({ color: "#f3eee3" });
-const MARKER_STROKE = new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 1 });
+const MARKER_FILL = new Fill({ color: KIND_COLOR.planet });
+const MARKER_STROKE = new Stroke({ color: HALO, width: 1.5 });
 /** The new Moon's hollow marker: shape, not colour, de-emphasises it; the label carries the meaning. */
-const NEW_MOON_STROKE = new Stroke({ color: "#f3eee3", width: 1.5 });
-const LABEL_FILL = new Fill({ color: "#dfe6f0" });
-const LABEL_HALO = new Stroke({ color: "rgba(4, 6, 11, 0.9)", width: 3 });
+const NEW_MOON_STROKE = new Stroke({ color: KIND_COLOR.planet, width: 1.5 });
+const LABEL_FILL = new Fill({ color: "#ffe6a8" });
+const LABEL_HALO = new Stroke({ color: HALO, width: 3.5 });
 
 function bodyStyle(label: string, radiusPx: number, hollow: boolean): Style {
   return new Style({
@@ -74,7 +75,7 @@ function bodyStyle(label: string, radiusPx: number, hollow: boolean): Style {
     }),
     text: new Text({
       text: label,
-      font: "12px system-ui, -apple-system, 'Segoe UI', sans-serif",
+      font: "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif",
       offsetY: -(radiusPx + 9),
       fill: LABEL_FILL,
       stroke: LABEL_HALO,

@@ -10,11 +10,11 @@ import {
   startClockLoop,
   type YoutubeMediaClock,
 } from "../../src/state/clockLoop";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig, ClockRate } from "../../src/state/types";
 import { M5_CAMERA_ENTRIES } from "../helpers/m5Cameras";
-import { storeAt } from "../helpers/store";
+import { storeAt, TEST_CAMERA_ID } from "../helpers/store";
 
 const T0 = Date.UTC(2026, 9, 11, 3, 20, 0); // 2026-10-11T03:20:00Z
 
@@ -68,7 +68,7 @@ function register(fn: (simTimeMs: number) => void): () => void {
 }
 
 function playingStore(rate: ClockRate): AppStore {
-  const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+  const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
   store.setState((s) => ({ clock: { ...s.clock, rate, playing: true } }));
   return store;
 }
@@ -86,7 +86,7 @@ function recordTicks(store: AppStore): number[] {
 
 describe("clockLoop", () => {
   it("does not tick while paused", () => {
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     const ticks = recordTicks(store);
     const scheduler = new ManualScheduler();
     start(store, scheduler);
@@ -158,7 +158,7 @@ describe("clockLoop", () => {
   });
 
   it("stop()", () => {
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     const first = new ManualScheduler();
     const stopFirst = startClockLoop(store, first);
     cleanups.push(stopFirst);
@@ -176,7 +176,7 @@ describe("clockLoop", () => {
   });
 
   it("second loop", () => {
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     start(store, new ManualScheduler());
     expect(() => startClockLoop(store, new ManualScheduler())).toThrow(
       "clockLoop is already running",
@@ -210,7 +210,7 @@ describe("clockLoop, M1", () => {
   it("live before the registry loads also follows Date.now()", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(T0 + 5_000);
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     store.getState().actions.setMode("live");
     const scheduler = new ManualScheduler();
     start(store, scheduler);
@@ -225,7 +225,7 @@ describe("clockLoop, M1", () => {
         renders += 1;
       },
     } as unknown as OlMap);
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     const scheduler = new ManualScheduler();
     start(store, scheduler);
     for (let i = 0; i < 10; i += 1) scheduler.frame(16 * i);
@@ -330,7 +330,7 @@ describe("clockLoop, M3", () => {
   });
 
   it("frameCount() also counts paused frames and frames whose updater threw", () => {
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     const scheduler = new ManualScheduler();
     vi.spyOn(console, "error").mockImplementation(() => {});
     register(() => {
@@ -343,7 +343,7 @@ describe("clockLoop, M3", () => {
   });
 
   it("frameCount() never goes back when a loop stops and a new one starts", () => {
-    const store = createAppStore(initialState(T0, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T0, TEST_CAMERA_ID));
     const first = new ManualScheduler();
     const stopFirst = startClockLoop(store, first);
     cleanups.push(stopFirst);
@@ -384,7 +384,7 @@ describe("clockLoop, M5 live YouTube (media clock)", () => {
 
   /** Live on subaru-starcam (delay 50,000 ms), at T. */
   function youtubeStore(): AppStore {
-    const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T, TEST_CAMERA_ID));
     const registry: Record<string, CameraConfig> = {};
     for (const entry of M5_CAMERA_ENTRIES)
       registry[entry.id] = structuredClone(entry) as CameraConfig;
@@ -527,14 +527,12 @@ describe("clockLoop, M5 local clips (media clocks)", () => {
 
   /** A store on local-replay (a local-video camera) at S, plus the synthetic default camera. */
   function clipStore(): AppStore {
-    const store = createAppStore(initialState(S, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(S, TEST_CAMERA_ID));
     const registry: Record<string, CameraConfig> = {};
     for (const entry of M5_CAMERA_ENTRIES)
       registry[entry.id] = structuredClone(entry) as CameraConfig;
-    const synthetic = storeAt(new Date(S).toISOString()).getState().camera.registry[
-      DEFAULT_CAMERA_ID
-    ];
-    if (synthetic !== undefined) registry[DEFAULT_CAMERA_ID] = synthetic;
+    const synthetic = storeAt(new Date(S).toISOString()).getState().camera.registry[TEST_CAMERA_ID];
+    if (synthetic !== undefined) registry[TEST_CAMERA_ID] = synthetic;
     store.getState().actions.setRegistry(registry);
     store.getState().actions.setActiveCamera("local-replay");
     return store;
@@ -647,6 +645,24 @@ describe("clockLoop, M5 local clips (media clocks)", () => {
     expect(seeks).toEqual([]);
   });
 
+  it("[Redesign] setMediaClock with the time the clip was seeked to: a step before the next frame seeks the video", () => {
+    const store = clipStore();
+    store.getState().actions.seek(S + 3_000);
+    const scheduler = new ManualScheduler();
+    start(store, scheduler);
+    scheduler.frame(0);
+    const { clock, seeks } = fakeClip(3);
+    setMediaClock(clock, S + 3_000); // as bindBackground's loadeddata, after its seek to the store's time
+    cleanups.push(() => setMediaClock(null));
+    store.getState().actions.stepBy(2_000); // a key press between loadeddata and the loop's next frame
+    scheduler.frame(16);
+    expect(seeks).toEqual([5]);
+    expect(store.getState().clock.simTimeMs).toBe(S + 5_000);
+    // Without a step, the video wins as before.
+    scheduler.frame(32);
+    expect(store.getState().clock.simTimeMs).toBe(S + 5_000);
+  });
+
   it("no local clock on a local-video camera → no tick, even playing at 10×; advanceReplayMs never runs", () => {
     const store = clipStore();
     const { actions } = store.getState();
@@ -670,7 +686,7 @@ describe("clockLoop, M5 local clips (media clocks)", () => {
     expect(store.getState().clock.simTimeMs).toBe(S + 2_250);
     setMediaClock(null);
     const { actions } = store.getState();
-    actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    actions.setActiveCamera(TEST_CAMERA_ID);
     actions.setRate(10);
     actions.play();
     scheduler.frame(100);
@@ -683,7 +699,7 @@ describe("clockLoop, M5 local clips (media clocks)", () => {
     const { clock, seeks } = fakeClip(2.25);
     register(clock);
     const { actions } = store.getState();
-    actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    actions.setActiveCamera(TEST_CAMERA_ID);
     actions.play();
     const scheduler = new ManualScheduler();
     start(store, scheduler);

@@ -1,6 +1,7 @@
-// src/ui/objectText.ts — what the Inspector, the hover card and the Layers panel say about satellites, stars and
+// src/ui/objectText.ts — what the object card, the hover card and the Layers panel say about satellites, stars and
 // bodies (M3 step 15). Pure functions over ephemeris.ts and skyCache.ts data, kept out of the component files so each
-// stays a React Fast Refresh boundary (components-only exports, as gibsStatus.ts).
+// stays a React Fast Refresh boundary (components-only exports, as gibsStatus.ts). [Redesign] Plain language first
+// (friendly.ts); az/alt, NORAD ids, magnitudes and element ages appear only in "More details".
 import { BODY_IDS, BODY_STRIDE, type StarRow } from "../domain/astro";
 import { wrap360 } from "../domain/geo";
 import {
@@ -14,8 +15,9 @@ import { horizonAltAtAzDeg } from "../domain/terrain";
 import { formatUtcHhMm, isoDateUtc } from "../domain/time";
 import { type BodyId, bodyLabel } from "../map/sky/layers/bodies";
 import type { GroupData, LoadStatus, ObjectId } from "../state/types";
+import { friendlyName, visibilityText } from "./friendly";
 
-// ---- Field formats (the hover card and the Inspector share them) ----
+// ---- Field formats for "More details" (degrees and km) ----
 
 /** toFixed with a true minus sign and no "-0.0". */
 function signedFixed(value: number, digits: number): string {
@@ -40,26 +42,55 @@ export function rangeText(rangeKm: number): string {
 }
 
 export function litText(sunlit: boolean): string {
-  return sunlit ? "Sunlit" : "In Earth's shadow";
+  return sunlit ? "Lit by the Sun" : "In Earth's shadow";
 }
 
+/** The CelesTrak list a satellite came from, for "More details". */
 export const GROUP_LABELS: Readonly<Record<GpGroup, string>> = {
   stations: "Space stations",
-  visual: "Brightest (CelesTrak visual)",
+  visual: "Brightest satellites",
   starlink: "Starlink",
 };
+
+const EARTH_MU_KM3_S2 = 398_600.4418;
+const EARTH_MEAN_RADIUS_KM = 6_371;
+
+/**
+ * About how fast it moves, from its height alone: the circular-orbit speed √(μ / (R + h)). Close for the near-circular
+ * low orbits of nearly everything drawn; "about" in the text covers the rest. E.g. 418 km → 7.66 km/s.
+ */
+export function orbitalSpeedKmS(heightKm: number): number {
+  return Math.sqrt(EARTH_MU_KM3_S2 / (EARTH_MEAN_RADIUS_KM + heightKm));
+}
+
+/** "Height above Earth: 418 km". */
+export function heightText(heightKm: number): string {
+  return `Height above Earth: ${Math.round(heightKm).toLocaleString("en-US")} km`;
+}
+
+/** "Speed: about 27,600 km/h (7.7 km/s)", to the nearest 100 km/h. */
+export function speedText(heightKm: number): string {
+  const kmS = orbitalSpeedKmS(heightKm);
+  const kmH = Math.round((kmS * 3600) / 100) * 100;
+  return `Speed: about ${kmH.toLocaleString("en-US")} km/h (${kmS.toFixed(1)} km/s)`;
+}
 
 /** |sim time − epoch| > STALE_ELEMENTS_DAYS: flagged, still drawn. */
 export function isStale(epochMs: number, timeMs: number): boolean {
   return Math.abs(elementAgeDays(epochMs, timeMs)) > STALE_ELEMENTS_DAYS;
 }
 
-/** "Elements 1.3 days old", or "Stale elements: 19.9 days old"; "… ahead of this time" when the sim time is earlier. */
+/**
+ * "Orbit data (elements) 1.3 days old", or "Old orbit data (elements), 19.9 days old: the position may be off"; "… ahead
+ * of this time" when the sim time is earlier.
+ */
 export function elementAgeText(epochMs: number, timeMs: number): string {
   const age = elementAgeDays(epochMs, timeMs);
   const days = Math.abs(age).toFixed(1);
   const when = age < 0 && days !== "0.0" ? `${days} days ahead of this time` : `${days} days old`;
-  return isStale(epochMs, timeMs) ? `Stale elements: ${when}` : `Elements ${when}`;
+  return isStale(epochMs, timeMs)
+    ? `Old orbit data (elements), ${when}: the position may be off`
+    : `Orbit data (elements) ${when}`;
 }
 
 /** The lighting and horizon facts of one frame that decide visibility. */
@@ -73,20 +104,19 @@ export interface VisibilityFacts {
 }
 
 /**
- * "Visible to the eye", or the first failing reason in the order shadow, Sun, horizon. [M6] Not above the horizon
- * while above 0° means at or below the terrain horizon: "behind terrain".
+ * [Redesign] friendly.ts's visibility line for a satellite in this frame. [M6] Not above the horizon while above 0°
+ * means at or below the terrain horizon: behind the mountains. The Sun above the group's cut-off: too bright.
  */
-export function visibilityText(facts: VisibilityFacts, group: GpGroup): string {
-  if (facts.visible) return "Visible to the eye";
-  if (!facts.sunlit) return "Not visible: in Earth's shadow";
-  if (!(facts.sunAltDeg <= SUN_CUTOFF_DEG[group])) return "Not visible: Sun too high";
-  if (!facts.aboveHorizon) {
-    return facts.altDeg > 0 ? "Not visible: behind terrain" : "Not visible: below the horizon";
-  }
-  return "Not visible to the eye";
+export function satelliteVisibilityText(facts: VisibilityFacts, group: GpGroup): string {
+  return visibilityText(
+    facts.sunlit,
+    !facts.aboveHorizon && facts.altDeg > 0,
+    facts.altDeg,
+    !(facts.sunAltDeg <= SUN_CUTOFF_DEG[group]),
+  );
 }
 
-/** [M6] An object at or below the terrain horizon at its azimuth: the Inspector's flag and the list suffix. */
+/** [M6] At or below the terrain horizon at its azimuth: "behind the mountains" on the card and in the list. */
 export function behindTerrain(
   profileDeg: Float32Array | null,
   azDeg: number,
@@ -96,9 +126,9 @@ export function behindTerrain(
 }
 
 /**
- * [M6] The Inspector's terrain lines for an object at (azDeg, altDeg), both apparent: ready gives "Terrain horizon
- * here: +32.7°" (signed, one decimal, at the object's azimuth) and "Behind terrain" when the object is at or below
- * it; loading and error give one status line; idle gives none. Text, never colour alone.
+ * [M6] The card's terrain lines ("More details") for an object at (azDeg, altDeg), both apparent: ready gives
+ * "Mountain skyline here: +32.7°" (signed, one decimal, at the object's azimuth) and "Behind the mountains" when the
+ * object is at or below it; loading and error give one status line; idle gives none. Text, never colour alone.
  */
 export function terrainLines(
   status: LoadStatus,
@@ -106,17 +136,34 @@ export function terrainLines(
   azDeg: number,
   altDeg: number,
 ): string[] {
-  if (status === "loading") return ["Terrain horizon: loading"];
-  if (status === "error") return ["Terrain horizon: unavailable (geometric horizon used)"];
+  if (status === "loading") return ["Mountain skyline: loading"];
+  if (status === "error") return ["Mountain skyline: unavailable (a flat horizon is used)"];
   if (status !== "ready" || profileDeg === null) return [];
   const text = signedFixed(horizonAltAtAzDeg(profileDeg, azDeg), 1);
-  const lines = [`Terrain horizon here: ${text.startsWith("−") ? text : `+${text}`}°`];
-  if (behindTerrain(profileDeg, azDeg, altDeg)) lines.push("Behind terrain");
+  const lines = [`Mountain skyline here: ${text.startsWith("−") ? text : `+${text}`}°`];
+  if (behindTerrain(profileDeg, azDeg, altDeg)) lines.push("Behind the mountains");
   return lines;
 }
 
-export function dockedText(names: readonly string[]): string {
-  return `Docked: ${names.join(", ")}`;
+/** "Progress cargo ship" → "Progress cargo ships"; "Spent rocket stage (SL-3)" → "Spent rocket stages (SL-3)". */
+function plural(name: string): string {
+  const at = name.indexOf(" (");
+  return at < 0 ? `${name}s` : `${name.slice(0, at)}s${name.slice(at)}`;
+}
+
+/**
+ * The vehicles docked to an object, by friendly name in catalog order, repeats counted: "Docked to it: Poisk module,
+ * 2 Progress cargo ships and Dragon capsule".
+ */
+export function dockedText(catalogNames: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const name of catalogNames) {
+    const f = friendlyName(name);
+    counts.set(f, (counts.get(f) ?? 0) + 1);
+  }
+  const parts = [...counts].map(([name, n]) => (n === 1 ? name : `${n} ${plural(name)}`));
+  const last = parts.pop() ?? "";
+  return `Docked to it: ${parts.length === 0 ? last : `${parts.join(", ")} and ${last}`}`;
 }
 
 /**
@@ -128,18 +175,15 @@ export function satelliteGroupsPending(gp: Readonly<Record<GpGroup, GroupData>>)
   return pending(gp.stations) || pending(gp.visual) || gp.starlink.status === "loading";
 }
 
-export function missingSatelliteText(noradId: number): string {
-  return `Satellite ${noradId} is not in the loaded groups. Turn on Starlink if it is a Starlink satellite.`;
+/** A selected satellite that no loaded list holds (a shared link to a Starlink, say). */
+export function missingSatelliteText(): string {
+  return "This satellite isn't in the loaded data. If it is a Starlink satellite, turn on Starlink in Layers.";
 }
 
-/**
- * One Layers toggle's groups (stations + visual, or starlink): "Failed to load", "Loading…", or "165 objects, elements
- * fetched 2026-10-11 03:50 UTC" (the sum, and the oldest stamp); null while every group is idle.
- */
-export function groupStatusText(groups: readonly GroupData[]): string | null {
-  if (groups.every((g) => g.status === "idle")) return null;
-  if (groups.some((g) => g.status === "error")) return "Failed to load";
-  if (groups.some((g) => g.status !== "ready")) return "Loading…";
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The groups' total and their oldest fetch stamp. */
+function groupTotals(groups: readonly GroupData[]): { count: number; fetchedAtMs: number | null } {
   let count = 0;
   let fetchedAtMs: number | null = null;
   for (const g of groups) {
@@ -148,26 +192,47 @@ export function groupStatusText(groups: readonly GroupData[]): string | null {
       fetchedAtMs = g.fetchedAtMs;
     }
   }
-  const objects = `${count.toLocaleString("en-US")} ${count === 1 ? "object" : "objects"}`;
-  return fetchedAtMs === null
-    ? objects
-    : `${objects}, elements fetched ${isoDateUtc(fetchedAtMs)} ${formatUtcHhMm(fetchedAtMs)} UTC`;
+  return { count, fetchedAtMs };
 }
 
 /**
- * [M6] The "Terrain horizon" toggle's status: nothing while idle, "Loading terrain…", "Terrain ready", or "Terrain
- * unavailable: geometric horizon".
+ * One Layers toggle's groups (stations + visual, or starlink): "Failed to load", "Loading…", or "165 objects, data from
+ * 11 Oct 2026" (the sum, and the oldest fetch date, UTC); null while every group is idle.
+ */
+export function groupStatusText(groups: readonly GroupData[]): string | null {
+  if (groups.every((g) => g.status === "idle")) return null;
+  if (groups.some((g) => g.status === "error")) return "Failed to load";
+  if (groups.some((g) => g.status !== "ready")) return "Loading…";
+  const { count, fetchedAtMs } = groupTotals(groups);
+  const objects = `${count.toLocaleString("en-US")} ${count === 1 ? "object" : "objects"}`;
+  if (fetchedAtMs === null) return objects;
+  const d = new Date(fetchedAtMs);
+  return `${objects}, data from ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** A tooltip for groupStatusText once ready: "Orbit data (CelesTrak elements) fetched 2026-10-11 03:50 UTC"; else null. */
+export function groupFetchedTitle(groups: readonly GroupData[]): string | null {
+  if (!groups.every((g) => g.status === "ready")) return null;
+  const { fetchedAtMs } = groupTotals(groups);
+  return fetchedAtMs === null
+    ? null
+    : `Orbit data (CelesTrak elements) fetched ${isoDateUtc(fetchedAtMs)} ${formatUtcHhMm(fetchedAtMs)} UTC`;
+}
+
+/**
+ * [M6] The "Horizon line" toggle's status: nothing while idle, "Loading the mountains…", "Mountains loaded", or
+ * "Mountains unavailable: flat horizon".
  */
 export function horizonStatusText(status: LoadStatus): string | null {
   switch (status) {
     case "idle":
       return null;
     case "loading":
-      return "Loading terrain…";
+      return "Loading the mountains…";
     case "ready":
-      return "Terrain ready";
+      return "Mountains loaded";
     case "error":
-      return "Terrain unavailable: geometric horizon";
+      return "Mountains unavailable: flat horizon";
   }
 }
 
@@ -258,7 +323,7 @@ export interface BodyDetails {
 
 export type ObjectDetails = SatelliteDetails | MissingSatelliteDetails | StarDetails | BodyDetails;
 
-const COMPUTING = "Computing position…";
+const COMPUTING = "Working out where it is…";
 
 function satelliteDetails(noradId: number, { catalog, frame }: DetailSources): ObjectDetails {
   const own = catalog.indexByNorad.get(noradId);
@@ -278,7 +343,7 @@ function satelliteDetails(noradId: number, { catalog, frame }: DetailSources): O
   if (!frame.ready) {
     note = COMPUTING;
   } else if ((flags & FLAG_VALID) === 0) {
-    note = "No position at this time"; // decayed or bad elements, or its group is not propagated
+    note = "Its position is unknown at this time"; // decayed or bad elements, or its group is not propagated
   } else {
     live = {
       azDeg: frame.azAltDeg[2 * at] ?? Number.NaN,
@@ -320,16 +385,15 @@ function rowIndexOfHr(rows: readonly StarRow[], hr: number): number | undefined 
 
 function starDetails(hr: number, { sky }: DetailSources): StarDetails {
   const fallback = { kind: "star", hr, label: `HR ${hr}`, vmag: null, live: null } as const;
-  if (sky.rows.length === 0) return { ...fallback, note: "Loading star catalogue…" };
+  if (sky.rows.length === 0) return { ...fallback, note: "Loading the stars…" };
   const i = rowIndexOfHr(sky.rows, hr);
   const row = i === undefined ? undefined : sky.rows[i];
-  if (i === undefined || row === undefined)
-    return { ...fallback, note: "Not in the star catalogue" };
+  if (i === undefined || row === undefined) return { ...fallback, note: "Not in the star list" };
   const label = row[4] === "" ? `HR ${hr}` : row[4];
   const base = { kind: "star", hr, label, vmag: row[2] } as const;
   // Only the magnitude prefix is rotated each pass.
   if (i >= sky.starCount) {
-    return { ...base, live: null, note: "Fainter than the star magnitude limit" };
+    return { ...base, live: null, note: "Too faint to be drawn" };
   }
   const azDeg = sky.starAzAltDeg[2 * i] ?? Number.NaN;
   const altDeg = sky.starAzAltDeg[2 * i + 1] ?? Number.NaN;
@@ -352,7 +416,7 @@ function bodyDetails(id: BodyId, { sky }: DetailSources): BodyDetails {
 
 const isBodyId = (id: string): id is BodyId => (BODY_IDS as readonly string[]).includes(id);
 
-/** Everything the Inspector and the hover card show about one object, from this frame's data. */
+/** Everything the object card and the hover card show about one object, from this frame's data. */
 export function objectDetails(id: ObjectId, sources: DetailSources): ObjectDetails {
   if (id.startsWith("sat:")) return satelliteDetails(Number(id.slice(4)), sources);
   if (id.startsWith("star:")) return starDetails(Number(id.slice(5)), sources);
@@ -361,12 +425,17 @@ export function objectDetails(id: ObjectId, sources: DetailSources): ObjectDetai
   throw new Error(`Unknown object id ${id}`);
 }
 
-/** "V magnitude 2.02": the catalogue's V magnitude, as stars.json holds it. */
+/** "Brightness: V magnitude 2.02 (lower is brighter)": the catalogue's V magnitude, as stars.json holds it. */
 export function starMagnitudeText(vmag: number): string {
-  return `V magnitude ${signedFixed(vmag, 2)}`;
+  return `Brightness: V magnitude ${signedFixed(vmag, 2)} (lower is brighter)`;
 }
 
-/** "Magnitude −2.5": astronomy-engine's visual magnitude for the Sun, Moon and planets. */
+/** "Brightness: magnitude −2.5 (lower is brighter)": astronomy-engine's visual magnitude for the Sun, Moon, planets. */
 export function bodyMagnitudeText(mag: number): string {
-  return `Magnitude ${signedFixed(mag, 1)}`;
+  return `Brightness: magnitude ${signedFixed(mag, 1)} (lower is brighter)`;
+}
+
+/** "Direction: az 123.8°, alt 28.9°": apparent, for "More details". */
+export function directionText(azDeg: number, altDeg: number): string {
+  return `Direction: ${azText(azDeg)}, ${altText(altDeg)}`;
 }

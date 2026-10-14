@@ -131,7 +131,7 @@ export const test = base.extend<{ guard: Guard; routes: undefined }>({
         });
       });
       // [M4] Still-image cameras (CFHT Nānā ao, AllSkyKamera) get the 256 × 256 JPEG tile, without CORS headers like the
-      // real CFHT server. A test that needs a 404 adds a page.route, which takes precedence.
+      // real CFHT server. [Redesign] No enabled camera is one any more; kept so no such request can leave the machine.
       await context.route(
         /^https:\/\/(www\.cfht\.hawaii\.edu|www\.allskykamera\.space)\//,
         (route) => route.fulfill({ status: 200, path: GIBS_TILE_JPG, contentType: "image/jpeg" }),
@@ -151,8 +151,10 @@ export const test = base.extend<{ guard: Guard; routes: undefined }>({
         });
       });
       // [M6] AWS Terrain Tiles, shared because every camera's horizon worker fetches them (and the hillshade's <img>
-      // tiles): the walenstadt or maunakea fixture tile if committed, else flat.png (0 m), never a 404. The expose
-      // header lets the worker read x-amz-meta-x-imagery-sources from a fulfilled response.
+      // tiles): the walenstadt or maunakea fixture tile if committed, else flat.png (0 m), never a 404. [Redesign] The
+      // maunakea set holds the Subaru and CFHT StarCams' whole horizons (scripts/fetch-terrain-fixture.ts), so every
+      // e2e camera sees the real summit relief; flat.png is left for the hillshade's tiles away from the site. The
+      // expose header lets the worker read x-amz-meta-x-imagery-sources from a fulfilled response.
       await context.route("**/s3.amazonaws.com/elevation-tiles-prod/**", (route: Route) => {
         const url = new URL(route.request().url());
         const match = TERRARIUM_PATH.exec(url.pathname);
@@ -251,4 +253,108 @@ export function recordGibsRequests(page: Page): {
         })
         .toBe(true),
   };
+}
+
+// ---- [Redesign] The cameras the site offers: the recorded ISS pass (the default) and the two live StarCams ----
+
+/** The recorded clip's camera, served as the fixtures' test pattern: 7 s from 2026-10-11T08:00:00Z, no pass. */
+export const CLIP_ID = "subaru-2026-10-11-iss";
+export const CLIP_START_ISO = "2026-10-11T08:00:00Z";
+const TEST_PATTERN_SIDECAR = JSON.parse(
+  readFileSync(CLIP_FIXTURES["subaru-2026-10-11-iss.json"]?.path ?? "", "utf8"),
+) as Record<string, unknown>;
+
+/**
+ * Serves the test pattern as the recorded clip starting at `startIso` instead of 08:00:00Z (a page route, tried before
+ * the fixtures' context route), with any other sidecar fields in `patch`: the clip camera then shows that moment's
+ * sky. Call before page.goto.
+ */
+export async function clipStartingAt(
+  page: Page,
+  startIso: string,
+  patch: Record<string, unknown> = {},
+): Promise<void> {
+  const body = JSON.stringify({
+    ...TEST_PATTERN_SIDECAR,
+    startUtcMs: Date.parse(startIso),
+    ...patch,
+  });
+  await page.route(`**/recordings/${CLIP_ID}.json`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body }),
+  );
+}
+
+/** The header's camera switcher: a radio named by its short name, described by its full name and status. */
+export const cameraRadio = (page: Page, shortName: string) =>
+  page.getByRole("radio", { name: shortName, exact: true });
+
+/** The control bar's clock: the local time in words, with the sim time as an ISO UTC dateTime. */
+export const clockTime = (page: Page) => page.getByTestId("time-local");
+/** Waits until the sim time (to the second, as the control bar shows it) is `iso`. */
+export const expectSimTime = (page: Page, iso: string, timeout?: number) =>
+  expect(clockTime(page)).toHaveAttribute(
+    "datetime",
+    iso,
+    timeout === undefined ? {} : { timeout },
+  );
+/** The sim time in epoch ms, to the second. */
+export const simTimeMs = async (page: Page): Promise<number> =>
+  Date.parse((await clockTime(page).getAttribute("datetime")) ?? "");
+
+/** Focus back on body: keys pressed in an input, a popover or a focused map are not the app's. */
+export const focusBody = (page: Page) =>
+  page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+/** The recorded clip has loaded (the control bar shows its length) and its status reads `status`. */
+export async function clipReady(page: Page, status = "paused"): Promise<void> {
+  await expect(page.getByTestId("clip-position")).toHaveText(/^\d+:\d\d \/ \d+:\d\d$/, {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("video-status")).toHaveAttribute("data-status", status);
+}
+
+/** The floating card of the selected object (absent while nothing is selected). */
+export const objectCard = (page: Page) => page.getByRole("region", { name: "Selected object" });
+
+/** Opens the card's "More details" and returns its list. */
+export async function moreDetails(page: Page) {
+  const card = objectCard(page);
+  const details = card.locator("details");
+  if ((await details.getAttribute("open")) === null) await card.getByText("More details").click();
+  return card.locator("details ul");
+}
+
+/** Opens a popover by its button (Layers, Credits, In view, Keyboard shortcuts) and returns its region. */
+export async function openPopover(page: Page, button: string | RegExp, region: string) {
+  const toggle = page.getByRole("button", { name: button }).first();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  const panel = page.getByRole("region", { name: region, exact: true });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/**
+ * The Credits popover's list, open or closed: it stays in the DOM while hidden (Popover.tsx), so it is the same list
+ * either way. Links inside it need includeHidden too while it is closed (creditLink).
+ */
+export const creditsList = (page: Page) =>
+  page.getByRole("region", { name: "Credits", exact: true, includeHidden: true });
+/** A credit's link, found whether or not the Credits popover is open. */
+export const creditLink = (page: Page, name: string) =>
+  creditsList(page).getByRole("link", { name, exact: true, includeHidden: true });
+
+/** The [In view (N)] popover's region, opened. */
+export const openInView = (page: Page) => openPopover(page, /^In view/, "In view");
+/** The Layers popover's region, opened. */
+export const openLayers = (page: Page) => openPopover(page, "Layers", "Layers");
+
+/** "Camera alignment (advanced)": opened with C (focus moves into it) and returned. */
+export async function openAlignment(page: Page) {
+  const drawer = page.getByRole("region", { name: "Camera alignment (advanced)" });
+  if (!(await drawer.isVisible())) {
+    await focusBody(page);
+    await page.keyboard.press("c");
+  }
+  await expect(drawer).toBeVisible();
+  return drawer;
 }

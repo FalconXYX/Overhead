@@ -79,10 +79,14 @@ let mediaClock: MediaClock | null = null;
 /** [M5] clock.simTimeMs as it stood after the last frame; null right after setMediaClock (nothing remembered). */
 let rememberedSimMs: number | null = null;
 
-/** [M5] One media clock at a time; null unregisters. Resets the loop's "user moved time" memory. */
-export function setMediaClock(clock: MediaClock | null): void {
+/**
+ * [M5] One media clock at a time; null unregisters. Resets the loop's "user moved time" memory to `simTimeMs`: null
+ * (the default) lets the video win on the next frame. [Redesign] A clip passes the store's time it has just seeked
+ * its video to, so a seek, step or scrub made before that next frame still moves the video instead of being lost.
+ */
+export function setMediaClock(clock: MediaClock | null, simTimeMs: number | null = null): void {
   mediaClock = clock;
-  rememberedSimMs = null;
+  rememberedSimMs = simTimeMs;
 }
 
 /** [M5] */
@@ -115,7 +119,7 @@ function liveTimeMs(state: AppState): number | null {
 /**
  * [M5] A local clip's sim time this frame (M5 step 6.2). A clock.simTimeMs that differs from the value remembered
  * after the last frame was written by the user (a seek, step, scrub or recentre): seek the video there once and keep
- * it. Otherwise, including the first frame after setMediaClock (nothing remembered), the video wins.
+ * it. Otherwise, including the first frame after setMediaClock without a time (nothing remembered), the video wins.
  */
 function localClipTimeMs(clip: LocalMediaClock, simTimeMs: number): number {
   if (rememberedSimMs !== null && simTimeMs !== rememberedSimMs) {

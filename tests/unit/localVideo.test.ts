@@ -18,10 +18,11 @@ import {
   startLocalVideo,
 } from "../../src/map/sync/bindBackground";
 import { getMediaClock, type LocalMediaClock, setMediaClock } from "../../src/state/clockLoop";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig, LocalVideoCamera } from "../../src/state/types";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 const committed: unknown = JSON.parse(
   readFileSync(new URL("../../public/data/cameras.json", import.meta.url), "utf8"),
@@ -172,7 +173,7 @@ function videoDeps(): { deps: LocalVideoDeps; harness: Harness } {
 }
 
 function setup() {
-  const store: AppStore = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+  const store: AppStore = createAppStore(initialState(T, TEST_CAMERA_ID));
   const camera = loadedCamera();
   store.getState().actions.setRegistry({ ...registry, [CLIP_ID]: camera });
   store.getState().actions.setActiveCamera(CLIP_ID);
@@ -274,7 +275,7 @@ describe("onVideoFrames", () => {
 
 describe("startLocalVideo", () => {
   it("does nothing for a clip camera whose clip has not loaded", () => {
-    const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T, TEST_CAMERA_ID));
     const { deps, harness } = videoDeps();
     const create = vi.spyOn(deps, "createVideo");
     const stop = startLocalVideo(
@@ -333,7 +334,7 @@ describe("startLocalVideo", () => {
   });
 
   it("seeks to the store's time on loadeddata (a kept ?t= or a re-activation)", () => {
-    const store: AppStore = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store: AppStore = createAppStore(initialState(T, TEST_CAMERA_ID));
     const camera = loadedCamera();
     store.getState().actions.setRegistry({ ...registry, [CLIP_ID]: camera });
     store.getState().actions.setActiveCamera(CLIP_ID);
@@ -448,7 +449,7 @@ describe("startLocalVideo", () => {
 
 describe("bindBackground, local-video branch", () => {
   it("starts the clip of the active local-video camera, and restarts it for a new clip; a camera change stops it", () => {
-    const store: AppStore = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+    const store: AppStore = createAppStore(initialState(T, TEST_CAMERA_ID));
     store.getState().actions.setRegistry({ ...registry });
     const runs: { camera: LocalVideoCamera; stopped: boolean }[] = [];
     const startVideo: StartLocalVideo = (_store, _layer, camera) => {
@@ -472,7 +473,7 @@ describe("bindBackground, local-video branch", () => {
       .actions.setRegistry({ ...store.getState().camera.registry, [CLIP_ID]: camera });
     expect(runs.map((r) => r.stopped)).toEqual([true, false]);
     expect(runs[1]?.camera).toBe(camera);
-    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
     expect(runs[1]?.stopped).toBe(true);
     expect(stills).not.toHaveBeenCalled();
     store.getState().actions.setActiveCamera(CLIP_ID);

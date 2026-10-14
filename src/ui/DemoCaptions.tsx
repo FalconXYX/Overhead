@@ -1,80 +1,29 @@
 // src/ui/DemoCaptions.tsx — the tour's region (M9 step 10 rule 7): "Step n of N", the caption in its one polite live
-// region, the intro's status line and "Start the tour", the GeoPose of the OGC step, and Previous, "Pause tour", Next
-// and "Exit tour" (Restart on the last step). App renders it, lazily, only while the tour runs, outside the sky stage
-// (rule 8), so it never covers the player. Layout and look are visual design, settled from screenshots.
-import { useEffect, useRef, useState } from "react";
+// region, the intro's status line and "Start the tour", and Previous, "Pause tour", Next and "Exit tour" (Restart on
+// the last step). App renders it, lazily, only while the tour runs, outside the sky stage (rule 8), so it never covers
+// the player. [Redesign] Five plain steps, the last one live; the GeoPose step is gone.
+import { useEffect, useRef } from "react";
 import { DEMO_STEPS, demoContext, demoIntroState, demoStepNumber } from "../app/demo";
-import { buildGeoPoseExport } from "../app/persist";
 import { useActions, useAppState } from "../state/hooks";
-import { selectActiveCamera, selectCalibration } from "../state/selectors";
 import { store } from "../state/store";
 
-const INTRO_LOADING = "Loading the recorded clip…";
+const INTRO_LOADING = "Loading the recorded video…";
 const INTRO_NO_CLIP =
-  "The recorded clip is not part of this build, so the tour runs on the computed sky.";
-
-/** What buildGeoPoseExport gives, whether it answers at once or (with ajv in its own chunk, M9 step 7) later. */
-export type GeoPoseResult = Awaited<ReturnType<typeof buildGeoPoseExport>>;
-
-/** The OGC step's pose and the schema check's result; null while the check runs. Props only (unit-tested). */
-export function GeoPoseResultView({ result }: { readonly result: GeoPoseResult | null }) {
-  if (result === null) return <p>Validating the pose against the official schema…</p>;
-  if (!result.ok) {
-    return (
-      <div>
-        <p>The pose does not validate:</p>
-        <ul>
-          {result.errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <p>{`Valid against the OGC GeoPose 1.0 Basic-YPR schema (${result.pose["x-overhead"].cameraId}).`}</p>
-      {/* Wrapped, never a horizontal scroller (a scroller would become an extra Tab stop). */}
-      <pre className="geopose">{JSON.stringify(result.pose, null, 2)}</pre>
-    </div>
-  );
-}
-
-/** The OGC step: the active camera's pose as the Calibration panel exports it, validated once per pointing. */
-function GeoPoseBlock() {
-  const camera = useAppState(selectActiveCamera);
-  const calibration = useAppState(selectCalibration);
-  const [shown, setShown] = useState<{
-    readonly camera: unknown;
-    readonly calibration: unknown;
-    readonly result: GeoPoseResult;
-  } | null>(null);
-  useEffect(() => {
-    if (camera === undefined || calibration === undefined) return;
-    let cancelled = false;
-    void Promise.resolve(buildGeoPoseExport(camera, calibration)).then((result) => {
-      if (!cancelled) setShown({ camera, calibration, result });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [camera, calibration]);
-  // A result for an earlier pointing is not shown.
-  const current = shown?.camera === camera && shown?.calibration === calibration ? shown : null;
-  return <GeoPoseResultView result={current?.result ?? null} />;
-}
+  "The recorded video is not included in this copy of the site, so the tour goes straight to the live camera.";
 
 export function DemoCaptions() {
   const actions = useActions();
   const demo = useAppState((s) => s.ui.demo);
   const intro = useAppState(demoIntroState);
-  // Re-render when the clip loads or the registry changes: the caption and the step count read them.
+  // Re-render when the clip loads or the registry changes (the step count reads them), and on the video's status (the
+  // live step's caption says when the stream cannot play).
   useAppState((s) => s.camera.registry);
+  useAppState((s) => s.video.status);
   const ctx = demoContext(store);
   const step = DEMO_STEPS[demo.step];
   const number = demoStepNumber(ctx, demo.step);
   const isIntro = step?.id === "intro";
-  const isEnd = step?.id === "end";
+  const isEnd = demo.step === DEMO_STEPS.length - 1;
   const startDisabled = intro === "loading";
 
   // Focus moves once to "Start the tour" when it becomes enabled; again after Restart tour.
@@ -100,9 +49,7 @@ export function DemoCaptions() {
       <p aria-live="polite">{step?.caption(ctx) ?? ""}</p>
       {isIntro ? (
         <>
-          <p>
-            {intro === "loading" ? INTRO_LOADING : intro === "computed-sky" ? INTRO_NO_CLIP : ""}
-          </p>
+          <p>{intro === "loading" ? INTRO_LOADING : intro === "missing" ? INTRO_NO_CLIP : ""}</p>
           <p>
             <button
               ref={startRef}
@@ -116,7 +63,6 @@ export function DemoCaptions() {
           </p>
         </>
       ) : null}
-      {step?.id === "ogc" ? <GeoPoseBlock /> : null}
       <p className="tour-actions">
         {isIntro ? null : (
           <button type="button" onClick={() => actions.setDemoStep(demo.step - 1)}>

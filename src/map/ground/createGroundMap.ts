@@ -220,6 +220,7 @@ export function createGroundMap(
       draw(ephemeris.frame);
     }),
     bindTracks(store, tracks),
+    bindLayerVisible(store, "tracks", tracks.layer), // [Redesign] "Satellite paths"
     bindFollow(store, map),
     registerFrameUpdater((simTimeMs) => draw(updateEphemerisFrame(simTimeMs))),
   );

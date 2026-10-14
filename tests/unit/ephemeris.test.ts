@@ -22,7 +22,7 @@ import {
   SAMPLE_STRIDE,
   writeSample,
 } from "../../src/domain/orbits";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig } from "../../src/state/types";
 import type {
@@ -32,7 +32,7 @@ import type {
   SkyPathOut,
   TrackOut,
 } from "../../src/workers/protocol";
-import { committedCameras, storeAt } from "../helpers/store";
+import { committedCameras, storeAt, TEST_CAMERA_ID } from "../helpers/store";
 
 const T_PASS_ISO = "2026-10-11T15:09:50Z"; // ISS at az 123.8°, apparent alt 28.9°, sunlit, Sun at −16.2°
 const T_PASS = Date.parse(T_PASS_ISO);
@@ -182,7 +182,7 @@ afterEach(() => {
 describe("startEphemeris: messages and group status", () => {
   it("waits for the site, then sends init, stations and visual with absolute URLs", async () => {
     const { eph } = await loadModules();
-    const store = createAppStore(initialState(T_PASS, DEFAULT_CAMERA_ID)); // cameras.json not loaded yet
+    const store = createAppStore(initialState(T_PASS, TEST_CAMERA_ID)); // cameras.json not loaded yet
     stops.push(eph.startEphemeris(store));
     const w = worker();
     expect(w.url).toMatch(/\/workers\/propagation\.worker\.ts$/);
@@ -190,8 +190,7 @@ describe("startEphemeris: messages and group status", () => {
     expect(w.sent).toEqual([]);
     expect(store.getState().data.gp.stations.status).toBe("idle");
 
-    const { enabledCameras } = await import("../../src/app/cameras");
-    store.getState().actions.setRegistry(enabledCameras(committedCameras()));
+    store.getState().actions.setRegistry(committedCameras()); // [Redesign] the test camera is not enabled in the app
     // [M8] setCamera follows init (the worker's first message), delivered inside loadGroup's setGroupData.
     expect(w.sent.map((m) => m.type)).toEqual(["init", "setCamera", "loadGroup", "loadGroup"]);
     expect(w.sent[0]).toEqual({ type: "init", site: SITE, generation: expect.any(Number) });
@@ -236,13 +235,12 @@ describe("startEphemeris: messages and group status", () => {
 
   it("sends Starlink after stations and visual when it is on before the site is known", async () => {
     const { eph } = await loadModules();
-    const store = createAppStore(initialState(T_PASS, DEFAULT_CAMERA_ID));
+    const store = createAppStore(initialState(T_PASS, TEST_CAMERA_ID));
     store.getState().actions.setLayer("starlink", true);
     stops.push(eph.startEphemeris(store));
     const w = worker();
     expect(w.sent).toEqual([]);
-    const { enabledCameras } = await import("../../src/app/cameras");
-    store.getState().actions.setRegistry(enabledCameras(committedCameras()));
+    store.getState().actions.setRegistry(committedCameras()); // [Redesign] the test camera is not enabled in the app
     expect(w.of("loadGroup").map((m) => m.group)).toEqual(["stations", "visual", "starlink"]);
   });
 
@@ -252,11 +250,11 @@ describe("startEphemeris: messages and group status", () => {
     stops.push(eph.startEphemeris(store));
     const w = worker();
     const registry = store.getState().camera.registry;
-    const camera = registry[DEFAULT_CAMERA_ID];
+    const camera = registry[TEST_CAMERA_ID];
     if (camera === undefined) throw new Error("no default camera");
     const withSite = (site: CameraConfig["site"]) => ({
       ...registry,
-      [DEFAULT_CAMERA_ID]: { ...camera, site },
+      [TEST_CAMERA_ID]: { ...camera, site },
     });
     store.getState().actions.setRegistry(withSite({ ...camera.site })); // a new object, same values
     expect(w.of("setSite")).toHaveLength(0);
@@ -470,11 +468,11 @@ describe("startEphemeris: messages and group status", () => {
 
     // A site change: the reply to a request sent before it holds ENU from the old observer.
     const registry = store.getState().camera.registry;
-    const camera = registry[DEFAULT_CAMERA_ID];
+    const camera = registry[TEST_CAMERA_ID];
     if (camera === undefined) throw new Error("no default camera");
     store.getState().actions.setRegistry({
       ...registry,
-      [DEFAULT_CAMERA_ID]: { ...camera, site: { ...camera.site, latDeg: 47.1 } },
+      [TEST_CAMERA_ID]: { ...camera, site: { ...camera.site, latDeg: 47.1 } },
     });
     expect(eph.ephemeris.skyPaths.size).toBe(0);
     const cleared = eph.ephemeris.pathsVersion;
@@ -611,7 +609,7 @@ describe("[M9] step 14f: a clip replays with its own element sets", () => {
     store.getState().actions.setLayer("starlink", true);
     expect(urlsOf(w1).at(-1)).toBe(`${CLIP_GP}starlink.json`);
     // Another camera: back to data/gp/ in a new worker, Starlink included.
-    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
     expect(FakeWorker.instances).toHaveLength(3);
     expect(w1.terminated).toBe(true);
     expect(urlsOf(worker())).toEqual([
@@ -653,7 +651,7 @@ describe("[M9] step 14f: a clip replays with its own element sets", () => {
     expect(probe.calls).toEqual([`${CLIP_GP}meta.json`]);
     expect(FakeWorker.instances).toHaveLength(1);
     expect(urlsOf(worker())).toEqual([`${DATA_GP}stations.json`, `${DATA_GP}visual.json`]);
-    store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+    store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
     store.getState().actions.setActiveCamera(CLIP_ID);
     for (let i = 0; i < 4; i++) await macrotask();
     expect(probe.calls).toHaveLength(1);
@@ -945,7 +943,7 @@ describe("M8: setCamera, setHorizonProfile and incoming requests", () => {
     const store = storeAt(T_PASS_ISO);
     stops.push(eph.startEphemeris(store));
     const w = worker();
-    const camera = store.getState().camera.registry[DEFAULT_CAMERA_ID];
+    const camera = store.getState().camera.registry[TEST_CAMERA_ID];
     if (camera === undefined) throw new Error("no default camera");
     expect(w.of("setCamera")).toEqual([
       {
@@ -967,7 +965,7 @@ describe("M8: setCamera, setHorizonProfile and incoming requests", () => {
     expect(w.of("setHorizonProfile")).toHaveLength(0);
 
     const profile = new Float32Array(360).fill(-1.9);
-    actions.setHorizon(DEFAULT_CAMERA_ID, { status: "ready", profileDeg: profile });
+    actions.setHorizon(TEST_CAMERA_ID, { status: "ready", profileDeg: profile });
     expect(w.of("setHorizonProfile")).toHaveLength(1);
     expect(w.of("setHorizonProfile")[0]?.profileDeg).toEqual(profile); // a structured-clone copy
     expect(w.of("setHorizonProfile")[0]?.profileDeg).not.toBe(profile);
@@ -1051,7 +1049,7 @@ describe("M8: setCamera, setHorizonProfile and incoming requests", () => {
 
   it("sends no incoming request before a camera is known", async () => {
     const { eph, clock } = await loadModules();
-    const store = createAppStore(initialState(T_PASS, DEFAULT_CAMERA_ID)); // cameras.json not loaded yet
+    const store = createAppStore(initialState(T_PASS, TEST_CAMERA_ID)); // cameras.json not loaded yet
     stops.push(eph.startEphemeris(store));
     const frames = manualFrames(clock, store);
     stops.push(frames.stop);

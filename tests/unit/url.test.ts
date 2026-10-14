@@ -55,6 +55,23 @@ describe("writeUrlState", () => {
     store.getState().actions.setMode("live");
     expect(writeUrlState(store.getState())).toBe("?cam=synthetic-maunakea");
   });
+
+  it("[Redesign] t is a time in the recorded clip: written on the clip, never on a live camera", () => {
+    const store = storeAt("2026-10-11T15:09:30.400Z");
+    const { actions } = store.getState();
+    actions.setActiveCamera("subaru-2026-10-11-iss");
+    expect(writeUrlState(store.getState())).toBe(
+      "?cam=subaru-2026-10-11-iss&t=2026-10-11T15:09:30Z",
+    );
+    actions.setActiveCamera("subaru-starcam");
+    expect(writeUrlState(store.getState())).toBe("?cam=subaru-starcam"); // even if replay were set
+    actions.setMode("live");
+    actions.select("sat:25544");
+    expect(writeUrlState(store.getState())).toBe("?cam=subaru-starcam&sel=sat:25544");
+    expect(shareUrl(store.getState(), "https://parthjain.ca/Overhead/")).toBe(
+      "https://parthjain.ca/Overhead/?cam=subaru-starcam&sel=sat:25544",
+    );
+  });
 });
 
 describe("startUrlSync", () => {

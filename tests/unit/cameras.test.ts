@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ENABLED_CAMERA_IDS, enabledCameras, parseCameraRegistry } from "../../src/app/cameras";
+import {
+  ENABLED_CAMERA_IDS,
+  enabledCameras,
+  LIVE_CAMERA_ID,
+  parseCameraRegistry,
+  RECORDED_CLIP_ID,
+} from "../../src/app/cameras";
+import { DEFAULT_CAMERA_ID } from "../../src/state/initialState";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
 
 const committed: unknown = JSON.parse(
@@ -25,27 +32,55 @@ describe("committed cameras.json", () => {
     ]);
   });
 
-  it("enables synthetic-maunakea, from M4 cfht-nanaao, and from M5 both StarCams and both clip cameras, in file order", () => {
-    const youtube = ["synthetic-maunakea", "cfht-nanaao", "subaru-starcam", "cfht-starcam"];
-    const m5 = [...youtube, "local-replay", "subaru-2026-10-11-iss"];
-    expect(ENABLED_CAMERA_IDS.slice(0, 6)).toEqual(m5);
+  it("[Redesign] enables only the cameras with a video: the recorded ISS pass, then the two live StarCams", () => {
+    expect(ENABLED_CAMERA_IDS).toEqual([RECORDED_CLIP_ID, LIVE_CAMERA_ID, "cfht-starcam"]);
+    expect(RECORDED_CLIP_ID).toBe("subaru-2026-10-11-iss");
+    expect(LIVE_CAMERA_ID).toBe("subaru-starcam");
+    expect(DEFAULT_CAMERA_ID).toBe(RECORDED_CLIP_ID); // the site opens on the recorded pass
     const enabled = enabledCameras(all);
-    expect(Object.keys(enabled).slice(0, 6)).toEqual(m5);
-    expect(enabled["local-replay"]?.kind).toBe("local-video");
+    // The switcher's order, not the file's.
+    expect(Object.keys(enabled)).toEqual([
+      "subaru-2026-10-11-iss",
+      "subaru-starcam",
+      "cfht-starcam",
+    ]);
     expect(enabled["subaru-2026-10-11-iss"]?.kind).toBe("local-video");
-    const focalPx = enabled["synthetic-maunakea"]?.defaults.focalPx ?? Number.NaN;
-    expect(Math.abs(focalPx - 1024 / Math.PI)).toBeLessThan(1e-9);
-    expect(enabled["cfht-nanaao"]?.kind).toBe("still-image");
     expect(enabled["subaru-starcam"]?.kind).toBe("youtube");
     expect(enabled["cfht-starcam"]?.kind).toBe("youtube");
+    // The computed skies, picked files, the still image and ASK053 keep their entries for the tests, never enabled.
+    for (const id of [
+      "synthetic-maunakea",
+      "synthetic-walenstadt",
+      "local-replay",
+      "cfht-nanaao",
+      "ask053-walenstadt",
+    ]) {
+      expect(ENABLED_CAMERA_IDS, id).not.toContain(id);
+      expect(enabled[id], id).toBeUndefined();
+    }
+    // An id the file lacks is skipped.
+    const { "cfht-starcam": _gone, ...rest } = all;
+    expect(Object.keys(enabledCameras(rest))).toEqual(["subaru-2026-10-11-iss", "subaru-starcam"]);
   });
 
-  it("[M6] enables synthetic-walenstadt with M1's entry unchanged: every committed camera is enabled, in file order", () => {
-    expect(ENABLED_CAMERA_IDS).toContain("synthetic-walenstadt");
-    const enabled = enabledCameras(all);
-    expect(Object.keys(enabled)).toEqual(Object.keys(all));
-    expect(Object.keys(enabled).at(-1)).toBe("synthetic-walenstadt");
-    expect(enabled["synthetic-walenstadt"]?.site).toEqual({
+  it("[Redesign] gives each enabled camera a plain shortName (the switcher) and siteName (the map's site label)", () => {
+    const names = Object.values(enabledCameras(all)).map((c) => [c.id, c.shortName, c.siteName]);
+    expect(names).toEqual([
+      ["subaru-2026-10-11-iss", "ISS pass (recorded)", "Subaru Telescope camera"],
+      ["subaru-starcam", "Subaru live", "Subaru Telescope camera"],
+      ["cfht-starcam", "CFHT live", "CFHT camera"],
+    ]);
+    // Optional: the test-only entries keep their names alone.
+    expect(all["synthetic-maunakea"]?.shortName).toBeUndefined();
+    expect(all["synthetic-maunakea"]?.siteName).toBeUndefined();
+  });
+
+  it("[M6] keeps M1's synthetic-maunakea and synthetic-walenstadt entries for the tests", () => {
+    const focalPx = all["synthetic-maunakea"]?.defaults.focalPx ?? Number.NaN;
+    expect(Math.abs(focalPx - 1024 / Math.PI)).toBeLessThan(1e-9);
+    expect(all["cfht-nanaao"]?.kind).toBe("still-image");
+    expect(all["local-replay"]?.kind).toBe("local-video");
+    expect(all["synthetic-walenstadt"]?.site).toEqual({
       latDeg: 47.1236,
       lonDeg: 9.3242,
       heightM: 467.6, // the Terrarium z14 ground (467.63 m): M1's provisional value is final
@@ -178,7 +213,7 @@ describe("parseCameraRegistry", () => {
   });
 
   it("requires the default camera and well-formed ids", () => {
-    const entries = copy().slice(1);
+    const entries = copy().filter((e) => e.id !== DEFAULT_CAMERA_ID);
     (entries[0] as Record<string, unknown>).id = "Bad Id";
     const message = (() => {
       try {
@@ -188,8 +223,21 @@ describe("parseCameraRegistry", () => {
         return (error as Error).message;
       }
     })();
-    expect(message).toMatch(/synthetic-maunakea/);
+    expect(message).toMatch(/the default camera subaru-2026-10-11-iss is missing/);
     expect(message).toMatch(/Bad Id/);
+  });
+
+  it("[Redesign] rejects an empty or non-string shortName or siteName", () => {
+    const entries = copy();
+    const first = entries[0] as Record<string, unknown>;
+    first.shortName = "";
+    first.siteName = 7;
+    expect(() => parseCameraRegistry(entries)).toThrow(
+      /shortName must be a non-empty string when present[\s\S]*siteName must be a non-empty string when present/,
+    );
+    delete first.shortName;
+    first.siteName = "A camera";
+    expect(parseCameraRegistry(entries)["synthetic-maunakea"]?.siteName).toBe("A camera");
   });
 
   it("accepts a local-video entry with null clip fields and rejects mistyped ones", () => {

@@ -1,16 +1,15 @@
-// src/ui/LayerToggles.tsx — the Layers button and panel (M1 step 15). Each toggle lands with its layer: the
-// satellite toggles in M3 (step 15.3), "Terrain horizon" with its status and "Hillshade" in M6 (step 13), the
-// footprint toggle and its height select in M8 (step 9.1).
-import { useId, useSyncExternalStore } from "react";
-import { TRUE_COLOR_INSTRUMENT } from "../app/credits";
+// src/ui/LayerToggles.tsx — the Layers button and panel (M1 step 15; the satellite toggles M3, the terrain toggles M6,
+// the footprint M8). [Redesign] A popover from the header (redesign spec sections 2–4): two groups in plain words, "On
+// the video" and "On the map", switches with short plain status, a small colour legend, and a footer button that opens
+// the "Camera alignment (advanced)" drawer. Open while ui.panel is "layers" (its button or the L key).
+import { useCallback, useId, useSyncExternalStore } from "react";
 import { FOOTPRINT_FALLBACK_HEIGHT_KM, FOOTPRINT_PRESETS_KM } from "../domain/camera";
 import { heightKmOf, indexOfObjectId } from "../state/ephemeris";
 import { footprintStatus } from "../state/footprintStatus";
 import { useActions, useAppState, useTick4Hz } from "../state/hooks";
-import { selectHorizonStatus, selectSkyOverVideo, selectTrueColorDate } from "../state/selectors";
-import { skyCache, starCountForLimit } from "../state/skyCache";
+import { selectHorizonStatus, selectSkyOverVideo } from "../state/selectors";
 import { store } from "../state/store";
-import type { LayerToggle, LoadStatus, VideoOverlayLayers } from "../state/types";
+import type { LayerToggle, LoadStatus } from "../state/types";
 import { gibsStatusText } from "./gibsStatus";
 import {
   FOOTPRINT_HEIGHT_LABEL,
@@ -19,24 +18,8 @@ import {
   FOOTPRINT_TOGGLE_LABEL,
   selectedHeightOptionText,
 } from "./incomingText";
-import { groupStatusText, horizonStatusText } from "./objectText";
-
-/** The sky view's toggles (M2), in panel order. */
-const SKY_TOGGLES: readonly { key: LayerToggle; label: string }[] = [
-  { key: "stars", label: "Stars" },
-  { key: "planets", label: "Sun, Moon and planets" },
-  { key: "grid", label: "Alt/az grid" },
-];
-
-/** "V ≤ 4.5 (904 stars)" once the catalogue is ready. Reads skyCache during render (React rule 5). */
-function starLimitText(limit: number, stars: LoadStatus): string {
-  if (stars === "ready") {
-    const count = starCountForLimit(skyCache.rows, limit);
-    return `V ≤ ${limit} (${count} ${count === 1 ? "star" : "stars"})`;
-  }
-  if (stars === "error") return `V ≤ ${limit} (star catalogue failed to load)`;
-  return `V ≤ ${limit} (loading star catalogue)`;
-}
+import { Popover } from "./Popover";
+import { CALIBRATION_DRAWER_ID } from "./shellIds";
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
@@ -47,50 +30,116 @@ function subscribeReducedMotion(onChange: () => void): () => void {
 }
 const getReducedMotion = (): boolean => window.matchMedia(REDUCED_MOTION).matches;
 
+/** A data layer's load state in a few plain words; null when there is nothing to say. */
+function loadText(statuses: readonly LoadStatus[]): string | null {
+  if (statuses.includes("error")) return "Couldn't load";
+  if (statuses.includes("loading")) return "Loading…";
+  return null;
+}
+
 /**
- * One satellite toggle and, for a data layer, its load status (status undefined: none). The status sits outside the
- * label, so the checkbox's name stays fixed, and is a status region that exists before its text changes, so
- * "Loading…" and the result are each announced once.
+ * One switch: a native checkbox inside its label, so its accessible name is the label alone, and an optional short
+ * status after it. The status is a status region that exists before its text changes, so "Loading…" and the result
+ * are each announced once, and it describes the checkbox.
  */
-function SatelliteToggle(props: { layer: LayerToggle; label: string; status?: string | null }) {
-  const actions = useActions();
-  const on = useAppState((s) => s.layers[props.layer]);
+function Switch(props: {
+  readonly label: string;
+  readonly checked: boolean;
+  readonly onChange: () => void;
+  readonly status?: string | null;
+  readonly disabled?: boolean;
+  readonly kind?: string;
+}) {
   const statusId = useId();
   const hasStatus = props.status !== undefined;
   return (
-    <p>
+    <p className="switch">
       <label>
+        <span className="switch-label">
+          {props.kind === undefined ? null : (
+            <span aria-hidden="true" className={`kind-dot kind-${props.kind}`} />
+          )}
+          {props.label}
+        </span>
         <input
           type="checkbox"
-          checked={on}
+          checked={props.checked}
+          disabled={props.disabled}
           aria-describedby={hasStatus ? statusId : undefined}
-          onChange={() => actions.toggleLayer(props.layer)}
+          onChange={props.onChange}
         />
-        {props.label}
       </label>
       {hasStatus ? (
-        <>
-          {" "}
-          <span id={statusId} role="status">
-            {props.status}
-          </span>
-        </>
+        <span id={statusId} role="status" className="switch-status">
+          {props.status}
+        </span>
       ) : null}
     </p>
   );
 }
 
+/** A plain layer toggle. */
+function LayerSwitch(props: {
+  readonly layer: LayerToggle;
+  readonly label: string;
+  readonly status?: string | null;
+  readonly disabled?: boolean;
+  readonly kind?: string;
+}) {
+  const actions = useActions();
+  const on = useAppState((s) => s.layers[props.layer]);
+  return (
+    <Switch
+      label={props.label}
+      checked={on}
+      disabled={props.disabled}
+      status={props.status}
+      kind={props.kind}
+      onChange={() => actions.toggleLayer(props.layer)}
+    />
+  );
+}
+
+/**
+ * Starlink and the grid also need their layers.video gate while the sky is drawn over a video (every enabled camera
+ * now): one switch sets both, so "on" means on the video and, for Starlink, on the map too.
+ */
+function GatedSwitch(props: {
+  readonly layer: "starlink" | "grid";
+  readonly label: string;
+  readonly status?: string | null;
+  readonly kind?: string;
+}) {
+  const actions = useActions();
+  const overVideo = useAppState(selectSkyOverVideo);
+  const on = useAppState(
+    (s) => s.layers[props.layer] && (!overVideo || s.layers.video[props.layer]),
+  );
+  return (
+    <Switch
+      label={props.label}
+      checked={on}
+      status={props.status}
+      kind={props.kind}
+      onChange={() => {
+        actions.setLayer(props.layer, !on);
+        actions.setVideoLayer(props.layer, !on);
+      }}
+    />
+  );
+}
+
 /** [M8] The height presets' option labels, in FOOTPRINT_PRESETS_KM order. */
 const PRESET_LABELS: Readonly<Record<(typeof FOOTPRINT_PRESETS_KM)[number], string>> = {
-  420: "ISS shell (420 km)",
-  480: "Starlink shell (480 km)",
+  420: "Space station height (420 km)",
+  480: "Starlink height (480 km)",
 };
 const FOLLOW_SELECTED = "selected";
 
 /**
- * [M8] "Camera view at orbit height", the height select and the note (step 9.1). Re-renders through useTick4Hz and
- * reads the selected satellite's height and footprintStatus during render (React rule 5). keyboard.ts ignores keys
- * typed into a select, so its arrow keys never move the clock.
+ * [M8] "Camera view at orbit height", and while it is on, its height select and note (step 9.1). Re-renders through
+ * useTick4Hz and reads the selected satellite's height and footprintStatus during render (React rule 5). keyboard.ts
+ * ignores keys typed into a select, so its arrow keys never move the clock.
  */
 function FootprintControls() {
   useTick4Hz();
@@ -103,219 +152,178 @@ function FootprintControls() {
   const selectedKm = index === null ? null : heightKmOf(index);
   return (
     <>
-      <p>
+      <p className="switch">
         <label>
+          <span className="switch-label">{FOOTPRINT_TOGGLE_LABEL}</span>
           <input
             type="checkbox"
             checked={on}
-            aria-describedby={noteId}
+            aria-describedby={on ? noteId : undefined}
             onChange={() => actions.toggleLayer("footprint")}
           />
-          {FOOTPRINT_TOGGLE_LABEL}
-        </label>{" "}
-        <select
-          aria-label={FOOTPRINT_HEIGHT_LABEL}
-          aria-describedby={noteId}
-          value={preset === null ? FOLLOW_SELECTED : String(preset)}
-          onChange={(e) => {
-            const value = e.currentTarget.value;
-            actions.setFootprintHeightKm(value === FOLLOW_SELECTED ? null : Number(value));
-          }}
-        >
-          <option value={FOLLOW_SELECTED}>
-            {selectedHeightOptionText(selectedKm, FOOTPRINT_FALLBACK_HEIGHT_KM)}
-          </option>
-          {FOOTPRINT_PRESETS_KM.map((km) => (
-            <option key={km} value={String(km)}>
-              {PRESET_LABELS[km]}
-            </option>
-          ))}
-        </select>
+        </label>
       </p>
-      <p id={noteId}>{FOOTPRINT_NOTE}</p>
+      {on ? (
+        <div className="switch-more">
+          <select
+            aria-label={FOOTPRINT_HEIGHT_LABEL}
+            aria-describedby={noteId}
+            value={preset === null ? FOLLOW_SELECTED : String(preset)}
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              actions.setFootprintHeightKm(value === FOLLOW_SELECTED ? null : Number(value));
+            }}
+          >
+            <option value={FOLLOW_SELECTED}>
+              {selectedHeightOptionText(selectedKm, FOOTPRINT_FALLBACK_HEIGHT_KM)}
+            </option>
+            {FOOTPRINT_PRESETS_KM.map((km) => (
+              <option key={km} value={String(km)}>
+                {PRESET_LABELS[km]}
+              </option>
+            ))}
+          </select>
+          <p id={noteId} className="switch-note">
+            {FOOTPRINT_NOTE}
+          </p>
+        </div>
+      ) : null}
       {/* Always mounted, so the text is announced when it appears. */}
-      <p role="status">{on && footprintStatus.pairCount === 0 ? FOOTPRINT_NOTHING_TEXT : ""}</p>
+      <p role="status" className="switch-note">
+        {on && footprintStatus.pairCount === 0 ? FOOTPRINT_NOTHING_TEXT : ""}
+      </p>
     </>
   );
 }
 
-/** [M5] The "On the video" toggles (README "Sky over video" rule 2), unchecked by default. */
-const VIDEO_TOGGLES: readonly { key: keyof VideoOverlayLayers; label: string; note?: string }[] = [
-  {
-    key: "starlink",
-    label: "Starlink on the video",
-    note: "Also needs the Starlink layer, which loads the data.",
-  },
-  { key: "grid", label: "Grid on the video" },
-  { key: "denseLabels", label: "All labels on the video" },
-];
-
-/** [M5] One "On the video" checkbox, with its note tied by aria-describedby. */
-function VideoToggle(props: { layer: keyof VideoOverlayLayers; label: string; note?: string }) {
-  const actions = useActions();
-  const on = useAppState((s) => s.layers.video[props.layer]);
-  const noteId = useId();
+/** The colour key, the same colours as the video, the map and the card (spec section 4). */
+function Legend() {
   return (
-    <p>
-      <label>
-        <input
-          type="checkbox"
-          checked={on}
-          aria-describedby={props.note === undefined ? undefined : noteId}
-          onChange={() => actions.setVideoLayer(props.layer, !on)}
-        />
-        {props.label}
-      </label>
-      {props.note === undefined ? null : (
-        <>
-          {" "}
-          <span id={noteId}>{props.note}</span>
-        </>
-      )}
-    </p>
+    <div className="legend">
+      <h3 className="legend-title">Colour key</h3>
+      <ul>
+        <li>
+          <span aria-hidden="true" className="kind-dot kind-iss" /> Space Station
+        </li>
+        <li>
+          <span aria-hidden="true" className="kind-dot kind-satellite" /> Satellites
+        </li>
+        <li>
+          <span aria-hidden="true" className="kind-dot kind-starlink" /> Starlink
+        </li>
+        <li>
+          <span aria-hidden="true" className="kind-dot kind-planet" /> Planets and Moon
+        </li>
+      </ul>
+      <p className="legend-shapes">
+        <span aria-hidden="true" className="legend-lit" /> Sunlit{" "}
+        <span aria-hidden="true" className="legend-shadow" /> In Earth's shadow
+      </p>
+    </div>
   );
 }
 
-/**
- * [M5] Shown while the sky is drawn over a video: the light set's gates, which change only the sky view (the ground
- * map, the worker and the Inspector keep every object).
- */
-function VideoToggles() {
-  const overVideo = useAppState(selectSkyOverVideo);
-  if (!overVideo) return null;
+/** The panel's content (unit tests render it through LayerToggles). */
+function LayersPanel() {
+  const actions = useActions();
+  const gibs = useAppState((s) => s.data.gibs);
+  const stations = useAppState((s) => s.data.gp.stations.status);
+  const visual = useAppState((s) => s.data.gp.visual.status);
+  const starlink = useAppState((s) => s.data.gp.starlink.status);
+  const starlinkOn = useAppState((s) => s.layers.starlink);
+  const horizonStatus = useAppState(selectHorizonStatus);
+  const calibrationOpen = useAppState((s) => s.ui.panel === "calibration");
+  // Trails are not drawn while reduced motion is on (README Accessibility rule 2); the setting itself is kept.
+  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, () => false);
+  const noImagery = gibs !== "ready";
   return (
-    <fieldset>
-      <legend>On the video</legend>
-      {VIDEO_TOGGLES.map(({ key, label, note }) => (
-        <VideoToggle key={key} layer={key} label={label} note={note} />
-      ))}
-    </fieldset>
+    <>
+      <h2 className="popover-title">Layers</h2>
+      <fieldset className="layer-group">
+        <legend>On the video</legend>
+        <LayerSwitch
+          layer="satellites"
+          label="Satellites"
+          kind="satellite"
+          status={loadText([stations, visual])}
+        />
+        <GatedSwitch
+          layer="starlink"
+          label="Starlink"
+          kind="starlink"
+          status={loadText([starlink]) ?? (starlinkOn ? "Also on the map" : "A 4.7 MB download")}
+        />
+        <LayerSwitch layer="stars" label="Stars" kind="star" />
+        <LayerSwitch layer="planets" label="Planets and Moon" kind="planet" />
+        <LayerSwitch
+          layer="trails"
+          label="Trails"
+          status={reducedMotion ? "Off while reduced motion is on" : undefined}
+        />
+        <GatedSwitch layer="grid" label="Grid lines" />
+        <LayerSwitch
+          layer="horizon"
+          label="Horizon line"
+          status={
+            horizonStatus === "loading"
+              ? "Loading…"
+              : horizonStatus === "error"
+                ? "Couldn't load the mountains"
+                : null
+          }
+        />
+      </fieldset>
+      <fieldset className="layer-group">
+        <legend>On the map</legend>
+        {/* [M7] Also described by GroundView's caption (id "goes-status") while it is on. */}
+        <LayerSwitch
+          layer="goesIr"
+          label="Cloud imagery (10 min)"
+          disabled={noImagery}
+          status={gibsStatusText(gibs)}
+        />
+        <LayerSwitch layer="hillshade" label="Terrain shading" />
+        <FootprintControls />
+        <LayerSwitch layer="tracks" label="Satellite paths" />
+      </fieldset>
+      <Legend />
+      <p className="popover-foot">
+        <button
+          type="button"
+          className="btn-quiet"
+          aria-controls={CALIBRATION_DRAWER_ID}
+          aria-expanded={calibrationOpen}
+          onClick={() => actions.openPanel("calibration")}
+        >
+          Camera alignment (advanced)
+        </button>
+      </p>
+    </>
   );
 }
 
 export function LayerToggles() {
   const actions = useActions();
   const open = useAppState((s) => s.ui.panel === "layers");
-  const trueColor = useAppState((s) => s.layers.trueColor);
-  const coastlines = useAppState((s) => s.layers.coastlines);
-  const gibs = useAppState((s) => s.data.gibs);
-  const layers = useAppState((s) => s.layers);
-  // Re-renders when the catalogue arrives, so the star count follows it.
-  const stars = useAppState((s) => s.data.stars);
-  const limitText = starLimitText(layers.starMagLimit, stars);
-  // The requested date: after a tile-error revert the map may show an earlier one (DECISIONS, M1).
-  const date = useAppState(selectTrueColorDate);
-  const gibsText = gibsStatusText(gibs);
-  const disabled = gibs !== "ready";
-  // GroupData objects are replaced only by setGroupData: existing references, safe in useAppState.
-  const stations = useAppState((s) => s.data.gp.stations);
-  const visual = useAppState((s) => s.data.gp.visual);
-  const starlink = useAppState((s) => s.data.gp.starlink);
-  const horizonStatus = useAppState(selectHorizonStatus); // [M6]
-  // Trails are not drawn while reduced motion is on (README Accessibility rule 2); the setting itself is kept.
-  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, () => false);
-
+  const onOpenChange = useCallback(
+    (next: boolean) => {
+      // Closing never closes another panel (the drawer) that took ui.panel meanwhile.
+      if (next) actions.openPanel("layers");
+      else if (store.getState().ui.panel === "layers") actions.openPanel(null);
+    },
+    [actions],
+  );
   return (
-    <div className="layers">
-      <button
-        type="button"
-        className="disclosure"
-        aria-expanded={open}
-        aria-controls="layers-panel"
-        onClick={() => actions.togglePanel("layers")}
-      >
-        Layers
-      </button>
-      <section id="layers-panel" className="panel" aria-label="Layers" hidden={!open}>
-        {gibsText === null ? null : <p>{gibsText}</p>}
-        <p>
-          <label>
-            <input
-              type="checkbox"
-              checked={trueColor}
-              disabled={disabled}
-              onChange={() => actions.toggleLayer("trueColor")}
-            />
-            {date === null
-              ? `True colour (${TRUE_COLOR_INSTRUMENT})`
-              : `True colour (${TRUE_COLOR_INSTRUMENT}, ${date})`}
-          </label>
-        </p>
-        <p>
-          <label>
-            <input
-              type="checkbox"
-              checked={coastlines}
-              disabled={disabled}
-              onChange={() => actions.toggleLayer("coastlines")}
-            />
-            Coastlines and place labels
-          </label>
-        </p>
-        <p>
-          <label>
-            {/* [M7] Described by GroundView's caption (id "goes-status"), which exists while the layer is on. */}
-            <input
-              type="checkbox"
-              checked={layers.goesIr}
-              disabled={disabled}
-              aria-describedby="goes-status"
-              onChange={() => actions.toggleLayer("goesIr")}
-            />
-            GOES-West infrared (Band 13, 10 minute)
-          </label>
-        </p>
-        {SKY_TOGGLES.map(({ key, label }) => (
-          <p key={key}>
-            <label>
-              <input
-                type="checkbox"
-                checked={layers[key]}
-                onChange={() => actions.toggleLayer(key)}
-              />
-              {label}
-            </label>
-          </p>
-        ))}
-        <p>
-          <label htmlFor="star-mag-limit">Star magnitude limit</label>{" "}
-          {/* keyboard.ts ignores keys typed into an input, so the arrow keys move this, not the clock. */}
-          <input
-            id="star-mag-limit"
-            type="range"
-            min={1}
-            max={6.5}
-            step={0.5}
-            value={layers.starMagLimit}
-            aria-valuetext={limitText}
-            onChange={(e) => actions.setStarMagLimit(Number(e.currentTarget.value))}
-          />{" "}
-          <output htmlFor="star-mag-limit">{limitText}</output>
-        </p>
-        <SatelliteToggle
-          layer="satellites"
-          label="Satellites (ISS and brightest)"
-          status={groupStatusText([stations, visual])}
-        />
-        <SatelliteToggle
-          layer="starlink"
-          label="Starlink (about 11,100; loads 4.7 MB)"
-          status={groupStatusText([starlink])}
-        />
-        <SatelliteToggle
-          layer="trails"
-          label={reducedMotion ? "Trails (off: reduced motion)" : "Trails"}
-        />
-        {/* [M6] The toggle hides only the skyline and its fill; visibility always uses a ready profile. */}
-        <SatelliteToggle
-          layer="horizon"
-          label="Terrain horizon"
-          status={horizonStatusText(horizonStatus)}
-        />
-        <SatelliteToggle layer="hillshade" label="Hillshade" />
-        <FootprintControls />
-        <VideoToggles />
-      </section>
-    </div>
+    <Popover
+      label="Layers"
+      title="Layers"
+      open={open}
+      onOpenChange={onOpenChange}
+      className="layers"
+      buttonClassName="header-button"
+      id="layers-panel"
+    >
+      <LayersPanel />
+    </Popover>
   );
 }

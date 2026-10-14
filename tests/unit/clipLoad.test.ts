@@ -1,8 +1,10 @@
 // tests/unit/clipLoad.test.ts — M5 step 10.4–10.10: loading a clip from its sidecar URL (with DECISIONS H1's Range
-// probe) and from picked files, the probe checks, "Copy pointing", "Save sidecar", the clip rates, the hidden
-// stretches of step 13 and the ?t= rule. A fake fetch, a fake probe and fake object URLs: no DOM, no network.
+// probe) and from picked files (kept for tests only), the probe checks, "Copy pointing", the clip rates, the hidden
+// stretches of step 13 and the ?t= rule; [Redesign] the opening time, the clip loader, and the clip's position and
+// length for the control bar. A fake fetch, a fake probe and fake object URLs: no DOM, no network.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { activateCamera, watchLive, watchRecordedPass } from "../../src/app/activateCamera";
 import { parseCameraRegistry } from "../../src/app/cameras";
 import {
   CLIP_RATES,
@@ -12,23 +14,29 @@ import {
   cannotPlayText,
   checkVideoProbe,
   claimUrlTime,
+  clipAutoplay,
   clipHiddenMs,
+  clipOpenMediaS,
+  clipProgress,
   copyClipPointing,
   formatClipDuration,
+  formatClipTime,
   getClipLoadState,
   loadClip,
   loadClipFromSidecarUrl,
   offeredRates,
   parseClipSidecar,
+  seekClipTo,
   sidecarFileName,
-  sidecarToSave,
+  startClipLoader,
   subscribeClipLoads,
   type VideoProbe,
 } from "../../src/app/clip";
-import { DEFAULT_CAMERA_ID, initialState } from "../../src/state/initialState";
+import { initialState } from "../../src/state/initialState";
 import { type AppStore, createAppStore } from "../../src/state/store";
 import type { CameraConfig, LocalVideoCamera } from "../../src/state/types";
 import { withM5CameraEntries } from "../helpers/m5Cameras";
+import { TEST_CAMERA_ID } from "../helpers/store";
 
 const committed: unknown = JSON.parse(
   readFileSync(new URL("../../public/data/cameras.json", import.meta.url), "utf8"),
@@ -58,7 +66,7 @@ afterEach(() => {
 });
 
 function setup(activeId = CLIP_ID): AppStore {
-  const store = createAppStore(initialState(T, DEFAULT_CAMERA_ID));
+  const store = createAppStore(initialState(T, TEST_CAMERA_ID));
   store.getState().actions.setRegistry({ ...registry });
   store.getState().actions.setActiveCamera(activeId);
   return store;
@@ -330,7 +338,7 @@ describe("loadClipFromSidecarUrl", () => {
       const pending = loadClipFromSidecarUrl(store, CLIP_ID, fn, opts);
       await new Promise((resolve) => setTimeout(resolve, 0));
       if (leave === "abort") controller.abort();
-      else store.getState().actions.setActiveCamera(DEFAULT_CAMERA_ID);
+      else store.getState().actions.setActiveCamera(TEST_CAMERA_ID);
       release();
       expect(await pending).toBeNull();
       expect(clipEntry(store).source.videoUrl).toBeNull();
@@ -521,22 +529,7 @@ describe("pure helpers", () => {
     expect(clipHiddenMs(e2e, 25544)).toEqual([]);
   });
 
-  it("sidecarToSave keeps every key and replaces the calibration, with no stream delay; sidecarFileName", () => {
-    const disk = { format: "overhead.clip", version: 1, ...E2E, recordedWith: { ffmpeg: "7.1" } };
-    const calibration = {
-      ...(registry["subaru-starcam"]?.defaults ?? ({} as never)),
-      streamDelayMs: 50_000,
-    };
-    const saved = sidecarToSave(disk, calibration);
-    expect(Object.keys(saved)).toEqual([...Object.keys(disk), "calibration"]);
-    expect(saved.recordedWith).toEqual({ ffmpeg: "7.1" });
-    expect(saved.calibration).toEqual({ ...calibration, streamDelayMs: 0 });
-    const withCalibration = sidecarToSave(
-      { ...disk, calibration: { old: true }, pass: 1 },
-      calibration,
-    );
-    expect(Object.keys(withCalibration).slice(-2)).toEqual(["calibration", "pass"]); // replaced in place
-    expect(parseClipSidecar(saved, registry, T).ok).toBe(true);
+  it("sidecarFileName: the video's name with .json", () => {
     expect(sidecarFileName("subaru-2026-10-11-iss.mp4")).toBe("subaru-2026-10-11-iss.json");
     expect(sidecarFileName("test-pattern.webm")).toBe("test-pattern.json");
     expect(sidecarFileName("clip")).toBe("clip.json");
@@ -584,15 +577,269 @@ describe("pure helpers", () => {
     expect(cannotPlayText("clip.mp4")).toMatch(/ clip-remux\.mp4$/);
   });
 
-  it("offeredRates: 1× and 10× with a clip, else all four", () => {
+  it("offeredRates: 1× and 10× with a clip (and the test cameras), none live or before the camera list", () => {
     expect(offeredRates("local-video")).toBe(CLIP_RATES);
     expect(CLIP_RATES).toEqual([1, 10]);
-    expect(offeredRates("youtube")).toEqual([1, 10, 60, 600]);
-    expect(offeredRates(undefined)).toEqual([1, 10, 60, 600]);
+    expect(offeredRates("synthetic")).toBe(CLIP_RATES);
+    expect(offeredRates("still-image")).toBe(CLIP_RATES);
+    expect(offeredRates("youtube")).toEqual([]);
+    expect(offeredRates(undefined)).toEqual([]);
+  });
+
+  it("clipOpenMediaS: the last whole 10 s at least 15 s before the pass enters; 0 without a pass", () => {
+    expect(clipOpenMediaS(issClip)).toBe(60); // the ISS enters at 78.7 s
+    expect(clipOpenMediaS(e2e)).toBe(0);
+    const at = (fromS: number, durationS = 480) =>
+      clipOpenMediaS({
+        durationS,
+        pass: { noradId: 25544, inFrameFromMediaS: fromS, inFrameToMediaS: durationS },
+      });
+    expect(at(5)).toBe(0);
+    expect(at(25)).toBe(10);
+    expect(at(100)).toBe(80);
+    expect(at(100, 70)).toBe(70); // never past the end
+  });
+
+  it("formatClipTime: m:ss, rounded down", () => {
+    expect(formatClipTime(95.4)).toBe("1:35");
+    expect(formatClipTime(480)).toBe("8:00");
+    expect(formatClipTime(7)).toBe("0:07");
+    expect(formatClipTime(59.99)).toBe("0:59");
+    expect(formatClipTime(Number.NaN)).toBe("0:00");
+    expect(formatClipTime(-1)).toBe("0:00");
   });
 
   it("claimUrlTime: only the first claim, and only for the ?cam= camera of a page with a valid ?t=", () => {
     expect(claimUrlTime(CLIP_ID, `?cam=${CLIP_ID}&t=2026-10-11T08:00:03Z`)).toBe(true);
     expect(claimUrlTime(CLIP_ID, `?cam=${CLIP_ID}&t=2026-10-11T08:00:03Z`)).toBe(false);
+  });
+
+  it("[Redesign] claimUrlTime: a ?t= without ?cam= counts for the clip (the default camera); a live ?cam= does not", async () => {
+    const fresh = async () => {
+      vi.resetModules();
+      return (await import("../../src/app/clip")).claimUrlTime;
+    };
+    expect((await fresh())(CLIP_ID, "?t=2026-10-11T08:00:03Z")).toBe(true);
+    expect((await fresh())(CLIP_ID, "?cam=subaru-starcam&t=2026-10-11T08:00:03Z")).toBe(false);
+    expect((await fresh())(CLIP_ID, "?t=2026-10-11")).toBe(false);
+  });
+});
+
+describe("[Redesign] opening the clip", () => {
+  /** The e2e sidecar stretched to the 2026-10-11 clip's length and pass, with a probe to match. */
+  const ISS_SIDECAR = {
+    ...E2E,
+    durationS: 480,
+    pass: { noradId: 25544, inFrameFromMediaS: 78.7, inFrameToMediaS: 290.43 },
+  };
+  const LONG_PROBE: VideoProbe = { durationS: 480, widthPx: 320, heightPx: 180 };
+  const issFetch = () => fakeFetch({ [SIDECAR_URL]: json(ISS_SIDECAR), [VIDEO_URL]: partial() });
+
+  it("a commit opens the clip paused at media 60 s, 18.7 s before the ISS enters", async () => {
+    const store = setup();
+    const { fn } = issFetch();
+    await loadClipFromSidecarUrl(
+      store,
+      CLIP_ID,
+      fn,
+      options({ probe: async () => LONG_PROBE }).opts,
+    );
+    expect(store.getState().clock).toMatchObject({
+      mode: "replay",
+      playing: false,
+      simTimeMs: START + 60_000,
+      rangeCenterMs: START + 60_000,
+    });
+  });
+
+  it("the page's ?t= is kept only inside the clip; outside it the clip opens at media 60 s", async () => {
+    for (const [t, expected] of [
+      ["2026-10-11T08:03:00Z", START + 180_000],
+      ["2026-10-11T09:00:00Z", START + 60_000],
+    ] as const) {
+      vi.resetModules();
+      vi.stubGlobal("location", { search: `?t=${t}`, href: `${BASE}?t=${t}` });
+      try {
+        const fresh = await import("../../src/app/clip");
+        const store = setup();
+        store.getState().actions.recenter(Date.parse(t)); // as main.tsx does for a clip camera
+        const { fn } = issFetch();
+        const { keepTime: _drop, ...opts } = options({ probe: async () => LONG_PROBE }).opts;
+        await fresh.loadClipFromSidecarUrl(store, CLIP_ID, fn, opts);
+        expect(store.getState().clock.simTimeMs).toBe(expected);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+  });
+
+  it("startClipLoader loads on activation, aborts on a camera change, retries on the next activation", async () => {
+    const store = createAppStore(initialState(T, CLIP_ID)); // the app's default camera, before the camera list
+    const answers: Record<string, Answer> = { [SIDECAR_URL]: new TypeError("offline") };
+    const { fn, calls } = fakeFetch(answers);
+    const stop = startClipLoader(store, {
+      baseHref: BASE,
+      fetchFn: fn,
+      probe: async () => LONG_PROBE,
+    });
+    expect(calls).toEqual([]); // no registry yet
+    store.getState().actions.setRegistry({ ...registry });
+    await vi.waitFor(() =>
+      expect(getClipLoadState(CLIP_ID)?.failure?.message).toBe(CLIP_TEXT.notInBuild),
+    );
+    expect(calls.map((c) => c.url)).toEqual([SIDECAR_URL]);
+    expect(store.getState().camera.status[CLIP_ID]).toBe("offline");
+
+    // Watch live, then back: the clip is fetched again, and this time it loads.
+    watchLive(store);
+    expect(store.getState().clock).toMatchObject({ mode: "live", playing: true, rate: 1 });
+    answers[SIDECAR_URL] = () => json(ISS_SIDECAR);
+    answers[VIDEO_URL] = () => partial();
+    watchRecordedPass(store);
+    await vi.waitFor(() => expect(clipEntry(store).source.videoUrl).toBe(VIDEO_URL));
+    expect(calls.map((c) => c.url)).toEqual([SIDECAR_URL, SIDECAR_URL, VIDEO_URL]);
+    expect(store.getState().clock).toMatchObject({ mode: "replay", simTimeMs: START + 60_000 });
+
+    // A loaded clip: live and back again fetches nothing, and reopens at media 60 s.
+    store.getState().actions.seek(START + 200_000);
+    watchLive(store);
+    watchRecordedPass(store);
+    expect(calls).toHaveLength(3);
+    expect(store.getState().clock).toMatchObject({
+      mode: "replay",
+      playing: false,
+      simTimeMs: START + 60_000,
+    });
+    stop();
+  });
+
+  it("startClipLoader plays the clip once it has loaded, at media 60 s; with autoplay off it opens paused", async () => {
+    for (const autoplay of [true, false]) {
+      const store = setup();
+      const { fn } = issFetch();
+      const stop = startClipLoader(store, {
+        baseHref: BASE,
+        fetchFn: fn,
+        probe: async () => LONG_PROBE,
+        autoplay: () => autoplay,
+      });
+      await vi.waitFor(() => expect(clipEntry(store).source.videoUrl).toBe(VIDEO_URL));
+      await new Promise((resolve) => setTimeout(resolve, 0)); // the loader's then()
+      expect(store.getState().clock, `autoplay ${autoplay}`).toMatchObject({
+        mode: "replay",
+        playing: autoplay,
+        rate: 1,
+        simTimeMs: START + 60_000,
+      });
+      stop();
+    }
+  });
+
+  it("a loaded clip chosen again plays after activateCamera's pause, unless autoplay says no", async () => {
+    const store = setup();
+    const { fn, calls } = issFetch();
+    let allow = true;
+    const stop = startClipLoader(store, {
+      baseHref: BASE,
+      fetchFn: fn,
+      probe: async () => LONG_PROBE,
+      autoplay: () => allow,
+    });
+    await vi.waitFor(() => expect(store.getState().clock.playing).toBe(true));
+    store.getState().actions.seek(START + 300_000);
+    watchLive(store); // live jumps to now, outside the clip
+    watchRecordedPass(store);
+    expect(store.getState().clock.playing).toBe(false); // activateCamera pauses, synchronously
+    await Promise.resolve(); // the loader's microtask
+    expect(store.getState().clock).toMatchObject({
+      mode: "replay",
+      playing: true,
+      simTimeMs: START + 60_000, // reopened at the opening time
+    });
+    allow = false; // reduced motion
+    watchLive(store);
+    watchRecordedPass(store);
+    await Promise.resolve();
+    expect(store.getState().clock.playing).toBe(false);
+    // A camera change before the microtask runs: the live camera is left alone (live, as activateCamera set it).
+    allow = true;
+    watchLive(store);
+    watchRecordedPass(store);
+    watchLive(store);
+    await Promise.resolve();
+    expect(store.getState().clock).toMatchObject({ mode: "live", playing: true });
+    expect(calls).toHaveLength(2); // the sidecar and the video, once
+    stop();
+  });
+
+  it("clipAutoplay: yes, except with reduced motion and during the tour", () => {
+    const store = setup();
+    expect(clipAutoplay(store.getState())).toBe(true); // Node: no matchMedia
+    const media = (reduced: boolean) => ({
+      matchMedia: (query: string) => ({
+        matches: reduced && query === "(prefers-reduced-motion: reduce)",
+      }),
+    });
+    try {
+      vi.stubGlobal("window", media(true));
+      expect(clipAutoplay(store.getState())).toBe(false);
+      vi.stubGlobal("window", media(false));
+      expect(clipAutoplay(store.getState())).toBe(true);
+      store.getState().actions.startDemo();
+      expect(clipAutoplay(store.getState())).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a camera change aborts the load in flight", async () => {
+    const store = setup(TEST_CAMERA_ID);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fn } = issFetch();
+    const stop = startClipLoader(store, {
+      baseHref: BASE,
+      fetchFn: fn,
+      probe: async () => {
+        await gate;
+        return LONG_PROBE;
+      },
+    });
+    activateCamera(store, CLIP_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    activateCamera(store, "subaru-starcam");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(clipEntry(store).source.videoUrl).toBeNull();
+    expect(store.getState().clock.mode).toBe("live");
+    stop();
+  });
+
+  it("clipProgress and seekClipTo: the loaded clip's position and length, clamped; null elsewhere", async () => {
+    const store = setup();
+    expect(clipProgress(store.getState())).toBeNull(); // not loaded
+    const { fn } = issFetch();
+    await loadClipFromSidecarUrl(
+      store,
+      CLIP_ID,
+      fn,
+      options({ probe: async () => LONG_PROBE }).opts,
+    );
+    expect(clipProgress(store.getState())).toEqual({ positionS: 60, durationS: 480 });
+    seekClipTo(store, 95.4);
+    expect(store.getState().clock.simTimeMs).toBe(START + 95_400);
+    expect(clipProgress(store.getState())?.positionS).toBeCloseTo(95.4, 9);
+    seekClipTo(store, 1_000);
+    expect(clipProgress(store.getState())).toEqual({ positionS: 480, durationS: 480 });
+    seekClipTo(store, Number.NaN);
+    expect(clipProgress(store.getState())?.positionS).toBe(480);
+    store.getState().actions.tick(START - 5_000);
+    expect(clipProgress(store.getState())?.positionS).toBe(0);
+    activateCamera(store, "subaru-starcam");
+    expect(clipProgress(store.getState())).toBeNull();
+    seekClipTo(store, 10); // nothing on a live camera
+    expect(store.getState().clock.mode).toBe("live");
   });
 });

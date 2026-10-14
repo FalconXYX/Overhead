@@ -9,15 +9,22 @@ import {
   STILL_IMAGE_MIN_REFRESH_SEC,
 } from "../state/types";
 
-/** Ids that reach the store; the milestone that enables an entry adds it (README camera registry). */
+/** [Redesign] The recorded ISS pass: the default camera (DEFAULT_CAMERA_ID) and "Watch the recorded ISS pass". */
+export const RECORDED_CLIP_ID = "subaru-2026-10-11-iss";
+/** [Redesign] The camera "Watch live" switches to: the live Subaru StarCam, the clip's own source camera. */
+export const LIVE_CAMERA_ID = "subaru-starcam";
+
+/**
+ * Ids that reach the store, in the order the header's switcher lists them. [Redesign] Only cameras with a video: the
+ * recorded ISS pass (loads where recordings/ is served or the deploy copied the clip; else ClipControls says it is
+ * missing and offers "Watch live") and the two live StarCams. The computed skies (synthetic-maunakea,
+ * synthetic-walenstadt), local-replay (picked files), cfht-nanaao (a still image) and ask053-walenstadt keep their
+ * cameras.json entries for the unit tests, but never reach the store.
+ */
 export const ENABLED_CAMERA_IDS: readonly string[] = [
-  "synthetic-maunakea",
-  "cfht-nanaao",
-  "subaru-starcam", // [M5]
-  "cfht-starcam", // [M5]
-  "local-replay", // [M5]
-  "subaru-2026-10-11-iss", // [M5] loads only where recordings/ is served (npm run dev), else "not part of this build"
-  "synthetic-walenstadt", // [M6]
+  RECORDED_CLIP_ID,
+  LIVE_CAMERA_ID,
+  "cfht-starcam",
 ];
 
 const KINDS = ["synthetic", "still-image", "youtube", "local-video"] as const;
@@ -167,6 +174,12 @@ function entryProblems(entry: Json, label: string): string[] {
   };
 
   if (typeof entry.name !== "string" || entry.name === "") bad("name must be a non-empty string");
+  // [Redesign] Optional plain names: the switcher's, the ground map's site label and [Polish] the switcher's place line.
+  for (const key of ["shortName", "siteName", "placeName"] as const) {
+    const value = entry[key];
+    if (value !== undefined && (typeof value !== "string" || value === ""))
+      bad(`${key} must be a non-empty string when present`);
+  }
 
   // kind and source
   const { kind, source } = entry;
@@ -277,11 +290,12 @@ export function parseCameraRegistry(json: unknown): Record<string, CameraConfig>
   return registry;
 }
 
-/** The enabled subset, in file order. */
+/** The enabled subset, [Redesign] in ENABLED_CAMERA_IDS order (the switcher's), skipping ids the file lacks. */
 export function enabledCameras(all: Record<string, CameraConfig>): Record<string, CameraConfig> {
   const enabled: Record<string, CameraConfig> = {};
-  for (const [id, camera] of Object.entries(all)) {
-    if (ENABLED_CAMERA_IDS.includes(id)) enabled[id] = camera;
+  for (const id of ENABLED_CAMERA_IDS) {
+    const camera = Object.hasOwn(all, id) ? all[id] : undefined;
+    if (camera !== undefined) enabled[id] = camera;
   }
   return enabled;
 }

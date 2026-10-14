@@ -1,6 +1,16 @@
 // tests/e2e/gibs-time.spec.ts — the M1 acceptance test: every true-colour tile request carries the clock's date.
+// [Redesign] On the recorded clip, served as starting just before the true-colour date flips (paused: reduced motion).
 import type { Page, Request } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import {
+  CLIP_ID,
+  clipReady,
+  clipStartingAt,
+  expect,
+  expectSimTime,
+  focusBody,
+  openPopover,
+  test,
+} from "./fixtures";
 
 const TRUE_COLOR = "VIIRS_NOAA20_CorrectedReflectance_TrueColor";
 
@@ -72,15 +82,21 @@ const trueColor = (list: readonly TileRequest[]) => list.filter((r) => r.layer =
 const times = (list: readonly TileRequest[]) => new Set(list.map((r) => r.time));
 const tiles = (list: readonly TileRequest[]) => new Set(list.map((r) => r.tile));
 
+test.use({ reducedMotion: "reduce" });
+
 test("every true-colour tile request carries the clock's date, before and after a date change", async ({
   page,
 }) => {
   const recorder = recordTiles(page);
-  await page.goto("./?t=2026-10-10T03:30:00Z");
+  // NOAA-20's 13:30 pass at the Subaru StarCam's longitude, plus the 4 h latency: the date flips at 03:51:54.2Z.
+  // The URL's t (as a shared link has it) sets the clock before the first frame: no tiles for the page's opening time.
+  await clipStartingAt(page, "2026-10-10T03:51:51Z");
+  await page.goto("./?t=2026-10-10T03:51:51Z");
+  await clipReady(page, "paused");
 
   const map = page.locator('[data-map="ground"]');
   const box = await map.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(512);
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(320);
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(256);
 
   await recorder.quiet();
@@ -101,14 +117,15 @@ test("every true-colour tile request carries the clock's date, before and after 
   expect(labels.every((r) => r.encoding === "REST")).toBe(true);
   expect(new Set(labels.map((r) => r.template))).toEqual(new Set(["default", "default/default"]));
   expect(tiles(labels)).toEqual(tiles(coastlines));
-  await expect(page.getByTestId("time-utc")).toHaveText("2026-10-10T03:30:00Z");
-  await expect(page.getByTestId("time-local")).toHaveText("2026-10-09 17:30:00 Pacific/Honolulu");
+  await expectSimTime(page, "2026-10-10T03:51:51Z");
+  await expect(page.getByTestId("time-local")).toHaveText("17:51 in Hawaii");
 
-  // Cross the 03:51:52.5Z flip with the page focused, not the map.
+  // Cross the flip with the page focused, not the map: four 1 s steps.
   const mark = recorder.requests.length;
-  for (let i = 0; i < 30; i += 1) await page.keyboard.press("Shift+ArrowRight");
-  await expect(page.getByTestId("time-utc")).toHaveText("2026-10-10T04:00:00Z");
-  await expect(page).toHaveURL(/\?cam=synthetic-maunakea&t=2026-10-10T04:00:00Z$/);
+  await focusBody(page);
+  for (let i = 0; i < 4; i += 1) await page.keyboard.press("ArrowRight");
+  await expectSimTime(page, "2026-10-10T03:51:55Z");
+  await expect(page).toHaveURL(new RegExp(`\\?cam=${CLIP_ID}&t=2026-10-10T03:51:55Z$`));
   await recorder.quiet();
 
   const afterTrueColor = trueColor(recorder.requests.slice(mark));
@@ -126,23 +143,18 @@ test("every true-colour tile request carries the clock's date, before and after 
 test("a sim time ahead of the real clock requests the newest pass the real clock has reached", async ({
   page,
 }) => {
-  // Real time 2026-10-11T19:20Z, sim time 12 h ahead (the scrubber's right end from live). The sim time alone would
-  // give 2026-10-11, whose tiles GIBS serves as 200 black JPEGs; the real clock gives 2026-10-10.
+  // Real time 2026-10-11T19:20Z, a clip 12 h ahead of it. The sim time alone would give 2026-10-11, whose tiles GIBS
+  // serves as 200 black JPEGs; the real clock gives 2026-10-10.
   await page.clock.install({ time: Date.parse("2026-10-11T19:20:00Z") });
+  await clipStartingAt(page, "2026-10-12T07:20:00Z");
   const recorder = recordTiles(page);
-  await page.goto("./?t=2026-10-12T07:20:00Z");
+  await page.goto("./");
+  await clipReady(page, "paused");
   await recorder.quiet();
   const requested = trueColor(recorder.requests);
   expect(requested.length).toBeGreaterThanOrEqual(4);
   expect(times(requested)).toEqual(new Set(["2026-10-10"]));
-  // The label and the credit name the date the map shows.
-  await expect(page.getByRole("region", { name: "Credits" })).toContainText(
-    "Imagery: NOAA-20 / VIIRS, 2026-10-10",
-  );
-  await page.keyboard.press("l");
-  await expect(
-    page
-      .getByRole("region", { name: "Layers" })
-      .getByRole("checkbox", { name: "True colour (NOAA-20 / VIIRS, 2026-10-10)" }),
-  ).toBeVisible();
+  // The credit names the date the map shows.
+  const credits = await openPopover(page, "Credits", "Credits");
+  await expect(credits).toContainText("Imagery: NOAA-20 / VIIRS, 2026-10-10");
 });

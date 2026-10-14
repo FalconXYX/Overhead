@@ -1,5 +1,6 @@
 // src/map/ground/layers/site.ts — the active camera's site marker (M1 step 11) and its wedge (M4 step 12). Their look
-// is visual design (M9 step 12): a dark dot in a light ring (unlike a satellite's light dot) and a faint light wedge.
+// is visual design ([Redesign] twilight theme): a dark dot in a white ring (unlike a satellite's coloured dot) and a
+// faint white wedge.
 import Feature from "ol/Feature";
 import type Point from "ol/geom/Point";
 import Polygon, { circular } from "ol/geom/Polygon";
@@ -14,21 +15,21 @@ import Text from "ol/style/Text";
 import type { AzimuthCoverage } from "../../../domain/camera";
 import { wrap360 } from "../../../domain/geo";
 
-const LIGHT = "#e6ebf2";
-const INK = "rgba(4, 6, 11, 0.9)";
+const LIGHT = "#f5f7ff";
+const INK = "rgba(13, 20, 51, 0.9)";
 /** A dark halo, so the light label reads on clouds and on the ocean alike. */
 const LABEL_HALO = new Stroke({ color: INK, width: 3 });
 const LABEL_FILL = new Fill({ color: LIGHT });
 const MARKER_STYLE = new Style({
   image: new CircleStyle({
     radius: 5,
-    fill: new Fill({ color: "#04060b" }),
-    stroke: new Stroke({ color: LIGHT, width: 2 }),
+    fill: new Fill({ color: "#0d1433" }),
+    stroke: new Stroke({ color: LIGHT, width: 2.5 }),
   }),
 });
 const WEDGE_STYLE = new Style({
-  fill: new Fill({ color: "rgba(200, 216, 236, 0.12)" }),
-  stroke: new Stroke({ color: "rgba(226, 233, 243, 0.85)", width: 1.5 }),
+  fill: new Fill({ color: "rgba(255, 255, 255, 0.14)" }),
+  stroke: new Stroke({ color: "rgba(245, 247, 255, 0.9)", width: 1.5 }),
 });
 const labelStyles = new Map<string, Style[]>();
 

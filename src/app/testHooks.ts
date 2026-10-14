@@ -1,5 +1,6 @@
 // src/app/testHooks.ts — read-only hooks for Playwright (M3 step 16; README section 6). main.tsx creates and installs
 // them only when navigator.webdriver is true, so e2e reads object positions and draw frames without reading pixels.
+// [Redesign] One writing hook, playReplay, for the perf harness's 60× and 600×, which no control offers any more.
 import type OlMap from "ol/Map";
 import { BODY_IDS, BODY_STRIDE, type StarRow } from "../domain/astro";
 import {
@@ -8,12 +9,13 @@ import {
   projectAzAltDeg,
   toSkyMapCoord,
 } from "../domain/camera";
+import { SCRUB_HALF_RANGE_MS } from "../domain/time";
 import type { MapId } from "../map/registry";
 import { frameCount, registerFrameUpdater } from "../state/clockLoop";
 import type { FootprintStatus } from "../state/footprintStatus";
 import { selectActiveCamera, selectCalibration } from "../state/selectors";
 import type { AppStore } from "../state/store";
-import type { ObjectId } from "../state/types";
+import type { ClockRate, ClockState, ObjectId } from "../state/types";
 
 export type ViewId = MapId; // "sky" | "ground"
 
@@ -30,6 +32,23 @@ export interface OverheadTestHooks {
     entries: { noradId: number; etaSec: number }[];
   } | null; // [M8]
   commits(): number; // [M9] React commits since start (step 5); 0 in a production build
+  clock(): ClockView; // [Redesign] the clock's mode, play state, rate and time (no control shows the rate any more)
+  /** [Redesign] A map view's zoom and whether it is animating, so a spec waits out an animated zoom, not a timer. */
+  view(view: ViewId): { zoom: number | null; animating: boolean } | null;
+  /**
+   * [Redesign] The one writing hook, for the perf harness: 60× and 600× have no control any more (the keys offer 1×
+   * and 10× on a clip only). Replay at `rate`, playing, from the start of a ±12 h range at `fromMs` (default: the
+   * clock's time), so a fast rate has a day ahead of it. For a live camera; a clip's video caps the rate at 16×.
+   */
+  playReplay(rate: ClockRate, fromMs?: number): void;
+}
+
+/** [Redesign] What hooks.clock() reports. */
+export interface ClockView {
+  readonly mode: ClockState["mode"];
+  readonly playing: boolean;
+  readonly rate: ClockRate;
+  readonly simTimeMs: number;
 }
 
 declare global {
@@ -258,6 +277,22 @@ export function createTestHooks(sources: TestHookSources): {
       };
     },
     commits: () => commitCount, // [M9]
+    view: (view) => {
+      const v = sources.maps.get(view)?.getView();
+      return v === undefined ? null : { zoom: v.getZoom() ?? null, animating: v.getAnimating() };
+    },
+    clock: () => {
+      const { mode, playing, rate, simTimeMs } = store.getState().clock;
+      return { mode, playing, rate, simTimeMs };
+    },
+    playReplay: (rate, fromMs) => {
+      const { actions, clock } = store.getState();
+      const start = fromMs ?? clock.simTimeMs;
+      actions.recenter(start + SCRUB_HALF_RANGE_MS); // the range then starts at `start`
+      actions.seek(start);
+      actions.setRate(rate);
+      actions.play();
+    },
   };
 
   return {
