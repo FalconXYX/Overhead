@@ -1,17 +1,17 @@
 {
   "stations": {
-    "fetchedAtMs": 1792958987335,
+    "fetchedAtMs": 1792981384959,
     "count": 20,
-    "sha256": "975e815e6b24bd2dc95166ed197596ddc2c395eefe9c003418fe0e236db2c2b4"
+    "sha256": "2c9a97ea7f296c7d044bc3eab511e9404ef7403693fed2a484a9d6cb406761ba"
   },
   "visual": {
-    "fetchedAtMs": 1792958987335,
+    "fetchedAtMs": 1792981384959,
     "count": 155,
-    "sha256": "c216aeaa8a0c3b9aa7eaf63094321ec3724d65ffe636cb3b932d69924dede5fc"
+    "sha256": "24fdcef3d50ab8692fdcb3b1c1972aaf2483ccf60a33bde6225f95ea3eab3aa6"
   },
   "starlink": {
-    "fetchedAtMs": 1792958987335,
-    "count": 11113,
-    "sha256": "f4a6a046bbd49c0cada84c98407126a416da678274e5b07be0272be6727f5f5b"
+    "fetchedAtMs": 1792981384959,
+    "count": 11109,
+    "sha256": "a43f1109f3172df155214639e399b70b2a15f3956fae4e8a0ceceb82a669c475"
   }
 }
