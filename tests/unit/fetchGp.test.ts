@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CELESTRAK_GP_URL,
   FETCH_TIMEOUT_MS,
@@ -14,7 +14,9 @@ import {
   MIN_REFETCH_MS,
   parseGpMeta,
   runCli,
+  STALE_ALERT_MS,
   shouldFetch,
+  staleGroups,
   userAgentFor,
 } from "../../scripts/fetch-gp";
 import type { GpGroup, GpMeta } from "../../src/domain/orbits";
@@ -100,6 +102,41 @@ describe("MIN_REFETCH_MS and shouldFetch", () => {
   it("skips a stamp up to 2 h in the future (clock skew) but not a stamp further ahead", () => {
     expect(shouldFetch(meta, "stations", SNAPSHOT_MS - HOUR_MS)).toBe(false);
     expect(shouldFetch(meta, "stations", SNAPSHOT_MS - MIN_REFETCH_MS)).toBe(true);
+  });
+});
+
+describe("STALE_ALERT_MS and staleGroups", () => {
+  const at = (fetchedAtMs: number) => ({ fetchedAtMs, count: 22, sha256: STATIONS_SHA });
+  const all = { stations: at(SNAPSHOT_MS), visual: at(SNAPSHOT_MS), starlink: at(SNAPSHOT_MS) };
+
+  it("is 48 h", () => {
+    expect(STALE_ALERT_MS).toBe(172_800_000);
+  });
+
+  it("is not stale at 48 h − 1 ms and stale at exactly 48 h", () => {
+    expect(staleGroups(all, SNAPSHOT_MS + STALE_ALERT_MS - 1)).toEqual([]);
+    expect(staleGroups(all, SNAPSHOT_MS + STALE_ALERT_MS)).toEqual([
+      "stations",
+      "visual",
+      "starlink",
+    ]);
+  });
+
+  it("counts a group with no stamp as stale, and everything on a first run", () => {
+    expect(
+      staleGroups({ stations: at(SNAPSHOT_MS), starlink: at(SNAPSHOT_MS) }, SNAPSHOT_MS),
+    ).toEqual(["visual"]);
+    expect(staleGroups({}, SNAPSHOT_MS)).toEqual(["stations", "visual", "starlink"]);
+  });
+
+  it("never counts a stamp in the future as stale", () => {
+    expect(staleGroups(all, SNAPSHOT_MS - HOUR_MS)).toEqual([]);
+    expect(staleGroups(all, SNAPSHOT_MS - 10 * STALE_ALERT_MS)).toEqual([]);
+  });
+
+  it("lists groups in GP_GROUPS order, whatever the order of meta's keys", () => {
+    const meta = { starlink: at(SNAPSHOT_MS - STALE_ALERT_MS), visual: at(SNAPSHOT_MS) };
+    expect(staleGroups(meta, SNAPSHOT_MS)).toEqual(["stations", "starlink"]);
   });
 });
 
@@ -298,12 +335,116 @@ describe("fetchGp", () => {
     expect(result.fetched).toEqual(["stations", "visual"]);
     // The error quotes at most 500 characters of the body.
     expect(result.error).toBe(`starlink: HTTP 500 ${"x".repeat(500)}`);
+    expect(result.transient).toBe(true);
     expect(Object.keys(await readMeta())).toEqual(["stations", "visual"]);
     expect((await readMeta()).visual).toEqual({
       fetchedAtMs: SNAPSHOT_MS,
       count: 156,
       sha256: VISUAL_SHA,
     });
+  });
+
+  it("marks a stop transient for 403, 429, 5xx, a network error and the timeout, after 1 request", async () => {
+    const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    const answers: [string, () => Answer][] = [
+      ["403", () => status(403, "GP data has not updated since your last successful download")],
+      ["429", () => status(429)],
+      ["500", () => status(500)],
+      ["503", () => status(503)],
+      ["network error", () => new TypeError("fetch failed")],
+      ["timeout", () => timeout],
+    ];
+    for (const [name, answer] of answers) {
+      const { fetchImpl, calls } = fakeFetch({ stations: answer() });
+      const result = await fetchGp({ outDir: dir, nowMs: SNAPSHOT_MS, userAgent: UA, fetchImpl });
+      expect(calls, name).toHaveLength(1);
+      expect(result.requests, name).toBe(1);
+      expect(result.error, name).toMatch(/^stations: /);
+      expect(result.transient, name).toBe(true);
+    }
+  });
+
+  it("does not mark a stop transient when it needs a code or config change", async () => {
+    const answers: [string, () => Answer][] = [
+      ["200 HTML page", () => ok("<!DOCTYPE html><html><body>Maintenance</body></html>")],
+      ["200 []", () => ok("[]")],
+      ["204", () => status(204, null)],
+      ["301", () => status(301, "moved")],
+      ["304", () => status(304, null)],
+      ["400", () => status(400)],
+      ["404", () => status(404)],
+    ];
+    for (const [name, answer] of answers) {
+      const { fetchImpl, calls } = fakeFetch({ stations: answer() });
+      const result = await fetchGp({ outDir: dir, nowMs: SNAPSHOT_MS, userAgent: UA, fetchImpl });
+      expect(calls, name).toHaveLength(1);
+      expect(result.error, name).toMatch(/^stations: HTTP /);
+      expect(result.transient, name).toBe(false);
+    }
+  });
+
+  it("is not transient after a clean run, nor when every group was skipped", async () => {
+    const [stations, visual, starlink] = await Promise.all([
+      fixtureBytes("stations.json"),
+      fixtureBytes("visual.json"),
+      fixtureBytes("starlink.json"),
+    ]);
+    const { fetchImpl } = fakeFetch({
+      stations: ok(stations),
+      visual: ok(visual),
+      starlink: ok(starlink),
+    });
+    const result = await fetchGp({ outDir: dir, nowMs: SNAPSHOT_MS, userAgent: UA, fetchImpl });
+    expect(result).toMatchObject({ requests: 3, error: null, transient: false });
+    const again = await fetchGp({
+      outDir: dir,
+      nowMs: SNAPSHOT_MS + HOUR_MS,
+      userAgent: UA,
+      fetchImpl: fakeFetch({}).fetchImpl,
+    });
+    expect(again).toMatchObject({ requests: 0, error: null, transient: false });
+  });
+
+  it("quotes a body on one line, so no line of it can read as a workflow command in the log", async () => {
+    const body = "GP data has not updated\r\n::error::x\r\n\r\n\t since your last download\r\n";
+    const forbidden = fakeFetch({ stations: status(403, body) });
+    const result = await fetchGp({
+      outDir: dir,
+      nowMs: SNAPSHOT_MS,
+      userAgent: UA,
+      fetchImpl: forbidden.fetchImpl,
+    });
+    expect(result.error).toBe(
+      "stations: HTTP 403 GP data has not updated ::error::x since your last download",
+    );
+    const html = fakeFetch({ stations: ok("<html>\r\n::error::x\n</html>\n") });
+    const unusable = await fetchGp({
+      outDir: dir,
+      nowMs: SNAPSHOT_MS,
+      userAgent: UA,
+      fetchImpl: html.fetchImpl,
+    });
+    expect(unusable.error).toBe("stations: HTTP 200 but not JSON: <html> ::error::x </html>");
+    for (const error of [result.error, unusable.error]) expect(error).not.toMatch(/[\r\n]/);
+  });
+
+  it("puts a network error message on one line too, and trims a quoted body", async () => {
+    const failing = fakeFetch({ stations: new TypeError("fetch failed\n::error::x") });
+    const failed = await fetchGp({
+      outDir: dir,
+      nowMs: SNAPSHOT_MS,
+      userAgent: UA,
+      fetchImpl: failing.fetchImpl,
+    });
+    expect(failed.error).toBe("stations: fetch failed ::error::x");
+    const padded = fakeFetch({ stations: status(500, "\r\n  Server busy.\r\n") });
+    const busy = await fetchGp({
+      outDir: dir,
+      nowMs: SNAPSHOT_MS,
+      userAgent: UA,
+      fetchImpl: padded.fetchImpl,
+    });
+    expect(busy.error).toBe("stations: HTTP 500 Server busy.");
   });
 
   it("a network error or the 60 s timeout stops the run without a retry", async () => {
@@ -455,8 +596,20 @@ describe("runCli", () => {
   const io = () => {
     const out: string[] = [];
     const err: string[] = [];
-    return { out, err, log: (s: string) => out.push(s), logError: (s: string) => err.push(s) };
+    const warnings: string[] = [];
+    return {
+      out,
+      err,
+      warnings,
+      log: (s: string) => out.push(s),
+      logError: (s: string) => err.push(s),
+      warn: (s: string) => warnings.push(s),
+    };
   };
+  const env = { GP_CONTACT_URL: REPO_URL };
+  /** meta.json as the snapshot: every group stamped at SNAPSHOT_MS. */
+  const seedMeta = async (): Promise<void> =>
+    writeFile(join(dir, "meta.json"), await fixtureBytes("meta.json"));
 
   it("exits 2 before any request without GP_CONTACT_URL", async () => {
     const { fetchImpl, calls } = fakeFetch({});
@@ -470,7 +623,6 @@ describe("runCli", () => {
   it("exits 2 before any request for a bad GP_CONTACT_URL or bad arguments", async () => {
     const { fetchImpl, calls } = fakeFetch({});
     const { log, logError } = io();
-    const env = { GP_CONTACT_URL: REPO_URL };
     expect(
       await runCli(
         ["--out", dir],
@@ -490,24 +642,176 @@ describe("runCli", () => {
       stations: ok(stations),
       visual: status(301, "moved"),
     });
-    const { err, log, logError } = io();
+    const { err, warnings, log, logError, warn } = io();
     const code = await runCli(
       ["--out", dir],
       { GP_CONTACT_URL: REPO_URL },
-      { fetchImpl, log, logError, now: () => SNAPSHOT_MS },
+      { fetchImpl, log, logError, warn, now: () => SNAPSHOT_MS },
     );
     expect(code).toBe(1);
     expect(calls).toHaveLength(2);
     expect(new Headers(calls[0]?.init.headers).get("User-Agent")).toBe(UA);
-    expect(err).toContain("Stopped: visual: HTTP 301 moved");
+    expect(err).toEqual(["Stopped: visual: HTTP 301 moved"]);
+    expect(warnings).toEqual([]);
     expect((await readMeta()).stations?.fetchedAtMs).toBe(SNAPSHOT_MS);
+  });
+
+  it("does not double a period that ends the error in the warning", async () => {
+    await seedMeta();
+    const { fetchImpl } = fakeFetch({ stations: status(500, "Server busy.") });
+    const { warnings, log, logError, warn } = io();
+    const code = await runCli(["--out", dir], env, {
+      fetchImpl,
+      log,
+      logError,
+      warn,
+      now: () => SNAPSHOT_MS + 6 * HOUR_MS,
+    });
+    expect(code).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^Stopped early: stations: HTTP 500 Server busy\. CelesTrak /);
+  });
+
+  it("exits 0 with one warning after a transient stop while every group is under 48 h old", async () => {
+    await seedMeta();
+    const now = SNAPSHOT_MS + 6 * HOUR_MS;
+    let clockReads = 0;
+    const { fetchImpl, calls } = fakeFetch({
+      stations: ok(await fixtureBytes("stations.json")),
+      visual: status(403, "GP data has not updated since your last successful download"),
+    });
+    const { out, err, warnings, log, logError, warn } = io();
+    const code = await runCli(["--out", dir], env, {
+      fetchImpl,
+      log,
+      logError,
+      warn,
+      now: () => {
+        clockReads++;
+        return now;
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls).toHaveLength(2);
+    expect(clockReads).toBe(1);
+    expect(err).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(
+      /^Stopped early: visual: HTTP 403 GP data has not updated since your last successful download\. /,
+    );
+    expect(warnings[0]).toContain("under 48 h old");
+    expect(warnings[0]).toContain("next scheduled run");
+    expect(out.some((line) => line.startsWith("Done:"))).toBe(false);
+    // The group fetched before the stop is kept.
+    expect((await readMeta()).stations?.fetchedAtMs).toBe(now);
+    expect((await readMeta()).visual?.fetchedAtMs).toBe(SNAPSHOT_MS);
+  });
+
+  it("warns with a GitHub Actions ::warning:: line on stdout by default", async () => {
+    await seedMeta();
+    const { fetchImpl } = fakeFetch({ stations: new TypeError("fetch failed") });
+    const { err, log, logError } = io();
+    const printed = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const code = await runCli(["--out", dir], env, {
+        fetchImpl,
+        log,
+        logError,
+        now: () => SNAPSHOT_MS + 6 * HOUR_MS,
+      });
+      expect(code).toBe(0);
+      expect(printed).toHaveBeenCalledTimes(1);
+      expect(printed.mock.calls[0]?.[0]).toMatch(
+        /^::warning::Stopped early: stations: fetch failed\. /,
+      );
+      expect(err).toEqual([]);
+    } finally {
+      printed.mockRestore();
+    }
+  });
+
+  it("exits 1 after a transient stop once a group is 48 h or more old, naming it with its age", async () => {
+    await seedMeta();
+    const now = SNAPSHOT_MS + 6 * HOUR_MS;
+    // starlink was last fetched 50 h 30 min ago; stations and visual are fetched by this run.
+    const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8")) as GpMeta;
+    meta.starlink.fetchedAtMs = now - 50 * HOUR_MS - 30 * 60_000;
+    await writeFile(join(dir, "meta.json"), JSON.stringify(meta));
+    const { fetchImpl, calls } = fakeFetch({
+      stations: ok(await fixtureBytes("stations.json")),
+      visual: ok(await fixtureBytes("visual.json")),
+      starlink: status(500, "Internal Server Error"),
+    });
+    const { err, warnings, log, logError, warn } = io();
+    const code = await runCli(["--out", dir], env, {
+      fetchImpl,
+      log,
+      logError,
+      warn,
+      now: () => now,
+    });
+    expect(code).toBe(1);
+    expect(calls).toHaveLength(3);
+    expect(warnings).toEqual([]);
+    expect(err).toHaveLength(2);
+    expect(err[0]).toBe("Stopped: starlink: HTTP 500 Internal Server Error");
+    expect(err[1]).toContain("48 h");
+    expect(err[1]).toContain("starlink last fetched 50 h ago");
+    expect(err[1]).not.toMatch(/stations|visual/);
+  });
+
+  it("exits 1 after a transient stop on a first run, naming every group as never fetched", async () => {
+    const { fetchImpl, calls } = fakeFetch({ stations: status(500) });
+    const { err, warnings, log, logError, warn } = io();
+    const code = await runCli(["--out", dir], env, {
+      fetchImpl,
+      log,
+      logError,
+      warn,
+      now: () => SNAPSHOT_MS,
+    });
+    expect(code).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(warnings).toEqual([]);
+    expect(err).toHaveLength(2);
+    expect(err[0]).toBe("Stopped: stations: HTTP 500 HTTP 500 body");
+    expect(err[1]).toContain(
+      "stations never fetched, visual never fetched, starlink never fetched",
+    );
+    expect(await exists(join(dir, "meta.json"))).toBe(false);
+  });
+
+  it("exits 1 after a stop that needs a code or config change, even with fresh data", async () => {
+    await seedMeta();
+    const now = SNAPSHOT_MS + 6 * HOUR_MS;
+    const answers: [Answer, string][] = [
+      [status(404, "Not Found"), "Stopped: stations: HTTP 404 Not Found"],
+      [
+        ok("<!DOCTYPE html><html><body>Maintenance</body></html>"),
+        "Stopped: stations: HTTP 200 but not JSON: <!DOCTYPE html><html><body>Maintenance</body></html>",
+      ],
+    ];
+    for (const [answer, stopped] of answers) {
+      const { fetchImpl, calls } = fakeFetch({ stations: answer });
+      const { err, warnings, log, logError, warn } = io();
+      const code = await runCli(["--out", dir], env, {
+        fetchImpl,
+        log,
+        logError,
+        warn,
+        now: () => now,
+      });
+      expect(code, stopped).toBe(1);
+      expect(calls, stopped).toHaveLength(1);
+      expect(err, stopped).toEqual([stopped]);
+      expect(warnings, stopped).toEqual([]);
+    }
   });
 
   it("exits 0 when every group is fresh, and 1 with a message for a corrupt meta.json", async () => {
     const { fetchImpl, calls } = fakeFetch({});
     const { err, log, logError } = io();
-    await writeFile(join(dir, "meta.json"), await fixtureBytes("meta.json"));
-    const env = { GP_CONTACT_URL: REPO_URL };
+    await seedMeta();
     expect(
       await runCli(["--out", dir], env, { fetchImpl, log, logError, now: () => SNAPSHOT_MS }),
     ).toBe(0);

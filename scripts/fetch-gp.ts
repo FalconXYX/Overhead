@@ -5,6 +5,9 @@
 // skipped; FORMAT=json is always sent (the default became CSV on 2026-05-09); the run stops at the first
 // non-200, including 403 "GP data has not updated since your last successful download" and a 301, because
 // 50 errors in 2 h firewall the IP; it never retries and never loops. Unit tests inject fetchImpl.
+// A stop the next run may well not see (a network error, the timeout, 403, 429, 5xx) exits 0 with a
+// warning while every group's stamp is under 48 h old. Reason: CelesTrak's bad hours fix themselves, and
+// a failed job e-mails the owner. Any other stop, or a group 48 h or more without new data, exits 1.
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,6 +19,8 @@ export const MIN_REFETCH_MS = 2 * 60 * 60 * 1000;
 export const CELESTRAK_GP_URL = "https://celestrak.org/NORAD/elements/gp.php";
 export const FETCH_TIMEOUT_MS = 60_000;
 export const DEFAULT_OUT_DIR = "public/data/gp";
+/** A transient stop fails the run only once a group has gone this long without new data. */
+export const STALE_ALERT_MS = 48 * 60 * 60 * 1000;
 /** At most this much of an error body goes into the error message. */
 const ERROR_BODY_CHARS = 500;
 
@@ -48,6 +53,12 @@ export interface FetchGpResult {
   skipped: GpGroup[];
   /** The reason the run stopped, or null when every group was fetched or skipped. */
   error: string | null;
+  /**
+   * True when the run stopped on something the next run may well not see: a network error, the 60 s
+   * timeout, HTTP 403, 429 or 5xx. False when error is null, and for a stop that needs a code or config
+   * change: a 200 with an unusable body, a 1xx, another 2xx, a 3xx (never followed) or another 4xx.
+   */
+  transient: boolean;
   /** meta.json after the run (unchanged when nothing was fetched). */
   meta: StoredGpMeta;
 }
@@ -89,6 +100,17 @@ export function shouldFetch(meta: StoredGpMeta | null, group: GpGroup, nowMs: nu
   const stamp = meta?.[group]?.fetchedAtMs;
   if (stamp === undefined) return true;
   return Math.abs(nowMs - stamp) >= MIN_REFETCH_MS;
+}
+
+/**
+ * The groups, in GP_GROUPS order, with no stamp or a stamp at least STALE_ALERT_MS old. A stamp in the
+ * future is not stale.
+ */
+export function staleGroups(meta: StoredGpMeta, nowMs: number): GpGroup[] {
+  return GP_GROUPS.filter((group) => {
+    const stamp = meta[group]?.fetchedAtMs;
+    return stamp === undefined || nowMs - stamp >= STALE_ALERT_MS;
+  });
 }
 
 /** `<base>?GROUP=<group>&FORMAT=json`. */
@@ -157,6 +179,22 @@ function describeFailure(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * 403 ("not updated since your last download", or the firewall on a shared runner IP), 429 and 5xx: the
+ * next run may well not see them.
+ */
+const isTransientStatus = (status: number): boolean =>
+  status === 403 || status === 429 || (status >= 500 && status <= 599);
+
+/**
+ * Every run of whitespace (CR/LF included) as one space, trimmed. Errors stay one line. Reason: a line
+ * starting "::" would otherwise read as a workflow command in the log.
+ */
+const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+/** At most ERROR_BODY_CHARS of a body, on one line. */
+const bodyExcerpt = (text: string): string => oneLine(text.slice(0, ERROR_BODY_CHARS));
+
 /** Why a 200 body is unusable, or its record count when it is a non-empty OMM array. */
 function checkBody(text: string): { problem: string } | { count: number } {
   let json: unknown;
@@ -204,6 +242,7 @@ export async function fetchGp(o: FetchGpOptions): Promise<FetchGpResult> {
     written: [],
     skipped: [],
     error: null,
+    transient: false,
     meta,
   };
 
@@ -229,19 +268,21 @@ export async function fetchGp(o: FetchGpOptions): Promise<FetchGpResult> {
       });
       bytes = Buffer.from(await res.arrayBuffer());
     } catch (err) {
-      result.error = `${group}: ${describeFailure(err)}`;
+      // A network error or the 60 s timeout.
+      result.error = `${group}: ${oneLine(describeFailure(err))}`;
+      result.transient = true;
       break;
     }
     const text = bytes.toString("utf8");
     if (res.status !== 200) {
       // Stop on any non-200, including 403 "not updated since your last download". Never retry.
-      result.error = `${group}: HTTP ${res.status} ${text.slice(0, ERROR_BODY_CHARS)}`.trimEnd();
+      result.error = `${group}: HTTP ${res.status} ${bodyExcerpt(text)}`.trimEnd();
+      result.transient = isTransientStatus(res.status);
       break;
     }
     const check = checkBody(text);
     if ("problem" in check) {
-      result.error =
-        `${group}: HTTP 200 but ${check.problem}: ${text.slice(0, ERROR_BODY_CHARS)}`.trimEnd();
+      result.error = `${group}: HTTP 200 but ${check.problem}: ${bodyExcerpt(text)}`.trimEnd();
       break;
     }
 
@@ -272,13 +313,17 @@ export interface CliDeps {
   now?: () => number;
   log?: (line: string) => void;
   logError?: (line: string) => void;
+  /** Prints a GitHub Actions warning by default. */
+  warn?: (line: string) => void;
 }
 
 const USAGE = "Usage: GP_CONTACT_URL=<repository URL> npx tsx scripts/fetch-gp.ts [--out <dir>]";
 
 /**
- * The CLI: 0 when every group was fetched or skipped; 1 after a stop (printing `Stopped: <error>`) or a
- * corrupt meta.json; 2 for bad arguments or a missing or invalid GP_CONTACT_URL, before any request.
+ * The CLI: 0 when every group was fetched or skipped, or after a transient stop while every group's stamp
+ * is under 48 h old (warning `Stopped early: <error>`); 1 after any other stop (printing `Stopped: <error>`,
+ * then the groups 48 h or more old when the stop was transient) or a corrupt meta.json; 2 for bad
+ * arguments or a missing or invalid GP_CONTACT_URL, before any request.
  */
 export async function runCli(
   args: readonly string[],
@@ -287,6 +332,7 @@ export async function runCli(
 ): Promise<number> {
   const log = deps.log ?? ((line: string) => console.log(line));
   const logError = deps.logError ?? ((line: string) => console.error(line));
+  const warn = deps.warn ?? ((m: string) => console.log(`::warning::${m}`));
 
   let outDir = DEFAULT_OUT_DIR;
   for (let i = 0; i < args.length; i++) {
@@ -318,15 +364,25 @@ export async function runCli(
   }
 
   try {
-    const result = await fetchGp({
-      outDir,
-      nowMs: (deps.now ?? Date.now)(),
-      userAgent,
-      fetchImpl: deps.fetchImpl,
-      log,
-    });
+    const nowMs = (deps.now ?? Date.now)();
+    const result = await fetchGp({ outDir, nowMs, userAgent, fetchImpl: deps.fetchImpl, log });
     if (result.error !== null) {
+      const stale = result.transient ? staleGroups(result.meta, nowMs) : [];
+      if (result.transient && stale.length === 0) {
+        warn(
+          `Stopped early: ${result.error.replace(/\.$/, "")}. CelesTrak or the network failed, but the data on disk is under 48 h old, and the next scheduled run tries again.`,
+        );
+        return 0;
+      }
       logError(`Stopped: ${result.error}`);
+      if (stale.length > 0) {
+        const ages = stale.map((group) => {
+          const stamp = result.meta[group]?.fetchedAtMs;
+          if (stamp === undefined) return `${group} never fetched`;
+          return `${group} last fetched ${Math.floor((nowMs - stamp) / 3_600_000)} h ago`;
+        });
+        logError(`No new data for 48 h or more, which needs a look: ${ages.join(", ")}.`);
+      }
       return 1;
     }
     log(
